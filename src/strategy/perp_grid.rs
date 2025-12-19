@@ -26,8 +26,8 @@ struct GridZone {
     upper_price: f64,
     size: f64,
     state: ZoneState,
-    is_short_oriented: bool, // Handles Open Short -> Close Short vs Open Long -> Close Long
-    entry_price: f64,        // Used for PnL calculation
+    is_short_oriented: bool,
+    entry_price: f64,
     order_id: Option<u128>,
 }
 
@@ -88,6 +88,10 @@ impl PerpGridStrategy {
             self.grid_count, self.symbol, self.grid_bias
         );
 
+        let market_info = ctx
+            .market_info(&self.symbol)
+            .ok_or_else(|| anyhow!("Market info for {} not found", self.symbol))?;
+
         let price_range = self.upper_price - self.lower_price;
         let interval = price_range / (self.grid_count as f64);
 
@@ -109,13 +113,15 @@ impl PerpGridStrategy {
                 }
             };
 
-            // Calculate size with leverage
-            // Size = (Total Investment / Grid Count) * Leverage / Middle Price of Zone
             let mid_price = (lower + upper) / 2.0;
             let zone_investment = self.total_investment / (self.grid_count as f64);
-            let size = (zone_investment * self.leverage as f64) / mid_price;
+            let raw_size = (zone_investment * self.leverage as f64) / mid_price;
 
-            // Determine initial state based on grid_bias
+            // Enforce minimum order value using the lower price (most conservative for size)
+            let size = market_info
+                .ensure_min_sz(lower, 10.1)
+                .max(market_info.round_size(raw_size));
+
             let (state, is_short_oriented) = match self.grid_bias {
                 GridBias::Neutral => {
                     if mid_price > current_price {
@@ -155,7 +161,6 @@ impl PerpGridStrategy {
                     zone.upper_price
                 };
 
-                // Get market precision
                 let market_info = ctx
                     .market_info(&self.symbol)
                     .ok_or_else(|| anyhow!("Market info for {} not found", self.symbol))?;
@@ -176,7 +181,7 @@ impl PerpGridStrategy {
                     is_buy,
                     rounded_price,
                     rounded_size,
-                    false, // Perps can have reduce_only but grid usually doesn't unless specialized
+                    false,
                     Some(cloid),
                 );
             }
@@ -230,12 +235,8 @@ impl Strategy for PerpGridStrategy {
             StrategyState::Initializing => {
                 return self.initialize_zones(price, ctx);
             }
-            StrategyState::WaitingForTrigger => {
-                // If trigger support is needed for Perps too
-            }
-            StrategyState::Running => {
-                // refresh_orders handled by fills
-            }
+            StrategyState::WaitingForTrigger => {}
+            StrategyState::Running => {}
         }
         Ok(())
     }
@@ -256,12 +257,11 @@ impl Strategy for PerpGridStrategy {
                     let zone = &mut self.zones[zone_idx];
                     zone.order_id = None;
 
-                    let (next_state, entry_px, pnl, next_px, is_next_buy) = match (
+                    let (next_state, entry_px, _pnl, next_px, is_next_buy) = match (
                         zone.state,
                         zone.is_short_oriented,
                     ) {
                         (ZoneState::WaitingBuy, false) => {
-                            // OPEN LONG fill
                             info!(
                                 "Zone {} | BUY (Open Long) Filled @ {} | Size: {} | Next: SELL (Close) @ {}",
                                 zone_idx, px, size, zone.upper_price
@@ -269,7 +269,6 @@ impl Strategy for PerpGridStrategy {
                             (ZoneState::WaitingSell, px, None, zone.upper_price, false)
                         }
                         (ZoneState::WaitingSell, false) => {
-                            // CLOSE LONG fill
                             let pnl = (px - zone.entry_price) * size;
                             info!(
                                 "Zone {} | SELL (Close Long) Filled @ {} | PnL: {:.4} | Next: BUY (Open) @ {}",
@@ -284,7 +283,6 @@ impl Strategy for PerpGridStrategy {
                             )
                         }
                         (ZoneState::WaitingSell, true) => {
-                            // OPEN SHORT fill
                             info!(
                                 "Zone {} | SELL (Open Short) Filled @ {} | Size: {} | Next: BUY (Close) @ {}",
                                 zone_idx, px, size, zone.lower_price
@@ -292,7 +290,6 @@ impl Strategy for PerpGridStrategy {
                             (ZoneState::WaitingBuy, px, None, zone.lower_price, true)
                         }
                         (ZoneState::WaitingBuy, true) => {
-                            // CLOSE SHORT fill
                             let pnl = (zone.entry_price - px) * size;
                             info!(
                                 "Zone {} | BUY (Close Short) Filled @ {} | PnL: {:.4} | Next: SELL (Open) @ {}",
@@ -310,13 +307,9 @@ impl Strategy for PerpGridStrategy {
 
                     zone.state = next_state;
                     zone.entry_price = entry_px;
-                    if let Some(_p) = pnl {
-                        // Could track total PnL here
-                    }
                     (next_px, is_next_buy)
                 };
 
-                // Now we can call self.place_counter_order
                 self.place_counter_order(zone_idx, next_px, is_next_buy, ctx)?;
             } else {
                 debug!(
@@ -345,7 +338,6 @@ impl Strategy for PerpGridStrategy {
         Ok(())
     }
 
-    // State management
     fn save_state(&self) -> Result<String> {
         #[derive(Serialize)]
         struct FullGridState {

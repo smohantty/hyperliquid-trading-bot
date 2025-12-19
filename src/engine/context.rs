@@ -50,8 +50,19 @@ impl MarketInfo {
         round_to_significant_and_decimal(price, 5, self.price_decimals)
     }
 
-    pub fn round_size(&self, size: f64) -> f64 {
-        round_to_decimals(size, self.sz_decimals)
+    pub fn round_size(&self, sz: f64) -> f64 {
+        round_to_decimals(sz, self.sz_decimals)
+    }
+
+    /// Calculates the minimum size required to achieve a certain USDC value at a given price.
+    /// Result is rounded according to asset precision.
+    pub fn ensure_min_sz(&self, price: f64, min_value: f64) -> f64 {
+        if price <= 0.0 {
+            return 0.0;
+        }
+        let min_sz = min_value / price;
+        self.round_size(min_sz + 10f64.powi(-(self.sz_decimals as i32))) // Add 1 tick to ensure it's STRICTLY equal or greater after rounding
+            .max(self.round_size(min_sz))
     }
 }
 

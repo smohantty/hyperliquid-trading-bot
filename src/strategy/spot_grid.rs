@@ -124,7 +124,10 @@ impl SpotGridStrategy {
 
             // Calculate size based on quote investment per zone
             let raw_size = quote_per_zone / lower;
-            let size = market_info.round_size(raw_size);
+            // Enforce minimum order value
+            let size = market_info
+                .ensure_min_sz(lower, 10.1)
+                .max(market_info.round_size(raw_size));
 
             let initial_state = if initial_price < upper {
                 ZoneState::WaitingSell
@@ -162,29 +165,27 @@ impl SpotGridStrategy {
         let deficit = total_base_required - available_base;
 
         if deficit > market_info.round_size(0.0) {
-            // Check if deficit is significant
-            let rounded_deficit = market_info.round_size(deficit);
+            // Find nearest grid level price below current price for acquisition buy
+            let mut acquisition_price = market_info.last_price * 0.99; // Fallback
+
+            let nearest_level = self
+                .zones
+                .iter()
+                .filter(|z| z.lower_price < market_info.last_price)
+                .map(|z| z.lower_price)
+                .fold(0.0, f64::max);
+
+            if nearest_level > 0.0 {
+                acquisition_price = market_info.round_price(nearest_level);
+            } else if !self.zones.is_empty() {
+                acquisition_price = market_info.round_price(self.zones[0].lower_price);
+            }
+
+            // Check if deficit is significant (or if we need to buy at least min size)
+            let min_acq_sz = market_info.ensure_min_sz(acquisition_price, 10.1);
+            let rounded_deficit = min_acq_sz.max(market_info.round_size(deficit));
+
             if rounded_deficit > 0.0 {
-                // Find nearest grid level price below current price for acquisition buy
-                let mut acquisition_price = market_info.last_price * 0.99; // Fallback
-
-                // zones are usually sorted or structured, but let's just find the first one below or use a safe limit
-                // The zones list is built from lower_price upwards.
-                // Let's find the max lower_price that is < last_price
-                let nearest_level = self
-                    .zones
-                    .iter()
-                    .filter(|z| z.lower_price < market_info.last_price)
-                    .map(|z| z.lower_price)
-                    .fold(0.0, f64::max);
-
-                if nearest_level > 0.0 {
-                    acquisition_price = market_info.round_price(nearest_level);
-                } else if !self.zones.is_empty() {
-                    // If no level is below, use the lowest level
-                    acquisition_price = market_info.round_price(self.zones[0].lower_price);
-                }
-
                 info!(
                     "Acquisition Needed: Deficit of {} {}. Placing BUY order @ {}.",
                     rounded_deficit, base_coin, acquisition_price
@@ -192,7 +193,6 @@ impl SpotGridStrategy {
                 let cloid = ctx.generate_cloid();
                 self.state = StrategyState::AcquiringAssets { cloid };
 
-                // Use place_limit_order to ensure precision and explicit price
                 ctx.place_limit_order(
                     self.symbol.clone(),
                     true,
@@ -224,7 +224,7 @@ impl SpotGridStrategy {
                 let market_info = ctx.market_info(&self.symbol).unwrap();
                 // Ensure price and size are rounded
                 let price = market_info.round_price(price);
-                // zone.size is already rounded
+                // zone.size is already rounded and min-checked
 
                 let cloid = ctx.generate_cloid();
                 orders_to_place.push((i, is_buy, price, zone.size, cloid));
@@ -297,7 +297,6 @@ impl Strategy for SpotGridStrategy {
             }
         }
 
-        //debug!("SpotGridStrategy tick: {} | State: {:?}", price, self.state);
         Ok(())
     }
 
@@ -326,7 +325,6 @@ impl Strategy for SpotGridStrategy {
             if let Some(zone_idx) = self.active_orders.remove(&cloid_val) {
                 let zone = &mut self.zones[zone_idx];
 
-                // Verify order match (redundant but safe)
                 if zone.order_id != Some(cloid_val) {
                     warn!(
                         "Zone {} order_id mismatch! Expected {:?}, got {:?}",
@@ -338,7 +336,6 @@ impl Strategy for SpotGridStrategy {
 
                 match zone.state {
                     ZoneState::WaitingBuy => {
-                        // FILL was a BUY. Transition to WaitingSell.
                         info!(
                             "Zone {} | BUY Filled @ {} | Size: {} | Next: SELL @ {}",
                             zone_idx, px, size, zone.upper_price
@@ -347,7 +344,6 @@ impl Strategy for SpotGridStrategy {
                         zone.state = ZoneState::WaitingSell;
                         zone.entry_price = px;
 
-                        // Place Counter-Order (Sell)
                         let next_cloid = ctx.generate_cloid();
                         let market_info = ctx.market_info(&self.symbol).unwrap();
                         let price = market_info.round_price(zone.upper_price);
@@ -362,15 +358,14 @@ impl Strategy for SpotGridStrategy {
 
                         ctx.place_limit_order(
                             self.symbol.clone(),
-                            false, // Sell
+                            false,
                             price,
                             zone.size,
-                            false, // reduce_only
+                            false,
                             Some(next_cloid),
                         );
                     }
                     ZoneState::WaitingSell => {
-                        // FILL was a SELL. Transition to WaitingBuy.
                         let pnl = (px - zone.entry_price) * size;
                         info!(
                             "Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Next: BUY @ {}",
@@ -378,9 +373,8 @@ impl Strategy for SpotGridStrategy {
                         );
 
                         zone.state = ZoneState::WaitingBuy;
-                        zone.entry_price = 0.0; // Reset cost basis
+                        zone.entry_price = 0.0;
 
-                        // Place Counter-Order (Buy)
                         let next_cloid = ctx.generate_cloid();
                         let market_info = ctx.market_info(&self.symbol).unwrap();
                         let price = market_info.round_price(zone.lower_price);
@@ -395,10 +389,10 @@ impl Strategy for SpotGridStrategy {
 
                         ctx.place_limit_order(
                             self.symbol.clone(),
-                            true, // Buy
+                            true,
                             price,
                             zone.size,
-                            false, // reduce_only
+                            false,
                             Some(next_cloid),
                         );
                     }
@@ -407,8 +401,6 @@ impl Strategy for SpotGridStrategy {
                 debug!("Fill received for unknown/inactive CLOID: {}", cloid_val);
             }
         } else {
-            // No CLOID, can't match to zone easily.
-            // In a real bot, we might fallback to price matching or ignore.
             debug!("Fill received without CLOID at price {}", px);
         }
 
@@ -427,7 +419,6 @@ impl Strategy for SpotGridStrategy {
         Ok(())
     }
 
-    // State management
     fn save_state(&self) -> Result<String> {
         #[derive(Serialize)]
         struct FullGridState {

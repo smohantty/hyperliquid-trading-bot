@@ -16,6 +16,7 @@ pub trait Strategy {
         side: &str,
         size: f64,
         px: f64,
+        cloid: Option<uuid::Uuid>,
         ctx: &mut StrategyContext,
     ) -> Result<()>;
 }

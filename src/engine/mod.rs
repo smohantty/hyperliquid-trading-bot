@@ -194,15 +194,15 @@ impl Engine {
                                         info!("Processing Order Request: {:?}", order_req);
 
                                         // Mapping to SDK types
-                                        let (is_buy, limit_px, sz, reduce_only, order_type) = match order_req {
-                                            crate::model::OrderRequest::Limit { symbol: _, is_buy, price, sz, reduce_only } => {
+                                        let (is_buy, limit_px, sz, reduce_only, order_type, cloid) = match order_req {
+                                            crate::model::OrderRequest::Limit { symbol: _, is_buy, price, sz, reduce_only, cloid } => {
                                                 (is_buy, price, sz, reduce_only, ClientOrder::Limit(
                                                     ClientLimit {
                                                         tif: "Gtc".to_string(), // Good Till Cancelled
                                                     }
-                                                ))
+                                                ), cloid)
                                             },
-                                            crate::model::OrderRequest::Market { symbol: _, is_buy, sz } => {
+                                            crate::model::OrderRequest::Market { symbol: _, is_buy, sz, cloid } => {
                                                     let aggressive_price = if is_buy {
                                                         mid_price * 1.1
                                                     } else {
@@ -213,7 +213,7 @@ impl Engine {
                                                         ClientLimit {
                                                             tif: "Ioc".to_string(), // Immediate or Cancel for Pseudo-Market
                                                         }
-                                                    ))
+                                                    ), cloid)
                                             }
                                         };
 
@@ -224,7 +224,7 @@ impl Engine {
                                             sz,
                                             reduce_only,
                                             order_type,
-                                            cloid: None,
+                                            cloid,
                                         };
 
                                         info!("(Safe Mode) Order Simulation: {:?}", sdk_req);
@@ -241,10 +241,16 @@ impl Engine {
                                 for fill in fills {
                                     let amount: f64 = fill.sz.parse().unwrap_or(0.0);
                                     let px: f64 = fill.px.parse().unwrap_or(0.0);
-                                    // SDK's Fill struct has 'side' as String (e.g., "B", "A", or "S"?)
-                                    // Logging indicates "Fill: bought..." or "sold..."
+
+                                    // Parse cloid from Option<String> to Option<Uuid>
+                                    let cloid = if let Some(cloid_str) = fill.cloid {
+                                        uuid::Uuid::parse_str(&cloid_str).ok()
+                                    } else {
+                                        None
+                                    };
+
                                     // Pass to strategy
-                                    if let Err(e) = strategy.on_order_filled(&fill.side, amount, px, &mut ctx) {
+                                    if let Err(e) = strategy.on_order_filled(&fill.side, amount, px, cloid, &mut ctx) {
                                         error!("Strategy on_order_filled error: {}", e);
                                     }
                                 }

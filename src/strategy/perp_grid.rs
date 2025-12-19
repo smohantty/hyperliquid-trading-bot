@@ -48,6 +48,7 @@ impl Strategy for PerpGridStrategy {
         side: &str,
         size: f64,
         px: f64,
+        _cloid: Option<uuid::Uuid>,
         _ctx: &mut StrategyContext,
     ) -> Result<()> {
         log::info!(

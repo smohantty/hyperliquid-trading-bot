@@ -83,6 +83,7 @@ impl StrategyContext {
         price: f64,
         sz: f64,
         reduce_only: bool,
+        cloid: Option<uuid::Uuid>,
     ) {
         self.order_queue.push(OrderRequest::Limit {
             symbol,
@@ -90,11 +91,22 @@ impl StrategyContext {
             price,
             sz,
             reduce_only,
+            cloid,
         });
     }
 
-    pub fn place_market_order(&mut self, symbol: String, is_buy: bool, sz: f64) {
-        self.order_queue
-            .push(OrderRequest::Market { symbol, is_buy, sz });
+    pub fn place_market_order(
+        &mut self,
+        symbol: String,
+        is_buy: bool,
+        sz: f64,
+        cloid: Option<uuid::Uuid>,
+    ) {
+        self.order_queue.push(OrderRequest::Market {
+            symbol,
+            is_buy,
+            sz,
+            cloid,
+        });
     }
 }

@@ -47,6 +47,7 @@ pub struct SpotGridStrategy {
     active_orders: HashMap<u128, usize>,
     state: StrategyState,
     trade_count: u32,
+    start_price: Option<f64>,
 }
 
 impl SpotGridStrategy {
@@ -60,19 +61,23 @@ impl SpotGridStrategy {
                 grid_count,
                 total_investment,
                 trigger_price,
-            } => Self {
-                symbol,
-                upper_price,
-                lower_price,
-                grid_type,
-                grid_count,
-                total_investment,
-                trigger_price,
-                zones: Vec::new(),
-                active_orders: HashMap::new(),
-                state: StrategyState::Initializing,
-                trade_count: 0,
-            },
+            } => {
+                // Always start in Initializing to allow balance checks in initialize_zones
+                Self {
+                    symbol,
+                    upper_price,
+                    lower_price,
+                    grid_type,
+                    grid_count,
+                    total_investment,
+                    trigger_price,
+                    zones: Vec::new(),
+                    active_orders: HashMap::new(),
+                    state: StrategyState::Initializing,
+                    trade_count: 0,
+                    start_price: None,
+                }
+            }
             _ => panic!("Invalid config type for SpotGridStrategy"),
         }
     }
@@ -113,7 +118,8 @@ impl SpotGridStrategy {
         let num_zones = self.grid_count as usize - 1;
         let quote_per_zone = self.total_investment / num_zones as f64;
 
-        let initial_price = market_info.last_price;
+        // Use trigger_price if available, otherwise last_price
+        let initial_price = self.trigger_price.unwrap_or(market_info.last_price);
 
         self.zones.clear();
         let mut total_base_required = 0.0;
@@ -164,21 +170,34 @@ impl SpotGridStrategy {
         let available_base = ctx.balance(base_coin);
         let deficit = total_base_required - available_base;
 
+        // Logic Split:
+        // 1. If Deficit > 0: Place Buy Order @ (TriggerPrice OR BestPrice).
+        //    If Trigger is set, we buy @ Trigger -> implicitly waiting for trigger.
+        // 2. If Deficit <= 0:
+        //    If Trigger is set -> WaitingForTrigger (Passive wait).
+        //    Else -> Running.
+
         if deficit > market_info.round_size(0.0) {
-            // Find nearest grid level price below current price for acquisition buy
-            let mut acquisition_price = market_info.last_price * 0.99; // Fallback
+            // Acquisition Mode
+            let mut acquisition_price = initial_price * 0.99; // Fallback default
 
-            let nearest_level = self
-                .zones
-                .iter()
-                .filter(|z| z.lower_price < market_info.last_price)
-                .map(|z| z.lower_price)
-                .fold(0.0, f64::max);
+            if let Some(trigger) = self.trigger_price {
+                // If triggered, use trigger price for acquisition
+                acquisition_price = market_info.round_price(trigger);
+            } else {
+                // Standard logic: try to buy at a grid level
+                let nearest_level = self
+                    .zones
+                    .iter()
+                    .filter(|z| z.lower_price < market_info.last_price)
+                    .map(|z| z.lower_price)
+                    .fold(0.0, f64::max);
 
-            if nearest_level > 0.0 {
-                acquisition_price = market_info.round_price(nearest_level);
-            } else if !self.zones.is_empty() {
-                acquisition_price = market_info.round_price(self.zones[0].lower_price);
+                if nearest_level > 0.0 {
+                    acquisition_price = market_info.round_price(nearest_level);
+                } else if !self.zones.is_empty() {
+                    acquisition_price = market_info.round_price(self.zones[0].lower_price);
+                }
             }
 
             // Apply 0.5% safety buffer to cover exchange fees, ensuring we have enough for SELL orders
@@ -206,8 +225,17 @@ impl SpotGridStrategy {
             }
         }
 
-        info!("Assets verified. Starting Grid.");
-        self.state = StrategyState::Running;
+        // No Deficit (or negligible)
+        if let Some(_trigger) = self.trigger_price {
+            // Passive Wait Mode
+            info!("Assets sufficient. Entering WaitingForTrigger state.");
+            self.start_price = Some(market_info.last_price);
+            self.state = StrategyState::WaitingForTrigger;
+        } else {
+            // No Trigger, Assets OK -> Running
+            info!("Assets verified. Starting Grid.");
+            self.state = StrategyState::Running;
+        }
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) {
@@ -269,25 +297,49 @@ impl Strategy for SpotGridStrategy {
             }
             StrategyState::WaitingForTrigger => {
                 if let Some(trigger) = self.trigger_price {
-                    if (price >= trigger
-                        && self
-                            .zones
-                            .first()
-                            .map(|z| trigger > z.lower_price)
-                            .unwrap_or(false))
-                        || (price <= trigger
-                            && self
-                                .zones
-                                .first()
-                                .map(|z| trigger < z.lower_price)
-                                .unwrap_or(false))
-                    {
-                        info!(
-                            "Trigger price {} hit. Starting initialization/acquisition.",
-                            trigger
-                        );
-                        self.state = StrategyState::Initializing;
+                    // Directional Trigger Logic
+                    // Requires start_price to be set during initialization
+
+                    let mut triggered = false;
+
+                    if let Some(start) = self.start_price {
+                        if start < trigger {
+                            // Bullish Trigger: Wait for price >= trigger
+                            if price >= trigger {
+                                info!(
+                                    "Price {} crossed trigger {} (UP). Starting.",
+                                    price, trigger
+                                );
+                                triggered = true;
+                            }
+                        } else {
+                            // Bearish Trigger: Wait for price <= trigger
+                            // (Or if start == trigger, we trigger immediately/next tick)
+                            if price <= trigger {
+                                info!(
+                                    "Price {} crossed trigger {} (DOWN). Starting.",
+                                    price, trigger
+                                );
+                                triggered = true;
+                            }
+                        }
+                    } else {
+                        // Fallback if start_price missing (shouldn't happen)
+                        let dist = (price - trigger).abs();
+                        if dist <= trigger * 0.001 {
+                            // 0.1% tolerance
+                            info!("Price {} hit trigger {} (~0.1%). Starting.", price, trigger);
+                            triggered = true;
+                        }
                     }
+
+                    if triggered {
+                        self.state = StrategyState::Running;
+                        self.refresh_orders(ctx);
+                    }
+                } else {
+                    // Should not happen if state is WaitingForTrigger
+                    self.state = StrategyState::Running;
                 }
             }
             StrategyState::AcquiringAssets { .. } => {
@@ -418,5 +470,114 @@ impl Strategy for SpotGridStrategy {
             zone.order_id = None;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::strategy::StrategyConfig;
+    use crate::engine::context::{MarketInfo, StrategyContext};
+
+    #[test]
+    fn test_spot_grid_passive_trigger() {
+        // Scenario: Assets Sufficient. Wait for trigger.
+        // Start Price: 100. Trigger: 105. Expect: Wait until > 105.
+
+        let config = StrategyConfig::SpotGrid {
+            symbol: "HYPE/USDC".to_string(),
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 5,
+            total_investment: 1000.0,
+            trigger_price: Some(105.0),
+        };
+
+        let mut strategy = SpotGridStrategy::new(config);
+
+        let mut markets = HashMap::new();
+        markets.insert(
+            "HYPE/USDC".to_string(),
+            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
+        );
+        let mut ctx = StrategyContext::new(markets);
+        ctx.set_balance("HYPE".to_string(), 100.0); // Sufficient assets
+
+        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
+            info.last_price = 100.0;
+        }
+
+        // Tick 1: Initialization. Should transition to Initializing -> WaitingForTrigger.
+        // Strategy starts in Initializing.
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // initialize_zones runs. Finds Assets OK. Trigger Set. -> WaitingForTrigger.
+        match strategy.state {
+            StrategyState::WaitingForTrigger => (),
+            _ => panic!("Expected WaitingForTrigger, got {:?}", strategy.state),
+        }
+        assert_eq!(strategy.start_price, Some(100.0));
+
+        // Tick 2: Price increase but below trigger
+        strategy.on_tick(104.0, &mut ctx).unwrap();
+        match strategy.state {
+            StrategyState::WaitingForTrigger => (),
+            _ => panic!("Expected WaitingForTrigger, got {:?}", strategy.state),
+        }
+
+        // Tick 3: Price crosses trigger (105.1)
+        strategy.on_tick(105.1, &mut ctx).unwrap();
+        match strategy.state {
+            StrategyState::Running => (),
+            _ => panic!("Expected Running, got {:?}", strategy.state),
+        }
+    }
+
+    #[test]
+    fn test_spot_grid_acquisition_trigger() {
+        // Scenario: Low Assets. Trigger defined.
+        // Expect: Immediate buy order @ TriggerPrice. State -> AcquiringAssets.
+
+        let config = StrategyConfig::SpotGrid {
+            symbol: "HYPE/USDC".to_string(),
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 5,
+            total_investment: 1000.0,
+            trigger_price: Some(105.0),
+        };
+
+        let mut strategy = SpotGridStrategy::new(config);
+
+        let mut markets = HashMap::new();
+        markets.insert(
+            "HYPE/USDC".to_string(),
+            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
+        );
+        let mut ctx = StrategyContext::new(markets);
+        ctx.set_balance("HYPE".to_string(), 0.0); // Zero assets
+
+        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
+            info.last_price = 100.0;
+        }
+
+        // Tick 1: Initialization -> Acquisition
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        match strategy.state {
+            StrategyState::AcquiringAssets { .. } => (),
+            _ => panic!("Expected AcquiringAssets, got {:?}", strategy.state),
+        }
+
+        // Check placed order
+        assert_eq!(ctx.order_queue.len(), 1);
+        match &ctx.order_queue[0] {
+            crate::model::OrderRequest::Limit { price, .. } => {
+                assert_eq!(*price, 105.0); // Should be trigger price
+            }
+            _ => panic!("Expected Limit order"),
+        }
     }
 }

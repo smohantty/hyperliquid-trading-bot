@@ -506,22 +506,6 @@ impl Strategy for SpotGridStrategy {
                         );
                     }
                 }
-
-                // Track fees for Buy orders too
-                if matches!(zone.state, ZoneState::WaitingSell) {
-                    // If we just entered WaitingSell, it means we filled a BUY
-                    // The logic above updated struct for SELL (WaitingSell -> WaitingBuy)
-                    // But we also need to track fees for the BUY side which sets us to WaitingSell
-                    // However, we just processed the state change logic.
-                    // Let's refine: The match block handles the transitions.
-                    // For WaitingBuy -> we transition to WaitingSell.
-                    // For WaitingSell -> we transition to WaitingBuy.
-
-                    // We need to add fee to zone/strategy in both cases.
-
-                    // Note: match arm `ZoneState::WaitingBuy` handles the BUY fill.
-                    // We should inject fee logic there.
-                }
             } else {
                 debug!("Fill received for unknown/inactive CLOID: {}", cloid_val);
             }

@@ -61,8 +61,7 @@ impl MarketInfo {
             return 0.0;
         }
         let min_sz = min_value / price;
-        self.round_size(min_sz + 10f64.powi(-(self.sz_decimals as i32))) // Add 1 tick to ensure it's STRICTLY equal or greater after rounding
-            .max(self.round_size(min_sz))
+        self.round_size(min_sz)
     }
 }
 

@@ -12,6 +12,13 @@ use std::collections::HashMap;
 // Updated imports based on documentation discovery
 use hyperliquid_rust_sdk::{ClientLimit, ClientOrder, ClientOrderRequest, UserData};
 
+struct PendingOrder {
+    target_size: f64,
+    filled_size: f64,
+    weighted_avg_px: f64,
+    side: String,
+}
+
 pub struct Engine {
     config: StrategyConfig,
     exchange_config: crate::config::exchange::ExchangeConfig,
@@ -137,31 +144,6 @@ impl Engine {
 
         let mut ctx = StrategyContext::new(markets);
 
-        // --- State Management: LOAD ---
-        let state_dir = std::path::Path::new("state");
-        if !state_dir.exists() {
-            std::fs::create_dir_all(state_dir)?;
-        }
-        let strategy_type_name = self.config.type_name();
-        let state_filename = format!(
-            "state_{}_{}.json",
-            strategy_type_name.replace(" ", "_").to_lowercase(),
-            target_symbol.replace("/", "_")
-        );
-        let state_path = state_dir.join(state_filename);
-
-        if state_path.exists() {
-            info!("Found existing state file: {:?}", state_path);
-            match std::fs::read_to_string(&state_path) {
-                Ok(content) => {
-                    if let Err(e) = strategy.load_state(&content) {
-                        error!("Failed to load strategy state: {}. Starting fresh.", e);
-                    }
-                }
-                Err(e) => error!("Failed to read state file: {}", e),
-            }
-        }
-
         // Retrieve context for subscription
         let market_info = ctx.market_info(target_symbol).unwrap();
         info!(
@@ -190,23 +172,14 @@ impl Engine {
             .map_err(|e| anyhow!("Failed to subscribe to UserEvents: {}", e))?;
         info!("Subscribed to UserEvents for {:?}.", user_address);
 
+        let mut pending_orders: HashMap<uuid::Uuid, PendingOrder> = HashMap::new();
+
         // 6. Start Event Loop
         info!("Starting Event Loop...");
         loop {
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     info!("Shutdown signal received. Stopping Engine...");
-                    // --- State Management: SAVE on Exit ---
-                    match strategy.save_state() {
-                        Ok(json) => {
-                            if let Err(e) = std::fs::write(&state_path, json) {
-                                error!("Failed to save state on exit: {}", e);
-                            } else {
-                                info!("State saved successfully to {:?}", state_path);
-                            }
-                        },
-                        Err(e) => error!("Failed to serialize state: {}", e),
-                    }
                     break;
                 }
                 Some(message) = receiver.recv() => {
@@ -226,18 +199,16 @@ impl Engine {
                                      }
 
                                      // Execute Order Queue
-                                     let mut order_placed = false;
                                      while let Some(order_req) = ctx.order_queue.pop() {
                                         info!("Processing Order Request: {:?}", order_req);
 
-                                        // Mapping to SDK types
-                                        let (is_buy, limit_px, sz, reduce_only, order_type, cloid) = match order_req {
+                                        let (is_buy, limit_px, sz, reduce_only, order_type, cloid, target_sz) = match order_req {
                                             crate::model::OrderRequest::Limit { symbol: _, is_buy, price, sz, reduce_only, cloid } => {
                                                 (is_buy, price, sz, reduce_only, ClientOrder::Limit(
                                                     ClientLimit {
                                                         tif: "Gtc".to_string(), // Good Till Cancelled
                                                     }
-                                                ), cloid)
+                                                ), cloid, sz)
                                             },
                                             crate::model::OrderRequest::Market { symbol: _, is_buy, sz, cloid } => {
                                                     let aggressive_price = if is_buy {
@@ -250,8 +221,8 @@ impl Engine {
                                                         ClientLimit {
                                                             tif: "Ioc".to_string(), // Immediate or Cancel for Pseudo-Market
                                                         }
-                                                    ), cloid)
-                                            }
+                                                    ), cloid, sz)
+                                            },
                                         };
 
                                         let sdk_req = ClientOrderRequest {
@@ -268,7 +239,15 @@ impl Engine {
                                         match _exchange_client.order(sdk_req, None).await {
                                             Ok(res) => {
                                                 info!("Order placed successfully: {:?}", res);
-                                                order_placed = true;
+                                                // Record in pending_orders if cloid exists
+                                                if let Some(c) = cloid {
+                                                    pending_orders.insert(c, PendingOrder {
+                                                        target_size: target_sz,
+                                                        filled_size: 0.0,
+                                                        weighted_avg_px: 0.0,
+                                                        side: if is_buy { "B".to_string() } else { "S".to_string() },
+                                                    });
+                                                }
                                             },
                                             Err(e) => {
                                                 error!("Failed to place order: {:?}", e);
@@ -276,25 +255,13 @@ impl Engine {
                                         }
                                      }
 
-                                     // Save state after placing initial orders or rebalancing
-                                     if order_placed {
-                                        match strategy.save_state() {
-                                            Ok(json) => {
-                                                if let Err(e) = std::fs::write(&state_path, json) {
-                                                    error!("Failed to save state after order: {}", e);
-                                                }
-                                            },
-                                            Err(e) => error!("Failed to serialize state: {}", e),
-                                        }
-                                     }
+                                    }
                                  }
-                             }
-                        },
+                             },
                         hyperliquid_rust_sdk::Message::User(user_events) => {
                             debug!("User Event: {:?}", user_events);
                             let user_events_data = user_events.data;
                             if let UserData::Fills(fills) = user_events_data {
-                                let mut fill_processed = false;
                                 for fill in fills {
                                     let amount: f64 = fill.sz.parse().unwrap_or(0.0);
                                     let px: f64 = fill.px.parse().unwrap_or(0.0);
@@ -306,22 +273,38 @@ impl Engine {
                                         None
                                     };
 
-                                    // Pass to strategy
-                                    if let Err(e) = strategy.on_order_filled(&fill.side, amount, px, cloid, &mut ctx) {
-                                        error!("Strategy on_order_filled error: {}", e);
-                                    }
-                                    fill_processed = true;
-                                }
+                                    // Pass to strategy or aggregate
+                                    if let Some(c) = cloid {
+                                        if let Some(pending) = pending_orders.get_mut(&c) {
+                                            let new_total_size = pending.filled_size + amount;
+                                            pending.weighted_avg_px = (pending.weighted_avg_px * pending.filled_size + px * amount) / new_total_size;
+                                            pending.filled_size = new_total_size;
 
-                                if fill_processed {
-                                    // Save state after fills
-                                    match strategy.save_state() {
-                                        Ok(json) => {
-                                            if let Err(e) = std::fs::write(&state_path, json) {
-                                                error!("Failed to save state after fill: {}", e);
+                                            info!("Order progress for {}: {}/{} filled at avg px {}", c, pending.filled_size, pending.target_size, pending.weighted_avg_px);
+
+                                            if pending.filled_size >= pending.target_size * 0.9999 { // Handle floating point math
+                                                info!("Order {} fully filled. Notifying strategy.", c);
+                                                let side = pending.side.clone();
+                                                let final_px = pending.weighted_avg_px;
+                                                let final_sz = pending.filled_size;
+                                                pending_orders.remove(&c);
+
+                                                if let Err(e) = strategy.on_order_filled(&side, final_sz, final_px, Some(c), &mut ctx) {
+                                                    error!("Strategy on_order_filled error: {}", e);
+                                                }
                                             }
-                                        },
-                                        Err(e) => error!("Failed to serialize state: {}", e),
+                                        } else {
+                                            // Fallback for orders not tracked (e.g. from previous bot run)
+                                            debug!("Fill for untracked cloid {}. Forwarding immediately.", c);
+                                            if let Err(e) = strategy.on_order_filled(&fill.side, amount, px, Some(c), &mut ctx) {
+                                                error!("Strategy on_order_filled error: {}", e);
+                                            }
+                                        }
+                                    } else {
+                                        // No cloid - forward immediately
+                                        if let Err(e) = strategy.on_order_filled(&fill.side, amount, px, None, &mut ctx) {
+                                            error!("Strategy on_order_filled error: {}", e);
+                                        }
                                     }
                                 }
                             }

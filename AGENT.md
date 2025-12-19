@@ -1,48 +1,53 @@
 # Hyperliquid Trading Bot Agent Context
 
 ## Project Goal
-Build a robust, modular, and user-friendly trading bot for the Hyperliquid exchange (Spot and Perpetual markets), written in Rust. The bot supports multiple strategies, configuration via TOML/CLI/Interactive Wizard, and secure credential management.
+Build a robust, modular, and high-performance trading bot for the Hyperliquid exchange (Spot and Perpetual markets) using Rust. The bot features real-time WebSocket interaction, state persistence, and bidirectional grid strategies.
 
-## Project Structure
+## System Architecture
 
-### Core
-- **`src/main.rs`**: Application entry point. Handles CLI arguments (`clap`), initializes configuration, and starts the selected strategy.
-- **`src/lib.rs`**: Crate root, exposing modules.
-- **`src/error.rs`**: Centralized error handling using `thiserror` (`BotError`).
+### 1. Core Engine (`src/engine/`)
+- **`mod.rs`**: The heart of the bot. Orchestrates the WebSocket event loop (AllMids, UserEvents), handles order placement via `ExchangeClient`, and routes events to strategies.
+- **`context.rs`**: Provides `StrategyContext`, an abstraction layer for strategies to place orders, query market metadata, and check balances without knowing SDK internals.
+- **`state/`**: Local directory for JSON state files. Persistence is handled by the engine at startup, shutdown, and after significant events (fills/placements).
 
-### Configuration (`src/config/`)
-- **`mod.rs`**: Module definition and config validation logic.
-- **`strategy.rs`**: Defines `StrategyConfig` enum (tagged by `type`) and parameter structs (`SpotGrid`, `PerpGrid`). Includes helper methods (`type_name`, `symbol`) and help text generation.
-- **`exchange.rs`**: Handles loading secure credentials (`private_key`, `api_key`) and network settings from `.env` using `dotenvy`.
-- **`creator.rs`**: Interactive CLI wizard (`dialoguer`) for generating strategy configuration files with smart filename suggestions.
+### 2. Strategy Layer (`src/strategy/`)
+- **`mod.rs`**: Defines the `Strategy` trait with methods for `on_tick`, `on_order_filled`, and state management (`save_state`/`load_state`).
+- **`spot_grid.rs`**: Advanced spot grid with arithmetic/geometric spacing and CLOID-based fill matching.
+- **`perp_grid.rs`**: Bidirectional perpetual grid with:
+    - **Grid Bias**: `Long`, `Short`, and `Neutral` modes.
+    - **Leverage Support**: Dynamic position sizing based on account leverage.
+    - **PnL Handling**: Correct entry/exit math for both long and short positions.
 
-### Strategy Engine (`src/strategy/`)
-- **`mod.rs`**: Defines the `Strategy` trait (with `run()` method) and the `init_strategy` factory function.
-- **`spot_grid.rs`**: Implementation of the Spot Grid strategy.
-- **`perp_grid.rs`**: Implementation of the Perpetual Grid strategy.
+### 3. Configuration Management (`src/config/`)
+- **`strategy.rs`**: Strong types for all strategy parameters, including `GridBias`, `GridType`, and `leverage`.
+- **`creator.rs`**: Interactive CLI wizard using `dialoguer` to safely generate TOML configs.
+- **`exchange.rs`**: credential loading from `.env` using `dotenvy`.
 
-## Key Features
-1.  **Modular Strategy System**: Easily extensible `Strategy` trait.
-2.  **Robust Configuration**:
-    -   TOML-based config files.
-    -   Strong typing and validation (e.g., `SpotGrid` vs `PerpGrid` params).
-    -   Auto-validation of logical constraints (e.g., `upper_price > lower_price`).
-3.  **CLI Interface**:
-    -   `--config <PATH>`: Run with a specific config.
-    -   `--list-strategies`: documentation.
-    -   `--create`: Interactive wizard to generate configs.
-    -   `--help`: Standard help.
-4.  **Security**:
-    -   Credentials loaded from `.env` (gitignored).
-    -   Never hardcoded in source.
+## Key Technical Design Decisions
 
-## Development Workflow
--   **Run Bot**: `cargo run -- --config configs/your_config.toml`
--   **Create Config**: `cargo run -- --create`
--   **List Strategies**: `cargo run -- --list-strategies`
--   **Check**: `cargo check`
--   **Test**: `cargo test`
+### CLOID Order Matching
+The bot uses `uuid::Uuid` as Client Order IDs (CLOIDs).
+- **Match-on-Fill**: When a `UserEvent::Fill` arrives, the `Engine` passes the `cloid` to the strategy.
+- **Resilience**: Strategies use an `active_orders: HashMap<Uuid, usize>` to instantly map fills back to specific grid zones, even across restarts.
 
-## Current Status
--   **Phase 1-5 Complete**: Core config, strategies (mock logic), CLI, Validation, Interactive Creator, Env support.
--   **Next Steps**: Implement actual trading logic using Hyperliquid SDK (Phase 6+).
+### State Persistence
+- **Format**: JSON (`serde_json`).
+- **Storage**: `state/state_{strategy_type}_{symbol}.json`.
+- **Sync**: State is saved proactively after every successful order placement and fill, ensuring no data loss on crashes.
+
+### Safety Mechanisms
+- **Safe Mode**: Toggleable in `main.rs` to simulate trading without sending orders to the exchange.
+- **Precision Handling**: The bot fetches `szDecimals` and `pxDecimals` from Hyperliquid metadata to ensure all orders satisfy exchange constraints.
+
+## Current Status (Phases 1-6 Complete)
+- [x] Core Config & CLI Wizard
+- [x] WebSocket Event Loop & Info/Exchange Client Integration
+- [x] Spot Grid Strategy (Live Trading Verified)
+- [x] State Persistence (JSON File-based)
+- [x] Perpetual Grid Strategy (Bidirectional, Biased, Leveraged)
+- [x] Testnet Verification (Live Order Flow Confirmed)
+
+## Development workflow
+- **Run Bot**: `cargo run -- --config configs/your_config.toml`
+- **Interactive Setup**: `cargo run -- --create`
+- **Environment**: Ensure `.env` contains `PRIVATE_KEY` and optionally `NETWORK=testnet`.

@@ -1,0 +1,8 @@
+type = "spot_grid"
+symbol = "ETH"
+upper_price = 3000.0
+lower_price = 2000.0
+grid_type = "arithmetic"
+grid_count = 10
+total_investment = 100.0
+trigger_price = 2500.0

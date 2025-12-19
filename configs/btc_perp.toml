@@ -1,0 +1,6 @@
+type = "perp_grid"
+symbol = "BTC"
+leverage = 10
+is_isolated = true
+grid_count = 20
+range_percent = 5.0

@@ -1,7 +1,8 @@
 type = "spot_grid"
 symbol = "HYPE/USDC"
-lower_price = 23.0
-upper_price = 24.3
+lower_price = 22.0
+upper_price = 25
 grid_type = "geometric"
-grid_count = 10
-total_investment = 100.0
+grid_count = 20
+total_investment = 300.0
+trigger_price = 23.5

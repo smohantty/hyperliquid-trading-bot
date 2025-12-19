@@ -379,6 +379,14 @@ impl Strategy for SpotGridStrategy {
                         size, px, fee
                     );
                     self.total_fees += fee;
+
+                    // Update entry_price for all waiting SELL zones to the actual acquisition price
+                    for zone in &mut self.zones {
+                        if zone.state == ZoneState::WaitingSell {
+                            zone.entry_price = px;
+                        }
+                    }
+
                     self.state = StrategyState::Running;
                     self.refresh_orders(ctx);
                     return Ok(());
@@ -618,6 +626,30 @@ mod tests {
                 assert_eq!(*price, 105.0); // Should be trigger price
             }
             _ => panic!("Expected Limit order"),
+        }
+
+        // Simulate Fill for Acquisition Order
+        let fill_price = 104.5;
+        let fill_size = 10.0; // Needs to cover deficit
+        let fee = 0.05;
+        let acq_cloid = match strategy.state {
+            StrategyState::AcquiringAssets { cloid } => cloid,
+            _ => panic!("Lost AcquiringAssets state"),
+        };
+
+        strategy
+            .on_order_filled("B", fill_size, fill_price, fee, Some(acq_cloid), &mut ctx)
+            .unwrap();
+
+        // Verify that WaitingSell zones now have entry_price = fill_price
+        for zone in &strategy.zones {
+            if zone.state == ZoneState::WaitingSell {
+                assert_eq!(
+                    zone.entry_price, fill_price,
+                    "Zone {} entry price mismatch",
+                    zone.index
+                );
+            }
         }
     }
     #[test]

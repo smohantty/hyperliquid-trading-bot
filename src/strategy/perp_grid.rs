@@ -43,4 +43,20 @@ impl Strategy for PerpGridStrategy {
         // Placeholder for grid logic
         Ok(())
     }
+    fn on_order_filled(
+        &mut self,
+        side: &str,
+        size: f64,
+        px: f64,
+        _ctx: &mut StrategyContext,
+    ) -> Result<()> {
+        log::info!(
+            "PerpGridStrategy: Order Filled - Side: {}, Size: {}, Price: {}",
+            side,
+            size,
+            px
+        );
+        // Grid Logic to place next order would go here
+        Ok(())
+    }
 }

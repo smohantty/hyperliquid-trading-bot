@@ -1,8 +1,11 @@
+use crate::model::OrderRequest;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct MarketInfo {
     pub symbol: String,
+    pub coin: String, // API identifier
+    pub asset_index: u32,
     pub sz_decimals: u32,
     pub price_decimals: u32,
     pub last_price: f64,
@@ -25,9 +28,17 @@ fn round_to_significant_and_decimal(value: f64, sig_figs: u32, max_decimals: u32
 }
 
 impl MarketInfo {
-    pub fn new(symbol: String, sz_decimals: u32, price_decimals: u32) -> Self {
+    pub fn new(
+        symbol: String,
+        coin: String,
+        asset_index: u32,
+        sz_decimals: u32,
+        price_decimals: u32,
+    ) -> Self {
         Self {
             symbol,
+            coin,
+            asset_index,
             sz_decimals,
             price_decimals,
             last_price: 0.0,
@@ -46,14 +57,15 @@ impl MarketInfo {
 
 pub struct StrategyContext {
     pub markets: HashMap<String, MarketInfo>,
-    // In the future, this will hold the ExchangeClient or a channel to send orders to the Engine
-    // For now, we keep it simple.
-    // We might need to pass the Engine's command sender here.
+    pub order_queue: Vec<OrderRequest>,
 }
 
 impl StrategyContext {
     pub fn new(markets: HashMap<String, MarketInfo>) -> Self {
-        Self { markets }
+        Self {
+            markets,
+            order_queue: Vec::new(),
+        }
     }
 
     pub fn market_info(&self, symbol: &str) -> Option<&MarketInfo> {
@@ -64,6 +76,25 @@ impl StrategyContext {
         self.markets.get_mut(symbol)
     }
 
-    // Placeholder for order placement
-    // pub fn place_order(...) {}
+    pub fn place_limit_order(
+        &mut self,
+        symbol: String,
+        is_buy: bool,
+        price: f64,
+        sz: f64,
+        reduce_only: bool,
+    ) {
+        self.order_queue.push(OrderRequest::Limit {
+            symbol,
+            is_buy,
+            price,
+            sz,
+            reduce_only,
+        });
+    }
+
+    pub fn place_market_order(&mut self, symbol: String, is_buy: bool, sz: f64) {
+        self.order_queue
+            .push(OrderRequest::Market { symbol, is_buy, sz });
+    }
 }

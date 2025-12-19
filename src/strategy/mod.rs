@@ -9,7 +9,15 @@ use anyhow::Result;
 
 pub trait Strategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()>;
-    // TODO: Add on_order_filled when we have the Order struct definition
+    // Generic fill handling - using a minimal struct or SDK type?
+    // Using simple arguments for now to match UserEvents parsing plan
+    fn on_order_filled(
+        &mut self,
+        side: &str,
+        size: f64,
+        px: f64,
+        ctx: &mut StrategyContext,
+    ) -> Result<()>;
 }
 
 pub fn init_strategy(config: StrategyConfig) -> Box<dyn Strategy> {

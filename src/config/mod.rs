@@ -2,6 +2,7 @@ use self::strategy::StrategyConfig;
 use crate::error::BotError;
 use std::fs;
 
+pub mod creator;
 pub mod strategy;
 
 pub fn load_config(path: &str) -> Result<StrategyConfig, BotError> {
@@ -14,6 +15,7 @@ pub fn load_config(path: &str) -> Result<StrategyConfig, BotError> {
 fn validate_config(config: &StrategyConfig) -> Result<(), BotError> {
     match config {
         StrategyConfig::SpotGrid {
+            symbol,
             upper_price,
             lower_price,
             grid_count,
@@ -21,6 +23,11 @@ fn validate_config(config: &StrategyConfig) -> Result<(), BotError> {
             trigger_price,
             ..
         } => {
+            if !symbol.ends_with("/USDC") || symbol == "/USDC" {
+                return Err(BotError::ValidationError(
+                    "Spot symbol must be in 'Asset/USDC' format".into(),
+                ));
+            }
             if *grid_count == 0 {
                 return Err(BotError::ValidationError("Grid count must be > 0".into()));
             }

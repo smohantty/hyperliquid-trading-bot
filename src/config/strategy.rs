@@ -1,13 +1,13 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum GridType {
     Arithmetic,
     Geometric,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(tag = "type")]
 pub enum StrategyConfig {
     #[serde(rename = "spot_grid")]
@@ -37,7 +37,7 @@ pub fn print_strategy_help() {
     println!("1. Spot Grid Strategy (type = 'spot_grid')");
     println!("   Description: A grid trading strategy for spot markets.");
     println!("   Parameters:");
-    println!("     - symbol (String): The trading pair symbol (e.g., 'ETH').");
+    println!("     - symbol (String): The trading pair symbol (e.g., 'ETH/USDC').");
     println!("     - upper_price (f64): The upper bound of the grid range.");
     println!("     - lower_price (f64): The lower bound of the grid range.");
     println!("     - grid_type (String): 'arithmetic' or 'geometric'.");

@@ -181,9 +181,10 @@ impl SpotGridStrategy {
                 acquisition_price = market_info.round_price(self.zones[0].lower_price);
             }
 
-            // Check if deficit is significant (or if we need to buy at least min size)
+            // Apply 0.5% safety buffer to cover exchange fees, ensuring we have enough for SELL orders
+            let deficit_with_buffer = deficit * 1.005;
             let min_acq_sz = market_info.ensure_min_sz(acquisition_price, 10.1);
-            let rounded_deficit = min_acq_sz.max(market_info.round_size(deficit));
+            let rounded_deficit = min_acq_sz.max(market_info.round_size(deficit_with_buffer));
 
             if rounded_deficit > 0.0 {
                 info!(

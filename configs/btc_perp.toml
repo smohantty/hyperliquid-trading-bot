@@ -1,6 +1,9 @@
 type = "perp_grid"
 symbol = "BTC"
 leverage = 10
-is_isolated = true
-grid_count = 20
-range_percent = 5.0
+upper_price = 90000.0
+lower_price = 85000.0
+grid_type = "geometric"
+grid_count = 10
+total_investment = 100.0
+grid_bias = "neutral"

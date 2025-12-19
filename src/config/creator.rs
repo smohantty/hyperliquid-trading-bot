@@ -1,4 +1,4 @@
-use crate::config::strategy::{GridType, StrategyConfig};
+use crate::config::strategy::{GridBias, GridType, StrategyConfig};
 use anyhow::Result;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use std::fs;
@@ -148,20 +148,66 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         .default(true)
         .interact()?;
 
+    let lower_price: f64 = Input::with_theme(theme)
+        .with_prompt("Lower Price")
+        .interact_text()?;
+
+    let upper_price: f64 = Input::with_theme(theme)
+        .with_prompt("Upper Price")
+        .validate_with(|input: &f64| -> Result<(), &str> {
+            if *input > lower_price {
+                Ok(())
+            } else {
+                Err("Upper price must be greater than lower price")
+            }
+        })
+        .interact_text()?;
+
+    let grid_types = vec!["Arithmetic", "Geometric"];
+    let grid_type_sel = Select::with_theme(theme)
+        .with_prompt("Grid Type")
+        .default(0)
+        .items(&grid_types)
+        .interact()?;
+
+    let grid_type = if grid_type_sel == 0 {
+        GridType::Arithmetic
+    } else {
+        GridType::Geometric
+    };
+
     let grid_count: u32 = Input::with_theme(theme)
         .with_prompt("Grid Count")
         .interact_text()?;
 
-    let range_percent: f64 = Input::with_theme(theme)
-        .with_prompt("Range Percentage (e.g., 0.1 for 10%)")
+    let total_investment: f64 = Input::with_theme(theme)
+        .with_prompt("Total Investment (USDC)")
         .interact_text()?;
+
+    let bias_types = vec!["Neutral", "Long", "Short"];
+    let bias_sel = Select::with_theme(theme)
+        .with_prompt("Grid Bias")
+        .default(0)
+        .items(&bias_types)
+        .interact()?;
+
+    let grid_bias = match bias_sel {
+        0 => GridBias::Neutral,
+        1 => GridBias::Long,
+        2 => GridBias::Short,
+        _ => GridBias::Neutral,
+    };
 
     Ok(StrategyConfig::PerpGrid {
         symbol,
         leverage,
         is_isolated,
+        lower_price,
+        upper_price,
+        grid_type,
         grid_count,
-        range_percent,
+        total_investment,
+        grid_bias,
     })
 }
 
@@ -184,10 +230,15 @@ fn generate_default_filename(config: &StrategyConfig) -> String {
         StrategyConfig::PerpGrid {
             symbol,
             leverage,
-            range_percent,
+            grid_bias,
+            lower_price,
+            upper_price,
             ..
         } => {
-            format!("{}_Perp_{}x_{}pct.toml", symbol, leverage, range_percent)
+            format!(
+                "{}_Perp_{:?}_{}x_{}_{}.toml",
+                symbol, grid_bias, leverage, lower_price, upper_price
+            )
         }
     }
 }

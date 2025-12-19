@@ -219,7 +219,7 @@ impl Strategy for SpotGridStrategy {
 
     fn on_order_filled(
         &mut self,
-        side: &str,
+        _side: &str,
         size: f64,
         px: f64,
         cloid: Option<uuid::Uuid>,

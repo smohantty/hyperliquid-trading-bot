@@ -7,6 +7,14 @@ pub enum GridType {
     Geometric,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum GridBias {
+    Long,
+    Short,
+    Neutral,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(tag = "type")]
 pub enum StrategyConfig {
@@ -25,10 +33,19 @@ pub enum StrategyConfig {
     PerpGrid {
         symbol: String,
         leverage: u32,
+        #[serde(default = "default_is_isolated")]
         is_isolated: bool,
+        upper_price: f64,
+        lower_price: f64,
+        grid_type: GridType,
         grid_count: u32,
-        range_percent: f64,
+        total_investment: f64,
+        grid_bias: GridBias,
     },
+}
+
+fn default_is_isolated() -> bool {
+    true
 }
 
 impl StrategyConfig {
@@ -67,8 +84,12 @@ pub fn print_strategy_help() {
     println!("   Parameters:");
     println!("     - symbol (String): The trading pair symbol (e.g., 'BTC').");
     println!("     - leverage (u32): Leverage multiplier (1-50x).");
-    println!("     - is_isolated (bool): Isolated margin mode.");
+    println!("     - is_isolated (bool): Isolated margin mode (default: true).");
+    println!("     - upper_price (f64): The upper bound of the grid range.");
+    println!("     - lower_price (f64): The lower bound of the grid range.");
+    println!("     - grid_type (String): 'arithmetic' or 'geometric'.");
     println!("     - grid_count (u32): Number of grid levels.");
-    println!("     - range_percent (f64): Price range percentage.");
+    println!("     - total_investment (f64): Total cost basis in USDC.");
+    println!("     - grid_bias (String): 'long', 'short', or 'neutral'.");
     println!();
 }

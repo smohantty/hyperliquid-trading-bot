@@ -21,10 +21,6 @@ pub trait Strategy {
     ) -> Result<()>;
 
     fn on_order_failed(&mut self, cloid: u128, ctx: &mut StrategyContext) -> Result<()>;
-
-    // State management
-    fn save_state(&self) -> Result<String>;
-    fn load_state(&mut self, state: &str) -> Result<()>;
 }
 
 pub fn init_strategy(config: StrategyConfig) -> Box<dyn Strategy> {

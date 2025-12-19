@@ -1,17 +1,17 @@
 # Hyperliquid Trading Bot Agent Context
 
 ## Project Goal
-Build a robust, modular, and high-performance trading bot for the Hyperliquid exchange (Spot and Perpetual markets) using Rust. The bot features real-time WebSocket interaction, state persistence, and bidirectional grid strategies.
+Build a robust, modular, and high-performance trading bot for the Hyperliquid exchange (Spot and Perpetual markets) using Rust. The bot features real-time WebSocket interaction and bidirectional grid strategies.
 
 ## System Architecture
 
 ### 1. Core Engine (`src/engine/`)
 - **`mod.rs`**: The heart of the bot. Orchestrates the WebSocket event loop (AllMids, UserEvents), handles order placement via `ExchangeClient`, and routes events to strategies.
 - **`context.rs`**: Provides `StrategyContext`, an abstraction layer for strategies to place orders, query market metadata, and check balances without knowing SDK internals.
-- **`state/`**: Local directory for JSON state files. Persistence is handled by the engine at startup, shutdown, and after significant events (fills/placements).
+
 
 ### 2. Strategy Layer (`src/strategy/`)
-- **`mod.rs`**: Defines the `Strategy` trait with methods for `on_tick`, `on_order_filled`, and state management (`save_state`/`load_state`).
+- **`mod.rs`**: Defines the `Strategy` trait with methods for `on_tick` and `on_order_filled`.
 - **`spot_grid.rs`**: Advanced spot grid with arithmetic/geometric spacing and CLOID-based fill matching.
 - **`perp_grid.rs`**: Bidirectional perpetual grid with:
     - **Grid Bias**: `Long`, `Short`, and `Neutral` modes.
@@ -30,11 +30,6 @@ The bot uses `uuid::Uuid` as Client Order IDs (CLOIDs).
 - **Match-on-Fill**: When a `UserEvent::Fill` arrives, the `Engine` passes the `cloid` to the strategy.
 - **Resilience**: Strategies use an `active_orders: HashMap<Uuid, usize>` to instantly map fills back to specific grid zones, even across restarts.
 
-### State Persistence
-- **Format**: JSON (`serde_json`).
-- **Storage**: `state/state_{strategy_type}_{symbol}.json`.
-- **Sync**: State is saved proactively after every successful order placement and fill, ensuring no data loss on crashes.
-
 ### Safety Mechanisms
 - **Safe Mode**: Toggleable in `main.rs` to simulate trading without sending orders to the exchange.
 - **Precision Handling**: The bot fetches `szDecimals` and `pxDecimals` from Hyperliquid metadata to ensure all orders satisfy exchange constraints.
@@ -43,7 +38,7 @@ The bot uses `uuid::Uuid` as Client Order IDs (CLOIDs).
 - [x] Core Config & CLI Wizard
 - [x] WebSocket Event Loop & Info/Exchange Client Integration
 - [x] Spot Grid Strategy (Live Trading Verified)
-- [x] State Persistence (JSON File-based)
+
 - [x] Perpetual Grid Strategy (Bidirectional, Biased, Leveraged)
 - [x] Testnet Verification (Live Order Flow Confirmed)
 

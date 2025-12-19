@@ -337,47 +337,4 @@ impl Strategy for PerpGridStrategy {
         }
         Ok(())
     }
-
-    fn save_state(&self) -> Result<String> {
-        #[derive(Serialize)]
-        struct FullGridState {
-            zones: Vec<GridZone>,
-            active_orders: HashMap<u128, usize>,
-            trade_count: u32,
-            state: StrategyState,
-        }
-        let full_state = FullGridState {
-            zones: self.zones.clone(),
-            active_orders: self.active_orders.clone(),
-            trade_count: self.trade_count,
-            state: self.state,
-        };
-        serde_json::to_string(&full_state).map_err(|e| anyhow!("Serialization error: {}", e))
-    }
-
-    fn load_state(&mut self, state: &str) -> Result<()> {
-        #[derive(Deserialize)]
-        struct FullGridState {
-            zones: Vec<GridZone>,
-            active_orders: HashMap<u128, usize>,
-            trade_count: u32,
-            state: StrategyState,
-        }
-        let full_state: FullGridState =
-            serde_json::from_str(state).map_err(|e| anyhow!("Deserialization error: {}", e))?;
-
-        self.zones = full_state.zones;
-        self.active_orders = full_state.active_orders;
-        self.trade_count = full_state.trade_count;
-        self.state = full_state.state;
-
-        info!(
-            "Loaded state for {}: {} zones, {} active orders, state: {:?}",
-            self.symbol,
-            self.zones.len(),
-            self.active_orders.len(),
-            self.state
-        );
-        Ok(())
-    }
 }

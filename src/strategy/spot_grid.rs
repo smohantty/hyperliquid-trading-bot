@@ -32,8 +32,6 @@ struct GridZone {
     order_id: Option<u128>,
 
     // Performance Metrics
-    total_pnl: f64,
-    total_fees: f64,
     roundtrip_count: u32,
 }
 
@@ -168,8 +166,6 @@ impl SpotGridStrategy {
                     0.0
                 },
                 order_id: None,
-                total_pnl: 0.0,
-                total_fees: 0.0,
                 roundtrip_count: 0,
             });
         }
@@ -412,8 +408,7 @@ impl Strategy for SpotGridStrategy {
                             zone_idx, px, size, fee, zone.upper_price
                         );
 
-                        // Update Fees (PnL only on close)
-                        zone.total_fees += fee;
+                        // Update Strategy Fees
                         self.total_fees += fee;
 
                         zone.state = ZoneState::WaitingSell;
@@ -444,8 +439,6 @@ impl Strategy for SpotGridStrategy {
                         let pnl = (px - zone.entry_price) * size;
 
                         // Update Zone Metrics
-                        zone.total_pnl += pnl;
-                        zone.total_fees += fee;
                         zone.roundtrip_count += 1;
 
                         // Update Strategy Metrics
@@ -725,7 +718,6 @@ mod tests {
         assert_eq!(strategy.total_fees, buy_fee);
         let zone = &strategy.zones[zone_idx];
         assert_eq!(zone.state, ZoneState::WaitingSell);
-        assert_eq!(zone.total_fees, buy_fee);
         assert_eq!(zone.entry_price, fill_price);
 
         // Get new Sell Order ID
@@ -757,8 +749,6 @@ mod tests {
 
         let zone = &strategy.zones[zone_idx];
         assert_eq!(zone.state, ZoneState::WaitingBuy); // Reset
-        assert_eq!(zone.total_pnl, expected_pnl);
-        assert_eq!(zone.total_fees, expected_total_fees);
         assert_eq!(zone.roundtrip_count, 1);
     }
 }

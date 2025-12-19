@@ -20,7 +20,8 @@ struct GridZone {
     upper_price: f64,
     size: f64,
     state: ZoneState,
-    entry_price: f64, // Used for PnL calculation
+    is_short_oriented: bool, // Handles Open Short -> Close Short vs Open Long -> Close Long
+    entry_price: f64,        // Used for PnL calculation
     order_id: Option<Uuid>,
 }
 
@@ -116,16 +117,16 @@ impl PerpGridStrategy {
             let size = (zone_investment * self.leverage as f64) / mid_price;
 
             // Determine initial state based on grid_bias
-            let state = match self.grid_bias {
+            let (state, is_short_oriented) = match self.grid_bias {
                 GridBias::Neutral => {
                     if mid_price > current_price {
-                        ZoneState::WaitingSell
+                        (ZoneState::WaitingSell, true)
                     } else {
-                        ZoneState::WaitingBuy
+                        (ZoneState::WaitingBuy, false)
                     }
                 }
-                GridBias::Long => ZoneState::WaitingBuy,
-                GridBias::Short => ZoneState::WaitingSell,
+                GridBias::Long => (ZoneState::WaitingBuy, false),
+                GridBias::Short => (ZoneState::WaitingSell, true),
             };
 
             self.zones.push(GridZone {
@@ -134,6 +135,7 @@ impl PerpGridStrategy {
                 upper_price: upper,
                 size,
                 state,
+                is_short_oriented,
                 entry_price: 0.0,
                 order_id: None,
             });
@@ -182,6 +184,45 @@ impl PerpGridStrategy {
         }
         Ok(())
     }
+
+    fn place_counter_order(
+        &mut self,
+        zone_idx: usize,
+        price: f64,
+        is_buy: bool,
+        ctx: &mut StrategyContext,
+    ) -> Result<()> {
+        let zone = &mut self.zones[zone_idx];
+        let next_cloid = Uuid::new_v4();
+
+        let market_info = ctx
+            .market_info(&self.symbol)
+            .ok_or_else(|| anyhow!("Market info not found"))?;
+        let rounded_price = market_info.round_price(price);
+        let rounded_size = market_info.round_size(zone.size);
+
+        info!(
+            "Zone {} | Placing {:?} order @ {} (cloid: {})",
+            zone_idx,
+            if is_buy { "BUY" } else { "SELL" },
+            rounded_price,
+            next_cloid
+        );
+
+        self.active_orders.insert(next_cloid, zone_idx);
+        zone.order_id = Some(next_cloid);
+
+        ctx.place_limit_order(
+            self.symbol.clone(),
+            is_buy,
+            rounded_price,
+            rounded_size,
+            false,
+            Some(next_cloid),
+        );
+
+        Ok(())
+    }
 }
 
 impl Strategy for PerpGridStrategy {
@@ -202,75 +243,74 @@ impl Strategy for PerpGridStrategy {
     ) -> Result<()> {
         if let Some(cloid_val) = cloid {
             if let Some(zone_idx) = self.active_orders.remove(&cloid_val) {
-                let zone = &mut self.zones[zone_idx];
-                zone.order_id = None;
                 self.trade_count += 1;
 
-                match zone.state {
-                    ZoneState::WaitingBuy => {
-                        info!(
-                            "Zone {} | BUY Filled @ {} | Size: {} | Next: SELL @ {}",
-                            zone_idx, px, size, zone.upper_price
-                        );
+                let (next_px, is_next_buy) = {
+                    let zone = &mut self.zones[zone_idx];
+                    zone.order_id = None;
 
-                        zone.state = ZoneState::WaitingSell;
-                        zone.entry_price = px;
+                    let (next_state, entry_px, pnl, next_px, is_next_buy) = match (
+                        zone.state,
+                        zone.is_short_oriented,
+                    ) {
+                        (ZoneState::WaitingBuy, false) => {
+                            // OPEN LONG fill
+                            info!(
+                                "Zone {} | BUY (Open Long) Filled @ {} | Size: {} | Next: SELL (Close) @ {}",
+                                zone_idx, px, size, zone.upper_price
+                            );
+                            (ZoneState::WaitingSell, px, None, zone.upper_price, false)
+                        }
+                        (ZoneState::WaitingSell, false) => {
+                            // CLOSE LONG fill
+                            let pnl = (px - zone.entry_price) * size;
+                            info!(
+                                "Zone {} | SELL (Close Long) Filled @ {} | PnL: {:.4} | Next: BUY (Open) @ {}",
+                                zone_idx, px, pnl, zone.lower_price
+                            );
+                            (
+                                ZoneState::WaitingBuy,
+                                0.0,
+                                Some(pnl),
+                                zone.lower_price,
+                                true,
+                            )
+                        }
+                        (ZoneState::WaitingSell, true) => {
+                            // OPEN SHORT fill
+                            info!(
+                                "Zone {} | SELL (Open Short) Filled @ {} | Size: {} | Next: BUY (Close) @ {}",
+                                zone_idx, px, size, zone.lower_price
+                            );
+                            (ZoneState::WaitingBuy, px, None, zone.lower_price, true)
+                        }
+                        (ZoneState::WaitingBuy, true) => {
+                            // CLOSE SHORT fill
+                            let pnl = (zone.entry_price - px) * size;
+                            info!(
+                                "Zone {} | BUY (Close Short) Filled @ {} | PnL: {:.4} | Next: SELL (Open) @ {}",
+                                zone_idx, px, pnl, zone.upper_price
+                            );
+                            (
+                                ZoneState::WaitingSell,
+                                0.0,
+                                Some(pnl),
+                                zone.upper_price,
+                                false,
+                            )
+                        }
+                    };
 
-                        // Place counter SELL
-                        let next_cloid = Uuid::new_v4();
-                        let market_info = ctx.market_info(&self.symbol).unwrap();
-                        let price = market_info.round_price(zone.upper_price);
-
-                        info!(
-                            "Zone {} | Placing SELL Order @ {} (cloid: {})",
-                            zone_idx, price, next_cloid
-                        );
-
-                        self.active_orders.insert(next_cloid, zone_idx);
-                        zone.order_id = Some(next_cloid);
-
-                        ctx.place_limit_order(
-                            self.symbol.clone(),
-                            false, // Sell
-                            price,
-                            zone.size,
-                            false,
-                            Some(next_cloid),
-                        );
+                    zone.state = next_state;
+                    zone.entry_price = entry_px;
+                    if let Some(_p) = pnl {
+                        // Could track total PnL here
                     }
-                    ZoneState::WaitingSell => {
-                        let pnl = (px - zone.entry_price) * size;
-                        info!(
-                            "Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Next: BUY @ {}",
-                            zone_idx, px, size, pnl, zone.lower_price
-                        );
+                    (next_px, is_next_buy)
+                };
 
-                        zone.state = ZoneState::WaitingBuy;
-                        zone.entry_price = 0.0;
-
-                        // Place counter BUY
-                        let next_cloid = Uuid::new_v4();
-                        let market_info = ctx.market_info(&self.symbol).unwrap();
-                        let price = market_info.round_price(zone.lower_price);
-
-                        info!(
-                            "Zone {} | Placing BUY Order @ {} (cloid: {})",
-                            zone_idx, price, next_cloid
-                        );
-
-                        self.active_orders.insert(next_cloid, zone_idx);
-                        zone.order_id = Some(next_cloid);
-
-                        ctx.place_limit_order(
-                            self.symbol.clone(),
-                            true, // Buy
-                            price,
-                            zone.size,
-                            false,
-                            Some(next_cloid),
-                        );
-                    }
-                }
+                // Now we can call self.place_counter_order
+                self.place_counter_order(zone_idx, next_px, is_next_buy, ctx)?;
             } else {
                 debug!(
                     "Fill received for unknown/inactive Perp CLOID: {}",

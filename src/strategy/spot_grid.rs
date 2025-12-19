@@ -6,13 +6,15 @@ use log::{debug, info, warn};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum ZoneState {
     WaitingBuy,
     WaitingSell,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct GridZone {
     index: usize,
     lower_price: f64,
@@ -21,6 +23,13 @@ struct GridZone {
     state: ZoneState,
     entry_price: f64,
     order_id: Option<Uuid>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SpotGridState {
+    zones: Vec<GridZone>,
+    active_orders: HashMap<Uuid, usize>,
+    trade_count: u32,
 }
 
 #[allow(dead_code)]
@@ -306,6 +315,34 @@ impl Strategy for SpotGridStrategy {
             debug!("Fill received without CLOID at price {}", px);
         }
 
+        Ok(())
+    }
+
+    // State management
+    fn save_state(&self) -> Result<String> {
+        let state = SpotGridState {
+            zones: self.zones.clone(),
+            active_orders: self.active_orders.clone(),
+            trade_count: self.trade_count,
+        };
+        serde_json::to_string(&state).map_err(|e| anyhow::anyhow!("Serialization error: {}", e))
+    }
+
+    fn load_state(&mut self, state: &str) -> Result<()> {
+        let state: SpotGridState = serde_json::from_str(state)
+            .map_err(|e| anyhow::anyhow!("Deserialization error: {}", e))?;
+
+        self.zones = state.zones;
+        self.active_orders = state.active_orders;
+        self.trade_count = state.trade_count;
+        self.initialized = true; // If we loaded state, we are initialized
+
+        info!(
+            "Loaded state for {}: {} zones, {} active orders",
+            self.symbol,
+            self.zones.len(),
+            self.active_orders.len()
+        );
         Ok(())
     }
 }

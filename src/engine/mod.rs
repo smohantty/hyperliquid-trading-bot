@@ -137,6 +137,31 @@ impl Engine {
 
         let mut ctx = StrategyContext::new(markets);
 
+        // --- State Management: LOAD ---
+        let state_dir = std::path::Path::new("state");
+        if !state_dir.exists() {
+            std::fs::create_dir_all(state_dir)?;
+        }
+        let strategy_type_name = self.config.type_name();
+        let state_filename = format!(
+            "state_{}_{}.json",
+            strategy_type_name.replace(" ", "_").to_lowercase(),
+            target_symbol.replace("/", "_")
+        );
+        let state_path = state_dir.join(state_filename);
+
+        if state_path.exists() {
+            info!("Found existing state file: {:?}", state_path);
+            match std::fs::read_to_string(&state_path) {
+                Ok(content) => {
+                    if let Err(e) = strategy.load_state(&content) {
+                        error!("Failed to load strategy state: {}. Starting fresh.", e);
+                    }
+                }
+                Err(e) => error!("Failed to read state file: {}", e),
+            }
+        }
+
         // Retrieve context for subscription
         let market_info = ctx.market_info(target_symbol).unwrap();
         info!(
@@ -171,6 +196,17 @@ impl Engine {
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     info!("Shutdown signal received. Stopping Engine...");
+                    // --- State Management: SAVE on Exit ---
+                    match strategy.save_state() {
+                        Ok(json) => {
+                            if let Err(e) = std::fs::write(&state_path, json) {
+                                error!("Failed to save state on exit: {}", e);
+                            } else {
+                                info!("State saved successfully to {:?}", state_path);
+                            }
+                        },
+                        Err(e) => error!("Failed to serialize state: {}", e),
+                    }
                     break;
                 }
                 Some(message) = receiver.recv() => {
@@ -190,6 +226,7 @@ impl Engine {
                                      }
 
                                      // Execute Order Queue
+                                     let mut order_placed = false;
                                      while let Some(order_req) = ctx.order_queue.pop() {
                                         info!("Processing Order Request: {:?}", order_req);
 
@@ -227,9 +264,28 @@ impl Engine {
                                             cloid,
                                         };
 
-                                        info!("(Safe Mode) Order Simulation: {:?}", sdk_req);
-                                        // Note: Actual execution commented out for safety per user request.
-                                        // exchange_client.order(sdk_req, None).await...
+                                        info!("(Live) Placing Order: {:?}", sdk_req);
+                                        match _exchange_client.order(sdk_req, None).await {
+                                            Ok(res) => {
+                                                info!("Order placed successfully: {:?}", res);
+                                                order_placed = true;
+                                            },
+                                            Err(e) => {
+                                                error!("Failed to place order: {:?}", e);
+                                            }
+                                        }
+                                     }
+
+                                     // Save state after placing initial orders or rebalancing
+                                     if order_placed {
+                                        match strategy.save_state() {
+                                            Ok(json) => {
+                                                if let Err(e) = std::fs::write(&state_path, json) {
+                                                    error!("Failed to save state after order: {}", e);
+                                                }
+                                            },
+                                            Err(e) => error!("Failed to serialize state: {}", e),
+                                        }
                                      }
                                  }
                              }
@@ -238,6 +294,7 @@ impl Engine {
                             debug!("User Event: {:?}", user_events);
                             let user_events_data = user_events.data;
                             if let UserData::Fills(fills) = user_events_data {
+                                let mut fill_processed = false;
                                 for fill in fills {
                                     let amount: f64 = fill.sz.parse().unwrap_or(0.0);
                                     let px: f64 = fill.px.parse().unwrap_or(0.0);
@@ -252,6 +309,19 @@ impl Engine {
                                     // Pass to strategy
                                     if let Err(e) = strategy.on_order_filled(&fill.side, amount, px, cloid, &mut ctx) {
                                         error!("Strategy on_order_filled error: {}", e);
+                                    }
+                                    fill_processed = true;
+                                }
+
+                                if fill_processed {
+                                    // Save state after fills
+                                    match strategy.save_state() {
+                                        Ok(json) => {
+                                            if let Err(e) = std::fs::write(&state_path, json) {
+                                                error!("Failed to save state after fill: {}", e);
+                                            }
+                                        },
+                                        Err(e) => error!("Failed to serialize state: {}", e),
                                     }
                                 }
                             }

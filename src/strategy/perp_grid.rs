@@ -60,4 +60,13 @@ impl Strategy for PerpGridStrategy {
         // Grid Logic to place next order would go here
         Ok(())
     }
+
+    // State management
+    fn save_state(&self) -> Result<String> {
+        Ok("{}".to_string())
+    }
+
+    fn load_state(&mut self, _state: &str) -> Result<()> {
+        Ok(())
+    }
 }

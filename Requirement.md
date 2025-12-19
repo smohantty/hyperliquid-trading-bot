@@ -1,9 +1,14 @@
 # Requirements
 
-## Spot Grid Strategy - Trigger Price Handling
+## Spot Grid Strategy - Performance Tracking
 
-- **Current Behavior**: The `spot_grid` strategy currently initializes using `last_price` from `market_info`.
-- **New Requirement**:
-    - If a `trigger_price` is provided, the strategy MUST use it for initialization instead of `last_price`.
-    - If asset acquisition is required during initialization, it should be based on the `trigger_price`.
-    - After initialization with `trigger_price`, the strategy should proceed with its standard grid logic.
+- **Goal**: Track performance metrics at both the Zone level and Strategy level.
+- **Metrics**:
+    - **PnL**: Realized Profit and Loss from completed grid cycles (Buy -> Sell).
+    - **Matched Trades**: A count of completed roundtrips (Buy -> Sell cycles).
+    - **Fees**: Total fees paid for trades.
+- **Implementation**:
+    - Metrics should be stored in the `GridZone` struct.
+    - Total strategy performance should be an aggregation of zone metrics.
+    - `Accumulated Fees` should be properly handled for partial fills in the Engine.
+    - `on_order_filled` should facilitate the update of these metrics.

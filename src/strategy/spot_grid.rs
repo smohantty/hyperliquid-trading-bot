@@ -30,6 +30,11 @@ struct GridZone {
     state: ZoneState,
     entry_price: f64,
     order_id: Option<u128>,
+
+    // Performance Metrics
+    total_pnl: f64,
+    total_fees: f64,
+    roundtrip_count: u32,
 }
 
 #[allow(dead_code)]
@@ -48,6 +53,10 @@ pub struct SpotGridStrategy {
     state: StrategyState,
     trade_count: u32,
     start_price: Option<f64>,
+
+    // Strategy Performance
+    realized_pnl: f64,
+    total_fees: f64,
 }
 
 impl SpotGridStrategy {
@@ -76,6 +85,8 @@ impl SpotGridStrategy {
                     state: StrategyState::Initializing,
                     trade_count: 0,
                     start_price: None,
+                    realized_pnl: 0.0,
+                    total_fees: 0.0,
                 }
             }
             _ => panic!("Invalid config type for SpotGridStrategy"),
@@ -157,6 +168,9 @@ impl SpotGridStrategy {
                     0.0
                 },
                 order_id: None,
+                total_pnl: 0.0,
+                total_fees: 0.0,
+                roundtrip_count: 0,
             });
         }
 
@@ -352,6 +366,7 @@ impl Strategy for SpotGridStrategy {
         _side: &str,
         size: f64,
         px: f64,
+        fee: f64,
         cloid: Option<u128>,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
@@ -360,9 +375,10 @@ impl Strategy for SpotGridStrategy {
             if let StrategyState::AcquiringAssets { cloid: acq_cloid } = self.state {
                 if cloid_val == acq_cloid {
                     info!(
-                        "Acquisition order filled! Size: {} @ {}. Starting grid.",
-                        size, px
+                        "Acquisition order filled! Size: {} @ {}. Fee: {}. Starting grid.",
+                        size, px, fee
                     );
+                    self.total_fees += fee;
                     self.state = StrategyState::Running;
                     self.refresh_orders(ctx);
                     return Ok(());
@@ -384,9 +400,13 @@ impl Strategy for SpotGridStrategy {
                 match zone.state {
                     ZoneState::WaitingBuy => {
                         info!(
-                            "Zone {} | BUY Filled @ {} | Size: {} | Next: SELL @ {}",
-                            zone_idx, px, size, zone.upper_price
+                            "Zone {} | BUY Filled @ {} | Size: {} | Fee: {:.4} | Next: SELL @ {}",
+                            zone_idx, px, size, fee, zone.upper_price
                         );
+
+                        // Update Fees (PnL only on close)
+                        zone.total_fees += fee;
+                        self.total_fees += fee;
 
                         zone.state = ZoneState::WaitingSell;
                         zone.entry_price = px;
@@ -414,9 +434,19 @@ impl Strategy for SpotGridStrategy {
                     }
                     ZoneState::WaitingSell => {
                         let pnl = (px - zone.entry_price) * size;
+
+                        // Update Zone Metrics
+                        zone.total_pnl += pnl;
+                        zone.total_fees += fee;
+                        zone.roundtrip_count += 1;
+
+                        // Update Strategy Metrics
+                        self.realized_pnl += pnl;
+                        self.total_fees += fee;
+
                         info!(
-                            "Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Next: BUY @ {}",
-                            zone_idx, px, size, pnl, zone.lower_price
+                            "Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Fee: {:.4} | Next: BUY @ {}",
+                            zone_idx, px, size, pnl, fee, zone.lower_price
                         );
 
                         zone.state = ZoneState::WaitingBuy;
@@ -443,6 +473,22 @@ impl Strategy for SpotGridStrategy {
                             Some(next_cloid),
                         );
                     }
+                }
+
+                // Track fees for Buy orders too
+                if matches!(zone.state, ZoneState::WaitingSell) {
+                    // If we just entered WaitingSell, it means we filled a BUY
+                    // The logic above updated struct for SELL (WaitingSell -> WaitingBuy)
+                    // But we also need to track fees for the BUY side which sets us to WaitingSell
+                    // However, we just processed the state change logic.
+                    // Let's refine: The match block handles the transitions.
+                    // For WaitingBuy -> we transition to WaitingSell.
+                    // For WaitingSell -> we transition to WaitingBuy.
+
+                    // We need to add fee to zone/strategy in both cases.
+
+                    // Note: match arm `ZoneState::WaitingBuy` handles the BUY fill.
+                    // We should inject fee logic there.
                 }
             } else {
                 debug!("Fill received for unknown/inactive CLOID: {}", cloid_val);
@@ -573,5 +619,114 @@ mod tests {
             }
             _ => panic!("Expected Limit order"),
         }
+    }
+    #[test]
+    fn test_spot_grid_performance_tracking() {
+        // Scenario: verify PnL/Fee/Roundtrip tracking
+        // 1. Start strategy
+        // 2. Fill Buy Order (Check Fee)
+        // 3. Fill Sell Order (Check PnL, Fee, Roundtrip)
+
+        let config = StrategyConfig::SpotGrid {
+            symbol: "HYPE/USDC".to_string(),
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 5,
+            total_investment: 1000.0,
+            trigger_price: None,
+        };
+
+        let mut strategy = SpotGridStrategy::new(config);
+        let mut markets = HashMap::new();
+        markets.insert(
+            "HYPE/USDC".to_string(),
+            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
+        );
+        let mut ctx = StrategyContext::new(markets);
+        ctx.set_balance("HYPE".to_string(), 100.0); // Sufficient
+
+        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
+            info.last_price = 100.0;
+        }
+
+        // 1. Initialize
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+        assert_eq!(strategy.state, StrategyState::Running);
+
+        // Tick again to trigger refresh_orders (Running state logic)
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // Get a zone that is WaitingBuy (Price < Upper)
+        // Grid: 90, 95, 100, 105, 110
+        // Price 100.
+        // Zone 0 (90-95): 100 > 95 -> WaitingBuy
+        // Zone 1 (95-100): 100 >= 100 -> WaitingBuy
+        // Zone 2 (100-105): 100 < 105 -> WaitingSell (Entry 100)
+        // Zone 3 (105-110): 100 < 110 -> WaitingSell (Entry 100)
+
+        // Let's pick Zone 1 (95-100). It should be WaitingBuy.
+        // Find the active order for Zone 1.
+        let zone_idx = 1;
+        let zone = &strategy.zones[zone_idx];
+        assert_eq!(zone.state, ZoneState::WaitingBuy);
+        let order_id = zone.order_id.expect("Zone 1 should have an order");
+
+        // 2. Fill Buy Order
+        // Price: 95.0. Size: zone.size. Fee: 0.1.
+        let fill_price = 95.0;
+        let fill_size = zone.size;
+        let buy_fee = 0.1;
+
+        strategy
+            .on_order_filled(
+                "B",
+                fill_size,
+                fill_price,
+                buy_fee,
+                Some(order_id),
+                &mut ctx,
+            )
+            .unwrap();
+
+        // Verify Buy Metrics
+        assert_eq!(strategy.total_fees, buy_fee);
+        let zone = &strategy.zones[zone_idx];
+        assert_eq!(zone.state, ZoneState::WaitingSell);
+        assert_eq!(zone.total_fees, buy_fee);
+        assert_eq!(zone.entry_price, fill_price);
+
+        // Get new Sell Order ID
+        let sell_order_id = zone.order_id.expect("Zone 1 should have sell order");
+
+        // 3. Fill Sell Order
+        // Price: 100.0. Fee: 0.1.
+        let sell_price = 100.0;
+        let sell_fee = 0.1;
+
+        strategy
+            .on_order_filled(
+                "S",
+                fill_size,
+                sell_price,
+                sell_fee,
+                Some(sell_order_id),
+                &mut ctx,
+            )
+            .unwrap();
+
+        // Verify Sell Metrics (Cycle Complete)
+        // PnL = (100 - 95) * size
+        let expected_pnl = (sell_price - fill_price) * fill_size;
+        let expected_total_fees = buy_fee + sell_fee;
+
+        assert_eq!(strategy.realized_pnl, expected_pnl);
+        assert_eq!(strategy.total_fees, expected_total_fees);
+
+        let zone = &strategy.zones[zone_idx];
+        assert_eq!(zone.state, ZoneState::WaitingBuy); // Reset
+        assert_eq!(zone.total_pnl, expected_pnl);
+        assert_eq!(zone.total_fees, expected_total_fees);
+        assert_eq!(zone.roundtrip_count, 1);
     }
 }

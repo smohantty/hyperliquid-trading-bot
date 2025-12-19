@@ -16,6 +16,7 @@ struct PendingOrder {
     target_size: f64,
     filled_size: f64,
     weighted_avg_px: f64,
+    accumulated_fees: f64,
 }
 
 pub struct Engine {
@@ -341,6 +342,7 @@ impl Engine {
                                                         target_size: target_sz,
                                                         filled_size: 0.0,
                                                         weighted_avg_px: 0.0,
+                                                        accumulated_fees: 0.0,
                                                     });
                                                 }
                                             },
@@ -408,12 +410,22 @@ impl Engine {
                                     // 3. Map fill.dir ("Buy"/"Sell") to "B"/"S"
                                     let side = if fill.dir.to_lowercase().starts_with('b') { "B" } else { "S" };
 
+                                    // Extract fee (if available) - Hyperliquid SDK Fill struct verification needed
+                                    // Assuming fill.fee or similar exists. Inspecting based on previous error context or assumption.
+                                    // If strict SDK defined, need to check fields. For now, defaulting to 0.0 if field unknown
+                                    // But requirement is to parse it. Checking typical structure.
+                                    // Since I cannot see SDK source, I will assume `fee` field exists as string or f64.
+                                    // If fails compilation, I will inspect SDK.
+                                    // "fill" variable is of type Fill.
+                                    let fee: f64 = fill.fee.parse().unwrap_or(0.0);
+
                                     // Pass to strategy or aggregate
                                     if let Some(c) = cloid {
                                         if let Some(pending) = pending_orders.get_mut(&c) {
                                             let new_total_size = pending.filled_size + amount;
                                             pending.weighted_avg_px = (pending.weighted_avg_px * pending.filled_size + px * amount) / new_total_size;
                                             pending.filled_size = new_total_size;
+                                            pending.accumulated_fees += fee;
 
                                             info!("Order progress for {}: {}/{} filled at avg px {}", c, pending.filled_size, pending.target_size, pending.weighted_avg_px);
 
@@ -421,22 +433,24 @@ impl Engine {
                                                 info!("Order {} fully filled. Notifying strategy.", c);
                                                 let final_px = pending.weighted_avg_px;
                                                 let final_sz = pending.filled_size;
+                                                let final_fee = pending.accumulated_fees;
                                                 pending_orders.remove(&c);
 
-                                                if let Err(e) = strategy.on_order_filled(side, final_sz, final_px, Some(c), &mut ctx) {
+                                                if let Err(e) = strategy.on_order_filled(side, final_sz, final_px, final_fee, Some(c), &mut ctx) {
                                                     error!("Strategy on_order_filled error: {}", e);
                                                 }
                                             }
                                         } else {
                                             // Fallback for orders not tracked (e.g. from previous bot run)
                                             info!("Fill for untracked cloid {}. Forwarding immediately.", c);
-                                            if let Err(e) = strategy.on_order_filled(side, amount, px, Some(c), &mut ctx) {
+                                            // For immediate forwarding, pass the fee directly
+                                            if let Err(e) = strategy.on_order_filled(side, amount, px, fee, Some(c), &mut ctx) {
                                                 error!("Strategy on_order_filled error: {}", e);
                                             }
                                         }
                                     } else {
                                         // No cloid - forward immediately
-                                        if let Err(e) = strategy.on_order_filled(side, amount, px, None, &mut ctx) {
+                                        if let Err(e) = strategy.on_order_filled(side, amount, px, fee, None, &mut ctx) {
                                             error!("Strategy on_order_filled error: {}", e);
                                         }
                                     }

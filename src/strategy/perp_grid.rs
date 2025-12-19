@@ -246,6 +246,7 @@ impl Strategy for PerpGridStrategy {
         _side: &str,
         size: f64,
         px: f64,
+        _fee: f64,
         cloid: Option<u128>,
         ctx: &mut StrategyContext,
     ) -> Result<()> {

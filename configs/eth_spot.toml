@@ -1,5 +1,5 @@
 type = "spot_grid"
-symbol = "ETH/USDC"
+symbol = "HYPE/CASH"
 upper_price = 3000.0
 lower_price = 2000.0
 grid_type = "arithmetic"

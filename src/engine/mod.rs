@@ -70,6 +70,9 @@ impl Engine {
                                 index_to_token.get(&asset.tokens[1]),
                             ) {
                                 let symbol = format!("{}/{}", base.name, quote.name);
+                                if symbol == self.config.symbol() {
+                                    debug!("Found Spot Market: {}", symbol);
+                                }
                                 let sz_decimals = base.sz_decimals as u32;
                                 // Spot max decimals = 8
                                 let price_decimals = 8u32.saturating_sub(sz_decimals);

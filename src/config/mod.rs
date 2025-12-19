@@ -24,9 +24,9 @@ fn validate_config(config: &StrategyConfig) -> Result<(), BotError> {
             trigger_price,
             ..
         } => {
-            if !symbol.ends_with("/USDC") || symbol == "/USDC" {
+            if !symbol.contains('/') || symbol.len() < 3 {
                 return Err(BotError::ValidationError(
-                    "Spot symbol must be in 'Asset/USDC' format".into(),
+                    "Spot symbol must be in 'Base/Quote' format".into(),
                 ));
             }
             if *grid_count == 0 {

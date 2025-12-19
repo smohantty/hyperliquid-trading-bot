@@ -252,7 +252,12 @@ impl Engine {
 
                                      // Execute Order Queue
                                      while let Some(order_req) = ctx.order_queue.pop() {
-                                        info!("Processing Order Request: {:?}", order_req);
+                                        let req_summary = match &order_req {
+                                            crate::model::OrderRequest::Limit { is_buy, price, sz, .. } => format!("{} {} @ {}", if *is_buy { "BUY" } else { "SELL" }, sz, price),
+                                            crate::model::OrderRequest::Market { is_buy, sz, .. } => format!("MARKET {} {}", if *is_buy { "BUY" } else { "SELL" }, sz),
+                                            crate::model::OrderRequest::Cancel { cloid } => format!("CANCEL {}", cloid),
+                                        };
+                                        info!("Processing Order: {}", req_summary);
 
                                         match order_req {
                                             crate::model::OrderRequest::Cancel { cloid } => {
@@ -309,10 +314,27 @@ impl Engine {
                                             cloid: cloid.map(uuid::Uuid::from_u128),
                                         };
 
-                                        info!("(Live) Placing Order: {:?}", sdk_req);
-                                        match _exchange_client.order(sdk_req, None).await {
-                                            Ok(res) => {
-                                                info!("Order placed successfully: {:?}", res);
+                                         info!("(Live) Sending: {} {} {} @ {}", if sdk_req.is_buy { "BUY" } else { "SELL" }, sdk_req.sz, coin, sdk_req.limit_px);
+                                         match _exchange_client.order(sdk_req, None).await {
+                                             Ok(res) => {
+                                                 // Extract Status Summary
+                                                 let status_msg = match res {
+                                                     hyperliquid_rust_sdk::ExchangeResponseStatus::Ok(exchange_res) => {
+                                                         if let Some(data) = &exchange_res.data {
+                                                             data.statuses.iter().map(|s| match s {
+                                                                 hyperliquid_rust_sdk::ExchangeDataStatus::Resting(r) => format!("Resting (oid: {})", r.oid),
+                                                                 hyperliquid_rust_sdk::ExchangeDataStatus::Filled(f) => format!("Filled (oid: {})", f.oid),
+                                                                 hyperliquid_rust_sdk::ExchangeDataStatus::Error(e) => format!("Error: {}", e),
+                                                                 _ => format!("{:?}", s),
+                                                             }).collect::<Vec<_>>().join(", ")
+                                                         } else {
+                                                             format!("{:?}", exchange_res)
+                                                         }
+                                                     }
+                                                     hyperliquid_rust_sdk::ExchangeResponseStatus::Err(e) => format!("Error: {}", e),
+                                                 };
+
+                                                 info!("Response: {}", status_msg);
                                                 // Record in pending_orders if cloid exists
                                                 if let Some(c) = cloid {
                                                     pending_orders.insert(c, PendingOrder {
@@ -349,8 +371,15 @@ impl Engine {
                                     }
                                  }
                              },
-                        hyperliquid_rust_sdk::Message::User(user_events) => {
-                            info!("User Event: {:?}", user_events);
+                         hyperliquid_rust_sdk::Message::User(user_events) => {
+                             // Only log if it's not empty and maybe specialize
+                             let event_type = match &user_events.data {
+                                 UserData::Fills(f) => format!("Fills ({})", f.len()),
+                                 UserData::Funding(_) => "Funding".to_string(),
+                                 UserData::Liquidation(_) => "Liquidation".to_string(),
+                                 UserData::NonUserCancel(c) => format!("NonUserCancel ({})", c.len()),
+                             };
+                             debug!("User Event: {}", event_type);
                             let user_events_data = user_events.data;
                             if let UserData::Fills(fills) = user_events_data {
                                 for fill in fills {

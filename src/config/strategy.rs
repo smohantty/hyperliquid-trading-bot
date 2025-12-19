@@ -31,6 +31,22 @@ pub enum StrategyConfig {
     },
 }
 
+impl StrategyConfig {
+    pub fn type_name(&self) -> &str {
+        match self {
+            StrategyConfig::SpotGrid { .. } => "Spot Grid",
+            StrategyConfig::PerpGrid { .. } => "Perp Grid",
+        }
+    }
+
+    pub fn symbol(&self) -> &str {
+        match self {
+            StrategyConfig::SpotGrid { symbol, .. } => symbol,
+            StrategyConfig::PerpGrid { symbol, .. } => symbol,
+        }
+    }
+}
+
 pub fn print_strategy_help() {
     println!("Available Strategies:\n");
 

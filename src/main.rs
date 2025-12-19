@@ -38,6 +38,29 @@ fn main() -> anyhow::Result<()> {
     println!("Loading config from: {}", config_path);
     let config = load_config(&config_path)?;
 
+    // Load exchange configuration
+    let exchange_config = match hyperliquid_trading_bot::config::exchange::load_exchange_config() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Warning: Failed to load exchange config: {}", e);
+            // We might want to exit here if keys are strictly required, but for now just warn.
+            // Actually, for a trading bot, keys ARE likely required.
+            // Let's propagate error?
+            // User requirement said "can be used by the bot", implying it's essential.
+            return Err(anyhow::anyhow!("Failed to load exchange config: {}", e));
+        }
+    };
+    println!(
+        "Exchange config loaded for network: {}",
+        exchange_config.network
+    );
+
+    println!(
+        "Starting {} Strategy for {}",
+        config.type_name(),
+        config.symbol()
+    );
+
     // Initialize strategy
     let strategy = init_strategy(config);
 

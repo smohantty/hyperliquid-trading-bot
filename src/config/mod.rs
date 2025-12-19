@@ -3,6 +3,7 @@ use crate::error::BotError;
 use std::fs;
 
 pub mod creator;
+pub mod exchange;
 pub mod strategy;
 
 pub fn load_config(path: &str) -> Result<StrategyConfig, BotError> {

@@ -12,5 +12,7 @@ anyhow = "1.0"
 dialoguer = "0.12.0"
 dotenvy = "0.15.7"
 hyperliquid_rust_sdk = "0.6.0"
-tokio = { version = "1.48.0", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 ethers = "2.0.14"
+log = "0.4.22"
+env_logger = "0.11.5"

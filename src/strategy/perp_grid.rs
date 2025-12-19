@@ -2,6 +2,7 @@ use crate::config::strategy::StrategyConfig;
 use crate::engine::context::StrategyContext;
 use crate::strategy::Strategy;
 use anyhow::Result;
+use log::debug;
 
 #[allow(dead_code)]
 pub struct PerpGridStrategy {
@@ -35,7 +36,11 @@ impl PerpGridStrategy {
 
 impl Strategy for PerpGridStrategy {
     fn on_tick(&mut self, price: f64, _ctx: &mut StrategyContext) -> Result<()> {
-        println!("PerpGridStrategy received tick: Price = {}", price);
+        debug!(
+            "PerpGridStrategy received tick: Price = {}, Symbol = {}",
+            price, self.symbol
+        );
+        // Placeholder for grid logic
         Ok(())
     }
 }

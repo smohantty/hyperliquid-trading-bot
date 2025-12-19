@@ -2,6 +2,7 @@ use crate::config::strategy::{GridType, StrategyConfig};
 use crate::engine::context::StrategyContext;
 use crate::strategy::Strategy;
 use anyhow::Result;
+use log::debug;
 
 #[allow(dead_code)]
 pub struct SpotGridStrategy {
@@ -11,6 +12,7 @@ pub struct SpotGridStrategy {
     grid_type: GridType,
     grid_count: u32,
     total_investment: f64,
+    #[allow(dead_code)]
     trigger_price: Option<f64>,
 }
 
@@ -41,8 +43,11 @@ impl SpotGridStrategy {
 
 impl Strategy for SpotGridStrategy {
     fn on_tick(&mut self, price: f64, _ctx: &mut StrategyContext) -> Result<()> {
-        println!("SpotGridStrategy received tick: Price = {}", price);
-        // TODO: Implement grid logic here
+        debug!(
+            "SpotGridStrategy received tick: Price = {}, Symbol = {}",
+            price, self.symbol
+        );
+        // Placeholder for grid logic
         Ok(())
     }
 }

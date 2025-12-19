@@ -1,6 +1,9 @@
+use anyhow::Result;
 use clap::Parser;
-use hyperliquid_trading_bot::config::load_config;
+use hyperliquid_trading_bot::config::{exchange::load_exchange_config, load_config};
+use hyperliquid_trading_bot::engine::Engine;
 use hyperliquid_trading_bot::strategy::init_strategy;
+use log::{error, info}; // Keep this import
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Hyperliquid Trading Bot", long_about = None)]
@@ -15,18 +18,21 @@ struct Args {
     create: bool,
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
+    env_logger::init();
     let args = Args::parse();
-
-    if args.create {
-        if let Err(e) = hyperliquid_trading_bot::config::creator::create_config() {
-            eprintln!("Error creating config: {}", e);
-        }
-        return Ok(());
-    }
 
     if args.list_strategies {
         hyperliquid_trading_bot::config::strategy::print_strategy_help();
+        return Ok(());
+    }
+
+    if args.create {
+        if let Err(e) = hyperliquid_trading_bot::config::creator::create_config() {
+            error!("Error creating config: {}", e);
+            std::process::exit(1);
+        }
         return Ok(());
     }
 
@@ -35,41 +41,39 @@ fn main() -> anyhow::Result<()> {
     })?;
 
     // Load configuration
-    println!("Loading config from: {}", config_path);
+    info!("Loading config from: {}", config_path);
     let config = load_config(&config_path)?;
 
     // Load exchange configuration
-    let exchange_config = match hyperliquid_trading_bot::config::exchange::load_exchange_config() {
+    let exchange_config = match load_exchange_config() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Warning: Failed to load exchange config: {}", e);
-            // We might want to exit here if keys are strictly required, but for now just warn.
-            // Actually, for a trading bot, keys ARE likely required.
-            // Let's propagate error?
-            // User requirement said "can be used by the bot", implying it's essential.
-            return Err(anyhow::anyhow!("Failed to load exchange config: {}", e));
+            error!("Failed to load exchange config: {}", e);
+            std::process::exit(1);
         }
     };
-    println!(
+    info!(
         "Exchange config loaded for network: {}",
         exchange_config.network
     );
 
-    println!(
+    info!(
         "Starting {} Strategy for {}",
         config.type_name(),
         config.symbol()
     );
 
-    // Initialize strategy
-    let strategy = init_strategy(config.clone()); // config is cheap to clone or we reference it, but init consumes it. StrategyConfig is Clone derived.
+    // Initialize Strategy
+    let strategy = init_strategy(config.clone());
 
     // Initialize Engine
-    let engine = hyperliquid_trading_bot::engine::Engine::new(config, exchange_config);
+    let engine = Engine::new(config, exchange_config);
 
-    // Run the engine
-    let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async { engine.run(strategy).await })?;
+    // Run Engine
+    if let Err(e) = engine.run(strategy).await {
+        error!("Engine error: {}", e);
+        std::process::exit(1);
+    }
 
     Ok(())
 }

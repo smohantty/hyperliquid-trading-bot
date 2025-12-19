@@ -59,6 +59,7 @@ pub struct SpotGridStrategy {
     // Position Tracking
     inventory: f64,
     avg_entry_price: f64,
+    last_balance_check: u64,
 }
 
 impl SpotGridStrategy {
@@ -91,6 +92,7 @@ impl SpotGridStrategy {
                     total_fees: 0.0,
                     inventory: 0.0,
                     avg_entry_price: 0.0,
+                    last_balance_check: 0,
                 }
             }
             _ => panic!("Invalid config type for SpotGridStrategy"),
@@ -306,11 +308,34 @@ impl SpotGridStrategy {
 
 impl Strategy for SpotGridStrategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()> {
+        // Inventory Reconciliation (Periodic)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if now - self.last_balance_check > 300 {
+            // Check every 5 mins
+            let base_coin = self.symbol.split('/').next().unwrap_or(&self.symbol);
+            let actual_balance = ctx.balance(base_coin);
+
+            // Allow small epsilon for floating point issues
+            if (self.inventory - actual_balance).abs() > 0.0001 {
+                warn!(
+                    "Inventory Drift Detected! Strategy: {}, Wallet: {}. Difference: {}",
+                    self.inventory,
+                    actual_balance,
+                    self.inventory - actual_balance
+                );
+            }
+            self.last_balance_check = now;
+        }
+
         match self.state {
             StrategyState::Initializing => {
                 if let Some(market_info) = ctx.market_info(&self.symbol) {
                     if market_info.last_price > 0.0 {
                         self.initialize_zones(ctx);
+                        self.last_balance_check = now; // Reset timer on init
                     }
                 }
             }
@@ -852,5 +877,48 @@ mod tests {
 
         assert_eq!(strategy.inventory, 15.0);
         assert_eq!(strategy.avg_entry_price, 105.0); // Stays same on sell
+    }
+
+    #[test]
+    fn test_spot_grid_inventory_reconciliation() {
+        // Scenario: Manually drift balance and ensure no panic (logs are not captured easily here but code path runs)
+
+        let config = StrategyConfig::SpotGrid {
+            symbol: "HYPE/USDC".to_string(),
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 5,
+            total_investment: 1000.0,
+            trigger_price: None,
+        };
+
+        let mut strategy = SpotGridStrategy::new(config);
+        let mut markets = HashMap::new();
+        markets.insert(
+            "HYPE/USDC".to_string(),
+            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
+        );
+        let mut ctx = StrategyContext::new(markets);
+        ctx.set_balance("HYPE".to_string(), 100.0);
+        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
+            info.last_price = 100.0;
+        }
+
+        // Init
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // Force drift
+        strategy.inventory = 10.0;
+        ctx.set_balance("HYPE".to_string(), 12.0); // Drift of 2.0
+
+        // Manually age the check to force executing the logic
+        strategy.last_balance_check = 0;
+
+        // This should trigger the warning log (visible if --nocapture)
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // Logic should update last_balance_check
+        assert!(strategy.last_balance_check > 0);
     }
 }

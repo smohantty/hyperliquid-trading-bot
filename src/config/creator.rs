@@ -198,6 +198,21 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         _ => GridBias::Neutral,
     };
 
+    let has_trigger = Confirm::with_theme(theme)
+        .with_prompt("Set a Trigger Price?")
+        .default(false)
+        .interact()?;
+
+    let trigger_price = if has_trigger {
+        Some(
+            Input::with_theme(theme)
+                .with_prompt("Trigger Price")
+                .interact_text()?,
+        )
+    } else {
+        None
+    };
+
     Ok(StrategyConfig::PerpGrid {
         symbol,
         leverage,
@@ -208,6 +223,7 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         grid_count,
         total_investment,
         grid_bias,
+        trigger_price,
     })
 }
 

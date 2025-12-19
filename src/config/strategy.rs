@@ -41,6 +41,8 @@ pub enum StrategyConfig {
         grid_count: u32,
         total_investment: f64,
         grid_bias: GridBias,
+        #[serde(default)]
+        trigger_price: Option<f64>,
     },
 }
 
@@ -89,7 +91,10 @@ pub fn print_strategy_help() {
     println!("     - lower_price (f64): The lower bound of the grid range.");
     println!("     - grid_type (String): 'arithmetic' or 'geometric'.");
     println!("     - grid_count (u32): Number of grid levels.");
-    println!("     - total_investment (f64): Total cost basis in USDC.");
-    println!("     - grid_bias (String): 'long', 'short', or 'neutral'.");
+    println!(
+        "     - total_investment (f64): Total cost basis in USDC.
+     - grid_bias (String): 'long', 'short', or 'neutral'.
+     - trigger_price (Option<f64>): Price to trigger strategy start (optional)."
+    );
     println!();
 }

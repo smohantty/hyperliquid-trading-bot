@@ -8,13 +8,16 @@ pub enum OrderRequest {
         price: f64,
         sz: f64,
         reduce_only: bool,
-        cloid: Option<uuid::Uuid>,
+        cloid: Option<u128>,
     },
     Market {
         symbol: String,
         is_buy: bool,
         sz: f64,
-        cloid: Option<uuid::Uuid>,
+        cloid: Option<u128>,
+    },
+    Cancel {
+        cloid: u128,
     },
 }
 

@@ -16,7 +16,6 @@ struct PendingOrder {
     target_size: f64,
     filled_size: f64,
     weighted_avg_px: f64,
-    side: String,
 }
 
 pub struct Engine {
@@ -144,6 +143,34 @@ impl Engine {
 
         let mut ctx = StrategyContext::new(markets);
 
+        // --- Fetch Initial Balances ---
+        info!("Fetching initial balances...");
+        // 1. Fetch Spot Balances
+        match info_client.user_token_balances(user_address).await {
+            Ok(balances) => {
+                for balance in balances.balances {
+                    ctx.set_balance(balance.coin, balance.total.parse().unwrap_or(0.0));
+                }
+            }
+            Err(e) => error!("Failed to fetch spot balances: {}", e),
+        }
+        // 2. Fetch Perp Balances (for USDC margin)
+        match info_client.user_state(user_address).await {
+            Ok(user_state) => {
+                ctx.set_balance(
+                    "USDC".to_string(),
+                    user_state.withdrawable.parse().unwrap_or(0.0),
+                );
+            }
+            Err(e) => error!("Failed to fetch perp balances (USDC): {}", e),
+        }
+
+        for (asset, amount) in &ctx.balances {
+            if *amount > 0.0 {
+                info!("Balance: {} = {}", asset, amount);
+            }
+        }
+
         // Retrieve context for subscription
         let market_info = ctx.market_info(target_symbol).unwrap();
         info!(
@@ -172,12 +199,37 @@ impl Engine {
             .map_err(|e| anyhow!("Failed to subscribe to UserEvents: {}", e))?;
         info!("Subscribed to UserEvents for {:?}.", user_address);
 
-        let mut pending_orders: HashMap<uuid::Uuid, PendingOrder> = HashMap::new();
+        let mut pending_orders: HashMap<u128, PendingOrder> = HashMap::new();
+
+        let mut balance_refresh_timer = tokio::time::interval(std::time::Duration::from_secs(30));
 
         // 6. Start Event Loop
         info!("Starting Event Loop...");
         loop {
             tokio::select! {
+                _ = balance_refresh_timer.tick() => {
+                    debug!("Refreshing balances...");
+                    let user_addr = user_address;
+                    // 1. Fetch Spot Balances
+                    match info_client.user_token_balances(user_addr).await {
+                        Ok(balances) => {
+                            for balance in balances.balances {
+                                ctx.set_balance(balance.coin, balance.total.parse().unwrap_or(0.0));
+                            }
+                        }
+                        Err(e) => error!("Periodic: Failed to fetch spot balances: {}", e),
+                    }
+                    // 2. Fetch Perp Balances (for USDC margin)
+                    match info_client.user_state(user_addr).await {
+                        Ok(user_state) => {
+                            ctx.set_balance(
+                                "USDC".to_string(),
+                                user_state.withdrawable.parse().unwrap_or(0.0),
+                            );
+                        }
+                        Err(e) => error!("Periodic: Failed to fetch perp balances (USDC): {}", e),
+                    }
+                }
                 _ = tokio::signal::ctrl_c() => {
                     info!("Shutdown signal received. Stopping Engine...");
                     break;
@@ -202,6 +254,22 @@ impl Engine {
                                      while let Some(order_req) = ctx.order_queue.pop() {
                                         info!("Processing Order Request: {:?}", order_req);
 
+                                        match order_req {
+                                            crate::model::OrderRequest::Cancel { cloid } => {
+                                                info!("Processing Cancel variant in Order Queue for cloid: {}", cloid);
+                                                let cancel_req = hyperliquid_rust_sdk::ClientCancelRequestCloid {
+                                                    asset: coin.clone(),
+                                                    cloid: uuid::Uuid::from_u128(cloid),
+                                                };
+                                                match _exchange_client.cancel_by_cloid(cancel_req, None).await {
+                                                    Ok(res) => info!("Cancel successful: {:?}", res),
+                                                    Err(e) => error!("Failed to cancel order {}: {:?}", cloid, e),
+                                                }
+                                                continue;
+                                            }
+                                            _ => {}
+                                        }
+
                                         let (is_buy, limit_px, sz, reduce_only, order_type, cloid, target_sz) = match order_req {
                                             crate::model::OrderRequest::Limit { symbol: _, is_buy, price, sz, reduce_only, cloid } => {
                                                 (is_buy, price, sz, reduce_only, ClientOrder::Limit(
@@ -216,13 +284,19 @@ impl Engine {
                                                     } else {
                                                         mid_price * 0.9
                                                     };
+
+                                                    // Ensure the aggressive price is rounded to tick size
+                                                    let market_info = ctx.market_info(&target_symbol).unwrap();
+                                                    let rounded_aggressive_price = market_info.round_price(aggressive_price);
+
                                                     // Market is often Limit with aggressive price
-                                                    (is_buy, aggressive_price, sz, false, ClientOrder::Limit(
+                                                    (is_buy, rounded_aggressive_price, sz, false, ClientOrder::Limit(
                                                         ClientLimit {
                                                             tif: "Ioc".to_string(), // Immediate or Cancel for Pseudo-Market
                                                         }
                                                     ), cloid, sz)
                                             },
+                                            _ => unreachable!("Cancel already handled"),
                                         };
 
                                         let sdk_req = ClientOrderRequest {
@@ -232,7 +306,7 @@ impl Engine {
                                             sz,
                                             reduce_only,
                                             order_type,
-                                            cloid,
+                                            cloid: cloid.map(uuid::Uuid::from_u128),
                                         };
 
                                         info!("(Live) Placing Order: {:?}", sdk_req);
@@ -245,33 +319,65 @@ impl Engine {
                                                         target_size: target_sz,
                                                         filled_size: 0.0,
                                                         weighted_avg_px: 0.0,
-                                                        side: if is_buy { "B".to_string() } else { "S".to_string() },
                                                     });
                                                 }
                                             },
                                             Err(e) => {
                                                 error!("Failed to place order: {:?}", e);
+                                                if let Some(c) = cloid {
+                                                   if let Err(strategy_err) = strategy.on_order_failed(c, &mut ctx) {
+                                                       error!("Strategy on_order_failed error: {}", strategy_err);
+                                                   }
+                                                }
                                             }
                                         }
+                                     }
+
+                                     // Execute Cancellation Queue
+                                     while let Some(cloid_to_cancel) = ctx.cancellation_queue.pop() {
+                                         info!("Processing Cancellation Request for cloid: {}", cloid_to_cancel);
+                                         let cancel_req = hyperliquid_rust_sdk::ClientCancelRequestCloid {
+                                             asset: coin.clone(),
+                                             cloid: uuid::Uuid::from_u128(cloid_to_cancel),
+                                         };
+                                         match _exchange_client.cancel_by_cloid(cancel_req, None).await {
+                                             Ok(res) => info!("Cancel successful: {:?}", res),
+                                             Err(e) => error!("Failed to cancel order {}: {:?}", cloid_to_cancel, e),
+                                         }
                                      }
 
                                     }
                                  }
                              },
                         hyperliquid_rust_sdk::Message::User(user_events) => {
-                            debug!("User Event: {:?}", user_events);
+                            info!("User Event: {:?}", user_events);
                             let user_events_data = user_events.data;
                             if let UserData::Fills(fills) = user_events_data {
                                 for fill in fills {
+                                    // 1. Filter fills for the current market asset
+                                    // Hyperliquid uses "@index" for some assets, let's match the coin string
+                                    if fill.coin != coin {
+                                        debug!("Ignoring fill for different coin: {} (expected: {})", fill.coin, coin);
+                                        continue;
+                                    }
+
                                     let amount: f64 = fill.sz.parse().unwrap_or(0.0);
                                     let px: f64 = fill.px.parse().unwrap_or(0.0);
 
-                                    // Parse cloid from Option<String> to Option<Uuid>
+                                    // 2. Parse cloid with simple hex conversion (satisfies exchange 0x hex)
                                     let cloid = if let Some(cloid_str) = fill.cloid {
-                                        uuid::Uuid::parse_str(&cloid_str).ok()
+                                        let normalized = if cloid_str.starts_with("0x") {
+                                            &cloid_str[2..]
+                                        } else {
+                                            &cloid_str
+                                        };
+                                        u128::from_str_radix(normalized, 16).ok()
                                     } else {
                                         None
                                     };
+
+                                    // 3. Map fill.dir ("Buy"/"Sell") to "B"/"S"
+                                    let side = if fill.dir.to_lowercase().starts_with('b') { "B" } else { "S" };
 
                                     // Pass to strategy or aggregate
                                     if let Some(c) = cloid {
@@ -284,25 +390,24 @@ impl Engine {
 
                                             if pending.filled_size >= pending.target_size * 0.9999 { // Handle floating point math
                                                 info!("Order {} fully filled. Notifying strategy.", c);
-                                                let side = pending.side.clone();
                                                 let final_px = pending.weighted_avg_px;
                                                 let final_sz = pending.filled_size;
                                                 pending_orders.remove(&c);
 
-                                                if let Err(e) = strategy.on_order_filled(&side, final_sz, final_px, Some(c), &mut ctx) {
+                                                if let Err(e) = strategy.on_order_filled(side, final_sz, final_px, Some(c), &mut ctx) {
                                                     error!("Strategy on_order_filled error: {}", e);
                                                 }
                                             }
                                         } else {
                                             // Fallback for orders not tracked (e.g. from previous bot run)
-                                            debug!("Fill for untracked cloid {}. Forwarding immediately.", c);
-                                            if let Err(e) = strategy.on_order_filled(&fill.side, amount, px, Some(c), &mut ctx) {
+                                            info!("Fill for untracked cloid {}. Forwarding immediately.", c);
+                                            if let Err(e) = strategy.on_order_filled(side, amount, px, Some(c), &mut ctx) {
                                                 error!("Strategy on_order_filled error: {}", e);
                                             }
                                         }
                                     } else {
                                         // No cloid - forward immediately
-                                        if let Err(e) = strategy.on_order_filled(&fill.side, amount, px, None, &mut ctx) {
+                                        if let Err(e) = strategy.on_order_filled(side, amount, px, None, &mut ctx) {
                                             error!("Strategy on_order_filled error: {}", e);
                                         }
                                     }

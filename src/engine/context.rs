@@ -57,14 +57,23 @@ impl MarketInfo {
 
 pub struct StrategyContext {
     pub markets: HashMap<String, MarketInfo>,
+    pub balances: HashMap<String, f64>,
     pub order_queue: Vec<OrderRequest>,
+    pub cancellation_queue: Vec<u128>,
+    pub next_cloid: u128,
 }
 
 impl StrategyContext {
     pub fn new(markets: HashMap<String, MarketInfo>) -> Self {
         Self {
             markets,
+            balances: HashMap::new(),
             order_queue: Vec::new(),
+            cancellation_queue: Vec::new(),
+            next_cloid: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos(),
         }
     }
 
@@ -83,7 +92,7 @@ impl StrategyContext {
         price: f64,
         sz: f64,
         reduce_only: bool,
-        cloid: Option<uuid::Uuid>,
+        cloid: Option<u128>,
     ) {
         self.order_queue.push(OrderRequest::Limit {
             symbol,
@@ -100,7 +109,7 @@ impl StrategyContext {
         symbol: String,
         is_buy: bool,
         sz: f64,
-        cloid: Option<uuid::Uuid>,
+        cloid: Option<u128>,
     ) {
         self.order_queue.push(OrderRequest::Market {
             symbol,
@@ -108,5 +117,23 @@ impl StrategyContext {
             sz,
             cloid,
         });
+    }
+
+    pub fn cancel_order(&mut self, cloid: u128) {
+        self.cancellation_queue.push(cloid);
+    }
+
+    pub fn generate_cloid(&mut self) -> u128 {
+        let cloid = self.next_cloid;
+        self.next_cloid += 1;
+        cloid
+    }
+
+    pub fn balance(&self, asset: &str) -> f64 {
+        *self.balances.get(asset).unwrap_or(&0.0)
+    }
+
+    pub fn set_balance(&mut self, asset: String, amount: f64) {
+        self.balances.insert(asset, amount);
     }
 }

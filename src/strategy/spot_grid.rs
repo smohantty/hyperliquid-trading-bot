@@ -4,7 +4,6 @@ use crate::strategy::Strategy;
 use anyhow::Result;
 use log::{debug, info, warn};
 use std::collections::HashMap;
-use uuid::Uuid;
 
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +11,14 @@ use serde::{Deserialize, Serialize};
 enum ZoneState {
     WaitingBuy,
     WaitingSell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+enum StrategyState {
+    Initializing,
+    WaitingForTrigger,
+    AcquiringAssets { cloid: u128 },
+    Running,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,14 +29,7 @@ struct GridZone {
     size: f64,
     state: ZoneState,
     entry_price: f64,
-    order_id: Option<Uuid>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct SpotGridState {
-    zones: Vec<GridZone>,
-    active_orders: HashMap<Uuid, usize>,
-    trade_count: u32,
+    order_id: Option<u128>,
 }
 
 #[allow(dead_code)]
@@ -44,8 +44,8 @@ pub struct SpotGridStrategy {
 
     // Internal State
     zones: Vec<GridZone>,
-    active_orders: HashMap<Uuid, usize>,
-    initialized: bool,
+    active_orders: HashMap<u128, usize>,
+    state: StrategyState,
     trade_count: u32,
 }
 
@@ -70,14 +70,14 @@ impl SpotGridStrategy {
                 trigger_price,
                 zones: Vec::new(),
                 active_orders: HashMap::new(),
-                initialized: false,
+                state: StrategyState::Initializing,
                 trade_count: 0,
             },
             _ => panic!("Invalid config type for SpotGridStrategy"),
         }
     }
 
-    fn initialize_zones(&mut self, ctx: &StrategyContext) {
+    fn initialize_zones(&mut self, ctx: &mut StrategyContext) {
         if self.grid_count < 2 {
             warn!("Grid count must be at least 2");
             return;
@@ -116,12 +116,13 @@ impl SpotGridStrategy {
         let initial_price = market_info.last_price;
 
         self.zones.clear();
+        let mut total_base_required = 0.0;
+
         for i in 0..num_zones {
             let lower = prices[i];
             let upper = prices[i + 1];
 
             // Calculate size based on quote investment per zone
-            // Use lower price as conservative estimate for size calculation
             let raw_size = quote_per_zone / lower;
             let size = market_info.round_size(raw_size);
 
@@ -131,11 +132,9 @@ impl SpotGridStrategy {
                 ZoneState::WaitingBuy
             };
 
-            let entry_price = if initial_state == ZoneState::WaitingSell {
-                initial_price
-            } else {
-                0.0
-            };
+            if initial_state == ZoneState::WaitingSell {
+                total_base_required += size;
+            }
 
             self.zones.push(GridZone {
                 index: i,
@@ -143,13 +142,71 @@ impl SpotGridStrategy {
                 upper_price: upper,
                 size,
                 state: initial_state,
-                entry_price,
+                entry_price: if initial_state == ZoneState::WaitingSell {
+                    initial_price
+                } else {
+                    0.0
+                },
                 order_id: None,
             });
         }
 
-        info!("Initialized {} zones for {}", self.zones.len(), self.symbol);
-        self.initialized = true;
+        info!(
+            "Setup completed. Total Base required for SELL zones: {}",
+            total_base_required
+        );
+
+        // Pre-flight check: Assets acquisition
+        let base_coin = self.symbol.split('/').next().unwrap_or(&self.symbol);
+        let available_base = ctx.balance(base_coin);
+        let deficit = total_base_required - available_base;
+
+        if deficit > market_info.round_size(0.0) {
+            // Check if deficit is significant
+            let rounded_deficit = market_info.round_size(deficit);
+            if rounded_deficit > 0.0 {
+                // Find nearest grid level price below current price for acquisition buy
+                let mut acquisition_price = market_info.last_price * 0.99; // Fallback
+
+                // zones are usually sorted or structured, but let's just find the first one below or use a safe limit
+                // The zones list is built from lower_price upwards.
+                // Let's find the max lower_price that is < last_price
+                let nearest_level = self
+                    .zones
+                    .iter()
+                    .filter(|z| z.lower_price < market_info.last_price)
+                    .map(|z| z.lower_price)
+                    .fold(0.0, f64::max);
+
+                if nearest_level > 0.0 {
+                    acquisition_price = market_info.round_price(nearest_level);
+                } else if !self.zones.is_empty() {
+                    // If no level is below, use the lowest level
+                    acquisition_price = market_info.round_price(self.zones[0].lower_price);
+                }
+
+                info!(
+                    "Acquisition Needed: Deficit of {} {}. Placing BUY order @ {}.",
+                    rounded_deficit, base_coin, acquisition_price
+                );
+                let cloid = ctx.generate_cloid();
+                self.state = StrategyState::AcquiringAssets { cloid };
+
+                // Use place_limit_order to ensure precision and explicit price
+                ctx.place_limit_order(
+                    self.symbol.clone(),
+                    true,
+                    acquisition_price,
+                    rounded_deficit,
+                    false,
+                    Some(cloid),
+                );
+                return;
+            }
+        }
+
+        info!("Assets verified. Starting Grid.");
+        self.state = StrategyState::Running;
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) {
@@ -169,7 +226,7 @@ impl SpotGridStrategy {
                 let price = market_info.round_price(price);
                 // zone.size is already rounded
 
-                let cloid = Uuid::new_v4();
+                let cloid = ctx.generate_cloid();
                 orders_to_place.push((i, is_buy, price, zone.size, cloid));
             }
         }
@@ -201,19 +258,46 @@ impl SpotGridStrategy {
 
 impl Strategy for SpotGridStrategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()> {
-        // Initialize if needed
-        if !self.initialized {
-            // We need market info for init
-            if ctx.market_info(&self.symbol).is_some() {
-                self.initialize_zones(ctx);
+        match self.state {
+            StrategyState::Initializing => {
+                if let Some(market_info) = ctx.market_info(&self.symbol) {
+                    if market_info.last_price > 0.0 {
+                        self.initialize_zones(ctx);
+                    }
+                }
+            }
+            StrategyState::WaitingForTrigger => {
+                if let Some(trigger) = self.trigger_price {
+                    if (price >= trigger
+                        && self
+                            .zones
+                            .first()
+                            .map(|z| trigger > z.lower_price)
+                            .unwrap_or(false))
+                        || (price <= trigger
+                            && self
+                                .zones
+                                .first()
+                                .map(|z| trigger < z.lower_price)
+                                .unwrap_or(false))
+                    {
+                        info!(
+                            "Trigger price {} hit. Starting initialization/acquisition.",
+                            trigger
+                        );
+                        self.state = StrategyState::Initializing;
+                    }
+                }
+            }
+            StrategyState::AcquiringAssets { .. } => {
+                // Handled in on_order_filled
+            }
+            StrategyState::Running => {
+                self.refresh_orders(ctx);
             }
         }
 
-        if self.initialized {
-            self.refresh_orders(ctx);
-        }
-
-        debug!("SpotGridStrategy tick: {}", price);
+        //debug!("SpotGridStrategy tick: {} | State: {:?}", price, self.state);
         Ok(())
     }
 
@@ -222,10 +306,23 @@ impl Strategy for SpotGridStrategy {
         _side: &str,
         size: f64,
         px: f64,
-        cloid: Option<uuid::Uuid>,
+        cloid: Option<u128>,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
         if let Some(cloid_val) = cloid {
+            // Check for Acquisition Fill
+            if let StrategyState::AcquiringAssets { cloid: acq_cloid } = self.state {
+                if cloid_val == acq_cloid {
+                    info!(
+                        "Acquisition order filled! Size: {} @ {}. Starting grid.",
+                        size, px
+                    );
+                    self.state = StrategyState::Running;
+                    self.refresh_orders(ctx);
+                    return Ok(());
+                }
+            }
+
             if let Some(zone_idx) = self.active_orders.remove(&cloid_val) {
                 let zone = &mut self.zones[zone_idx];
 
@@ -251,7 +348,7 @@ impl Strategy for SpotGridStrategy {
                         zone.entry_price = px;
 
                         // Place Counter-Order (Sell)
-                        let next_cloid = Uuid::new_v4();
+                        let next_cloid = ctx.generate_cloid();
                         let market_info = ctx.market_info(&self.symbol).unwrap();
                         let price = market_info.round_price(zone.upper_price);
 
@@ -284,7 +381,7 @@ impl Strategy for SpotGridStrategy {
                         zone.entry_price = 0.0; // Reset cost basis
 
                         // Place Counter-Order (Buy)
-                        let next_cloid = Uuid::new_v4();
+                        let next_cloid = ctx.generate_cloid();
                         let market_info = ctx.market_info(&self.symbol).unwrap();
                         let price = market_info.round_price(zone.lower_price);
 
@@ -318,30 +415,59 @@ impl Strategy for SpotGridStrategy {
         Ok(())
     }
 
+    fn on_order_failed(&mut self, cloid: u128, _ctx: &mut StrategyContext) -> Result<()> {
+        if let Some(zone_idx) = self.active_orders.remove(&cloid) {
+            warn!(
+                "Order failed for zone {}. Resetting state to allow retry.",
+                zone_idx
+            );
+            let zone = &mut self.zones[zone_idx];
+            zone.order_id = None;
+        }
+        Ok(())
+    }
+
     // State management
     fn save_state(&self) -> Result<String> {
-        let state = SpotGridState {
+        #[derive(Serialize)]
+        struct FullGridState {
+            zones: Vec<GridZone>,
+            active_orders: HashMap<u128, usize>,
+            trade_count: u32,
+            state: StrategyState,
+        }
+        let full_state = FullGridState {
             zones: self.zones.clone(),
             active_orders: self.active_orders.clone(),
             trade_count: self.trade_count,
+            state: self.state,
         };
-        serde_json::to_string(&state).map_err(|e| anyhow::anyhow!("Serialization error: {}", e))
+        serde_json::to_string(&full_state)
+            .map_err(|e| anyhow::anyhow!("Serialization error: {}", e))
     }
 
     fn load_state(&mut self, state: &str) -> Result<()> {
-        let state: SpotGridState = serde_json::from_str(state)
+        #[derive(Deserialize)]
+        struct FullGridState {
+            zones: Vec<GridZone>,
+            active_orders: HashMap<u128, usize>,
+            trade_count: u32,
+            state: StrategyState,
+        }
+        let full_state: FullGridState = serde_json::from_str(state)
             .map_err(|e| anyhow::anyhow!("Deserialization error: {}", e))?;
 
-        self.zones = state.zones;
-        self.active_orders = state.active_orders;
-        self.trade_count = state.trade_count;
-        self.initialized = true; // If we loaded state, we are initialized
+        self.zones = full_state.zones;
+        self.active_orders = full_state.active_orders;
+        self.trade_count = full_state.trade_count;
+        self.state = full_state.state;
 
         info!(
-            "Loaded state for {}: {} zones, {} active orders",
+            "Loaded state for {}: {} zones, {} active orders, state: {:?}",
             self.symbol,
             self.zones.len(),
-            self.active_orders.len()
+            self.active_orders.len(),
+            self.state
         );
         Ok(())
     }

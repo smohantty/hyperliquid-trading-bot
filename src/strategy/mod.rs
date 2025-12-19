@@ -16,9 +16,11 @@ pub trait Strategy {
         side: &str,
         size: f64,
         px: f64,
-        cloid: Option<uuid::Uuid>,
+        cloid: Option<u128>,
         ctx: &mut StrategyContext,
     ) -> Result<()>;
+
+    fn on_order_failed(&mut self, cloid: u128, ctx: &mut StrategyContext) -> Result<()>;
 
     // State management
     fn save_state(&self) -> Result<String>;

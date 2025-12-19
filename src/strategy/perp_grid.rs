@@ -2,15 +2,21 @@ use crate::config::strategy::{GridBias, GridType, StrategyConfig};
 use crate::engine::context::StrategyContext;
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
-use log::{debug, info};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum ZoneState {
     WaitingBuy,
     WaitingSell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+enum StrategyState {
+    Initializing,
+    WaitingForTrigger,
+    Running,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,14 +28,7 @@ struct GridZone {
     state: ZoneState,
     is_short_oriented: bool, // Handles Open Short -> Close Short vs Open Long -> Close Long
     entry_price: f64,        // Used for PnL calculation
-    order_id: Option<Uuid>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct PerpGridState {
-    zones: Vec<GridZone>,
-    active_orders: HashMap<Uuid, usize>,
-    trade_count: u32,
+    order_id: Option<u128>,
 }
 
 #[allow(dead_code)]
@@ -46,9 +45,9 @@ pub struct PerpGridStrategy {
 
     // Internal State
     zones: Vec<GridZone>,
-    active_orders: HashMap<Uuid, usize>, // cloid -> zone_index
+    active_orders: HashMap<u128, usize>, // cloid -> zone_index
     trade_count: u32,
-    initialized: bool,
+    state: StrategyState,
 }
 
 impl PerpGridStrategy {
@@ -77,7 +76,7 @@ impl PerpGridStrategy {
                 zones: Vec::new(),
                 active_orders: HashMap::new(),
                 trade_count: 0,
-                initialized: false,
+                state: StrategyState::Initializing,
             },
             _ => panic!("Invalid config type for PerpGridStrategy"),
         }
@@ -141,14 +140,14 @@ impl PerpGridStrategy {
             });
         }
 
-        self.initialized = true;
+        self.state = StrategyState::Running;
         self.refresh_orders(ctx)
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         for zone in &mut self.zones {
             if zone.order_id.is_none() {
-                let cloid = Uuid::new_v4();
+                let cloid = ctx.generate_cloid();
                 let is_buy = matches!(zone.state, ZoneState::WaitingBuy);
                 let price = if is_buy {
                     zone.lower_price
@@ -193,7 +192,7 @@ impl PerpGridStrategy {
         ctx: &mut StrategyContext,
     ) -> Result<()> {
         let zone = &mut self.zones[zone_idx];
-        let next_cloid = Uuid::new_v4();
+        let next_cloid = ctx.generate_cloid();
 
         let market_info = ctx
             .market_info(&self.symbol)
@@ -227,8 +226,16 @@ impl PerpGridStrategy {
 
 impl Strategy for PerpGridStrategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()> {
-        if !self.initialized {
-            return self.initialize_zones(price, ctx);
+        match self.state {
+            StrategyState::Initializing => {
+                return self.initialize_zones(price, ctx);
+            }
+            StrategyState::WaitingForTrigger => {
+                // If trigger support is needed for Perps too
+            }
+            StrategyState::Running => {
+                // refresh_orders handled by fills
+            }
         }
         Ok(())
     }
@@ -238,7 +245,7 @@ impl Strategy for PerpGridStrategy {
         _side: &str,
         size: f64,
         px: f64,
-        cloid: Option<uuid::Uuid>,
+        cloid: Option<u128>,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
         if let Some(cloid_val) = cloid {
@@ -326,30 +333,58 @@ impl Strategy for PerpGridStrategy {
         Ok(())
     }
 
+    fn on_order_failed(&mut self, cloid: u128, _ctx: &mut StrategyContext) -> Result<()> {
+        if let Some(zone_idx) = self.active_orders.remove(&cloid) {
+            warn!(
+                "Order failed for zone {}. Resetting state to allow retry.",
+                zone_idx
+            );
+            let zone = &mut self.zones[zone_idx];
+            zone.order_id = None;
+        }
+        Ok(())
+    }
+
     // State management
     fn save_state(&self) -> Result<String> {
-        let state = PerpGridState {
+        #[derive(Serialize)]
+        struct FullGridState {
+            zones: Vec<GridZone>,
+            active_orders: HashMap<u128, usize>,
+            trade_count: u32,
+            state: StrategyState,
+        }
+        let full_state = FullGridState {
             zones: self.zones.clone(),
             active_orders: self.active_orders.clone(),
             trade_count: self.trade_count,
+            state: self.state,
         };
-        serde_json::to_string(&state).map_err(|e| anyhow!("Serialization error: {}", e))
+        serde_json::to_string(&full_state).map_err(|e| anyhow!("Serialization error: {}", e))
     }
 
     fn load_state(&mut self, state: &str) -> Result<()> {
-        let state: PerpGridState =
+        #[derive(Deserialize)]
+        struct FullGridState {
+            zones: Vec<GridZone>,
+            active_orders: HashMap<u128, usize>,
+            trade_count: u32,
+            state: StrategyState,
+        }
+        let full_state: FullGridState =
             serde_json::from_str(state).map_err(|e| anyhow!("Deserialization error: {}", e))?;
 
-        self.zones = state.zones;
-        self.active_orders = state.active_orders;
-        self.trade_count = state.trade_count;
-        self.initialized = true;
+        self.zones = full_state.zones;
+        self.active_orders = full_state.active_orders;
+        self.trade_count = full_state.trade_count;
+        self.state = full_state.state;
 
         info!(
-            "Loaded state for {}: {} zones, {} active orders",
+            "Loaded state for {}: {} zones, {} active orders, state: {:?}",
             self.symbol,
             self.zones.len(),
-            self.active_orders.len()
+            self.active_orders.len(),
+            self.state
         );
         Ok(())
     }

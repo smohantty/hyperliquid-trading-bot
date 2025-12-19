@@ -302,33 +302,27 @@ impl Strategy for SpotGridStrategy {
 
                     let mut triggered = false;
 
-                    if let Some(start) = self.start_price {
-                        if start < trigger {
-                            // Bullish Trigger: Wait for price >= trigger
-                            if price >= trigger {
-                                info!(
-                                    "Price {} crossed trigger {} (UP). Starting.",
-                                    price, trigger
-                                );
-                                triggered = true;
-                            }
-                        } else {
-                            // Bearish Trigger: Wait for price <= trigger
-                            // (Or if start == trigger, we trigger immediately/next tick)
-                            if price <= trigger {
-                                info!(
-                                    "Price {} crossed trigger {} (DOWN). Starting.",
-                                    price, trigger
-                                );
-                                triggered = true;
-                            }
+                    let start = self
+                        .start_price
+                        .expect("Start price must be set when in WaitingForTrigger state");
+
+                    if start < trigger {
+                        // Bullish Trigger: Wait for price >= trigger
+                        if price >= trigger {
+                            info!(
+                                "Price {} crossed trigger {} (UP). Starting.",
+                                price, trigger
+                            );
+                            triggered = true;
                         }
                     } else {
-                        // Fallback if start_price missing (shouldn't happen)
-                        let dist = (price - trigger).abs();
-                        if dist <= trigger * 0.001 {
-                            // 0.1% tolerance
-                            info!("Price {} hit trigger {} (~0.1%). Starting.", price, trigger);
+                        // Bearish Trigger: Wait for price <= trigger
+                        // (Or if start == trigger, we trigger immediately/next tick)
+                        if price <= trigger {
+                            info!(
+                                "Price {} crossed trigger {} (DOWN). Starting.",
+                                price, trigger
+                            );
                             triggered = true;
                         }
                     }

@@ -1,6 +1,9 @@
-use crate::error::BotError;
+use crate::config::strategy::StrategyConfig;
+use crate::engine::context::StrategyContext;
 use crate::strategy::Strategy;
+use anyhow::Result;
 
+#[allow(dead_code)]
 pub struct PerpGridStrategy {
     symbol: String,
     leverage: u32,
@@ -10,32 +13,29 @@ pub struct PerpGridStrategy {
 }
 
 impl PerpGridStrategy {
-    pub fn new(
-        symbol: String,
-        leverage: u32,
-        is_isolated: bool,
-        grid_count: u32,
-        range_percent: f64,
-    ) -> Self {
-        Self {
-            symbol,
-            leverage,
-            is_isolated,
-            grid_count,
-            range_percent,
+    pub fn new(config: StrategyConfig) -> Self {
+        match config {
+            StrategyConfig::PerpGrid {
+                symbol,
+                leverage,
+                is_isolated,
+                grid_count,
+                range_percent,
+            } => Self {
+                symbol,
+                leverage,
+                is_isolated,
+                grid_count,
+                range_percent,
+            },
+            _ => panic!("Invalid config type for PerpGridStrategy"),
         }
     }
 }
 
 impl Strategy for PerpGridStrategy {
-    fn run(&self) -> Result<(), BotError> {
-        println!("Starting Perp Grid Strategy for {}", self.symbol);
-        println!(
-            "Leverage: {}x (Isolated: {})",
-            self.leverage, self.is_isolated
-        );
-        println!("Grids: {}", self.grid_count);
-        println!("Range: {}%", self.range_percent);
+    fn on_tick(&mut self, price: f64, _ctx: &mut StrategyContext) -> Result<()> {
+        println!("PerpGridStrategy received tick: Price = {}", price);
         Ok(())
     }
 }

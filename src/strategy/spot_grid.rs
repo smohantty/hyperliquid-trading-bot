@@ -1,8 +1,9 @@
-use crate::error::BotError;
+use crate::config::strategy::{GridType, StrategyConfig};
+use crate::engine::context::StrategyContext;
 use crate::strategy::Strategy;
+use anyhow::Result;
 
-use crate::config::strategy::GridType;
-
+#[allow(dead_code)]
 pub struct SpotGridStrategy {
     symbol: String,
     upper_price: f64,
@@ -14,37 +15,34 @@ pub struct SpotGridStrategy {
 }
 
 impl SpotGridStrategy {
-    pub fn new(
-        symbol: String,
-        upper_price: f64,
-        lower_price: f64,
-        grid_type: GridType,
-        grid_count: u32,
-        total_investment: f64,
-        trigger_price: Option<f64>,
-    ) -> Self {
-        Self {
-            symbol,
-            upper_price,
-            lower_price,
-            grid_type,
-            grid_count,
-            total_investment,
-            trigger_price,
+    pub fn new(config: StrategyConfig) -> Self {
+        match config {
+            StrategyConfig::SpotGrid {
+                symbol,
+                upper_price,
+                lower_price,
+                grid_type,
+                grid_count,
+                total_investment,
+                trigger_price,
+            } => Self {
+                symbol,
+                upper_price,
+                lower_price,
+                grid_type,
+                grid_count,
+                total_investment,
+                trigger_price,
+            },
+            _ => panic!("Invalid config type for SpotGridStrategy"),
         }
     }
 }
 
 impl Strategy for SpotGridStrategy {
-    fn run(&self) -> Result<(), BotError> {
-        println!("Starting Spot Grid Strategy for {}", self.symbol);
-        println!("Range: {} - {}", self.lower_price, self.upper_price);
-        println!("Grid Type: {:?}", self.grid_type);
-        println!("Grids: {}", self.grid_count);
-        println!("Total Investment: {}", self.total_investment);
-        if let Some(price) = self.trigger_price {
-            println!("Trigger Price: {}", price);
-        }
+    fn on_tick(&mut self, price: f64, _ctx: &mut StrategyContext) -> Result<()> {
+        println!("SpotGridStrategy received tick: Price = {}", price);
+        // TODO: Implement grid logic here
         Ok(())
     }
 }

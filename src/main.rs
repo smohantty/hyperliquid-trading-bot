@@ -62,13 +62,14 @@ fn main() -> anyhow::Result<()> {
     );
 
     // Initialize strategy
-    let strategy = init_strategy(config);
+    let strategy = init_strategy(config.clone()); // config is cheap to clone or we reference it, but init consumes it. StrategyConfig is Clone derived.
 
-    // Run strategy
-    match strategy.run() {
-        Ok(_) => println!("Strategy finished successfully."),
-        Err(e) => eprintln!("Strategy error: {}", e),
-    }
+    // Initialize Engine
+    let engine = hyperliquid_trading_bot::engine::Engine::new(config, exchange_config);
+
+    // Run the engine
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async { engine.run(strategy).await })?;
 
     Ok(())
 }

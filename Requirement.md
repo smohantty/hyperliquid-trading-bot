@@ -1,97 +1,64 @@
-That is a perfect addition for a professional CLI tool. Using **`clap`** (Command Line Argument Parser) will allow you to pass the config path as an argument, provide a `--help` menu, and ensure the bot doesn't just crash silently if a file is missing.
+# Requirements: Hyperliquid Rust Bot (Phase 2: Core Trading Engine)
 
-I have integrated **`clap`** into the final Phase 1 `requirements.md` below.
-
----
-
-# Requirements: Hyperliquid Rust Bot (Phase 1)
-
-## 1. Project Overview
-
-The objective is to build a robust, modular foundation for a Hyperliquid trading bot in Rust. Phase 1 focuses on the **Configuration System**, **CLI Entry Point**, and **Strategy Factory**. The bot must parse command-line arguments to find a TOML config, validate it, and instantiate the corresponding strategy.
+## 1. Objective
+Build the **Core Trading Engine** that bridges the configuration system (Phase 1) with the Hyperliquid Exchange. This involves integrating the `hyperliquid-rust-sdk`, implementing an event-driven `Engine` to orchestrate data/orders, and defining a real `Strategy` trait for trading logic.
 
 ## 2. Technical Stack
+-   **SDK**: `hyperliquid-rust-sdk` (Latest).
+-   **Async Runtime**: `tokio` (for WebSocket event loop).
+-   **Channels**: `tokio::sync::mpsc` (for internal communication if needed).
 
-* **Language:** Rust (Latest Stable)
-* **CLI Parser:** `clap` (v4 with `derive` features)
-* **Serialization:** `serde` (with `derive` features)
-* **Config Format:** `toml`
-* **Error Handling:** - `thiserror`: For domain-specific errors (e.g., `ValidationError`).
-* `anyhow`: For top-level application error reporting.
+## 3. Architecture
 
+### 3.1. The "Smart" Engine (`src/engine/`)
+The `Engine` will act as a smart orchestrator, abstracting complexity from the strategy.
+-   **Responsibilities**:
+    1.  **Order Management**: Track all active orders and their fill states.
+    2.  **Fill Aggregation**: Listen to fill events. If an order is partially filled, the Engine updates its internal state but **does not** notify the strategy yet.
+    3.  **Full Fill Notification**: only when an order is 100% filled, call `strategy.on_order_filled()`.
+    4.  **Context**: Provide a `StrategyContext` (or `ctx`) to the strategy for actions (place/cancel), avoiding the need for the strategy to return lists of orders.
 
+### 3.2. Strategy Interface (`src/strategy/mod.rs`)
+The strategy becomes purely reactive and simple.
 
-## 3. Folder Structure
-
-```text
-/
-├── Cargo.toml
-├── configs/                 # Directory for different strategy tomls
-│   ├── eth_spot.toml
-│   └── btc_perp.toml
-└── src/
-    ├── main.rs              # CLI Entry Point (Clap logic)
-    ├── lib.rs               # Library root
-    ├── error.rs             # BotError enum (thiserror)
-    ├── config/
-    │   ├── mod.rs           # Loader & Validation logic
-    │   └── strategy.rs      # Tagged StrategyConfig Enums
-    └── strategy/
-        ├── mod.rs           # Strategy Trait & Factory Logic
-        ├── spot_grid.rs     
-        └── perp_grid.rs     
-
+```rust
+pub trait Strategy {
+    // Called on every price update (throttled/debounced if needed)
+    fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext);
+    
+    // Called ONLY when an order is completely filled
+    fn on_order_filled(&mut self, order: &Order, ctx: &mut StrategyContext);
+}
 ```
 
-## 4. Functional Specifications
+### 3.3. StrategyContext
+A helper struct passed to the strategy to interact with the Engine.
+-   **Actions**:
+    -   `ctx.place_limit_order(symbol, side, price, size)`
+    -   `ctx.cancel_order(order_id)`
+-   **Data Access**:
+    -   `ctx.market_info(symbol) -> Option<&MarketInfo>`: Retrieve market data/metadata for an asset.
 
-### 4.1. Command Line Interface (Clap)
-
-The bot must implement a CLI with the following:
-
-* **Argument**: `--config` or `-c` (Required). Specifies the path to the strategy TOML file.
-* **Help**: Automatic help generation via `#[derive(Parser)]`.
-* **Behavior**: If the config file is missing or invalid, the bot must exit with an error message and usage instructions.
-
-### 4.2. Configuration Mapping (Tagged Enum)
-
-The TOML file must use an internal `type` tag to determine the struct:
-
-* **`spot_grid`**: Fields: `symbol`, `upper_price`, `lower_price`, `grid_count`, `per_grid_amount`.
-* **`perp_grid`**: Fields: `symbol`, `leverage` (u32), `is_isolated` (bool), `grid_count`, `range_percent`.
-
-### 4.3. The Strategy Factory & Trait
-
-* **Trait**: `Strategy` with `fn run(&self) -> Result<(), BotError>`.
-* **Factory**: A function that maps `StrategyConfig` enum variants to a `Box<dyn Strategy>`.
-
-### 4.4. Validation Rules
-
-The system must validate data immediately after parsing:
-
-* `grid_count` must be .
-* `spot_grid`: `upper_price` > `lower_price`.
-* `perp_grid`: `leverage` must be within .
-
-## 5. Implementation Roadmap for Agent
-
-1. **Cargo.toml**: Add `clap = { version = "4.0", features = ["derive"] }`, `serde`, `toml`, `thiserror`, `anyhow`.
-2. **`error.rs`**: Define `BotError` for `ConfigReadError`, `ParsingError`, and `ValidationError`.
-3. **`config/strategy.rs`**: Implement the `StrategyConfig` enum with `#[serde(tag = "type")]`.
-4. **`strategy/mod.rs`**: Define the `Strategy` trait and a factory function `init_strategy(cfg: StrategyConfig) -> Box<dyn Strategy>`.
-5. **`main.rs`**:
-* Define a `Args` struct using `clap`.
-* Load the file path from args.
-* Pass the path to the config loader.
-* Pass the resulting config to the strategy factory.
-* Call `.run()` on the returned strategy.
+### 3.4. MarketInfo
+A unified struct containing both static metadata and dynamic state for an asset.
+-   **State**:
+    -   `last_price`: The most recent trade price (cached).
+    -   `sz_decimals`: Size precision (from exchange metadata).
+    -   `price_decimals`: Price precision.
+-   **Helpers**:
+    -   `round_price(price)`: Returns price rounded to correct decimals.
+    -   `round_size(size)`: Returns size rounded to correct decimals.
 
 
+### 3.3. Integration
+-   **`src/main.rs`**:
+    -   Load Config & Env.
+    -   Initialize `Engine` with Config.
+    -   `engine.run().await` (replaces direct `strategy.run()`).
 
----
-
-### Ready to Code?
-
-This `requirements.md` is now complete for a coding agent to generate the full Phase 1 skeleton.
-
-**Would you like me to generate the `Cargo.toml` and the `main.rs` with the `clap` setup to get you started?**
+## 4. Implementation Steps
+1.  **Dependencies**: Add `hyperliquid-rust-sdk` and `tokio`.
+2.  **Wrappers**: Create `src/engine/mod.rs` and `src/engine/client.rs` to wrap SDK complexity.
+3.  **Trait Update**: Refactor `Strategy` trait in `src/strategy/mod.rs`.
+4.  **Engine Logic**: Implement the WebSocket loop and event dispatching.
+5.  **Strategy Update**: Update `SpotGrid` and `PerpGrid` to implement the new trait methods (log logic first).

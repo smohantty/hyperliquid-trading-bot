@@ -48,9 +48,9 @@ impl Engine {
             BaseUrl::Testnet
         };
 
-        // 1. Initialize InfoClient
+        // 1. Initialize InfoClient with automatic reconnection for 24/7 operation
         info!("Connecting to InfoClient...");
-        let mut info_client = InfoClient::new(None, Some(base_url.clone())).await?;
+        let mut info_client = InfoClient::with_reconnect(None, Some(base_url.clone())).await?;
 
         // 2. Initialize ExchangeClient
         info!("Connecting to ExchangeClient...");

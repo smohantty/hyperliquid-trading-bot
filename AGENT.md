@@ -45,6 +45,7 @@ You must strictly follow this process for every user request involving code chan
     *   Strategies process `on_tick` and `on_order_filled` and return standard actions.
 *   **Broadcasting**: Status updates should be sent via the `StatusBroadcaster` (`src/broadcast/`).
 *   **Safety**: All `Result`s must be handled. Avoid `unwrap()` in critical paths.
+*   **Telegram**: Be aware of the `TelegramReporter`. If you change `StatusSummary`, check if it affects the Telegram `/status` output or notifications. Keep the reporter robust (don't let it crash the Engine).
 
 ## 4. Key Locations
 *   **Config**: `src/config/`

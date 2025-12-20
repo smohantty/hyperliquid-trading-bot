@@ -32,7 +32,7 @@ You must strictly follow this process for every user request involving code chan
 1.  **Implement**: Write the code according to the approved plan.
 2.  **Documentation**:
     *   **CRITICAL**: If you change behavior, add a feature, or modify a strategy, you **MUST** update the relevant documentation in `docs/` or `README.md` immediately. Code and Docs must never drift apart.
-    *   **API/Events**: If you change the data format broadcasted by the bot (structs in `types.rs` or `custom` JSON in strategies), you **MUST** update `docs/api/websocket_events.md` and `docs/api/schema.json` so the frontend team stays in sync.
+    *   **API/Events**: `docs/api/schema.json` is the **Single Source of Truth** for the WebSocket API. If data usage changes, update this schema first. Strategy docs should link to it.
 
 ### Phase 4: Verification
 1.  **Compiles?**: Always run `cargo check`.

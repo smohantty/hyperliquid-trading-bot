@@ -48,3 +48,15 @@ The range is divided into zones. Each zone has two states:
 ## Boundary Behavior
 *   **Price > Upper Price**: All assets are sold (converted to Quote). Bot waits for price to drop.
 *   **Price < Lower Price**: All capital is in Base Asset. Bot waits for price to rise. No new buy orders are placed.
+
+## WebSocket Data (`custom`)
+The `status` event contains the following strategy-specific data in the `custom` field:
+
+```json
+{
+  "grid_count": 50,      // Total number of grid lines
+  "range_low": 90.0,     // Lower price bound
+  "range_high": 110.0,   // Upper price bound
+  "roundtrips": 12       // Number of completed buy-sell cycles
+}
+```

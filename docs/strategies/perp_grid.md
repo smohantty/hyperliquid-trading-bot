@@ -54,3 +54,16 @@ graph LR
 If `trigger_price` is defined:
 1.  Bot is "Idle" until price crosses the trigger.
 2.  **Crucially**: The "Initial Price" for calculating zones is set to the `trigger_price`, not the market price at boot. This ensures the grid is aligned with your intended entry point.
+
+## WebSocket Data (`custom`)
+The `status` event contains the following strategy-specific data in the `custom` field:
+
+```json
+{
+  "leverage": 10,
+  "grid_bias": "Long" | "Short" | "Neutral",
+  "long_inventory": 1000.0,  // Size of Long position
+  "short_inventory": 0.0,    // Size of Short position (positive number)
+  "state": "Running"         // "Initializing", "WaitingForTrigger", "AcquiringAssets", "Running"
+}
+```

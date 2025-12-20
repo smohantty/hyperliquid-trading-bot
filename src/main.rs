@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::Parser;
+use hyperliquid_trading_bot::broadcast::StatusBroadcaster;
 use hyperliquid_trading_bot::config::{exchange::load_exchange_config, load_config};
 use hyperliquid_trading_bot::engine::Engine;
+use hyperliquid_trading_bot::reporter::telegram::TelegramReporter;
 use hyperliquid_trading_bot::strategy::init_strategy;
 use log::{error, info}; // Keep this import
 
@@ -82,15 +84,22 @@ async fn main() -> Result<()> {
 
     // Default port 9000 if not specified
     let ws_port = args.ws_port.or(Some(9000));
+    let broadcaster = StatusBroadcaster::new(ws_port);
     if let Some(p) = ws_port {
         info!("WebSocket Status Server enabled on port {}", p);
+    }
+
+    // Initialize Telegram Reporter
+    if let Some(reporter) = TelegramReporter::new(broadcaster.subscribe())? {
+        info!("Telegram Reporter initialized. Spawning background task...");
+        tokio::spawn(reporter.run());
     }
 
     // Initialize Strategy
     let strategy = init_strategy(config.clone());
 
     // Initialize Engine
-    let engine = Engine::new(config, exchange_config, ws_port);
+    let engine = Engine::new(config, exchange_config, broadcaster);
 
     // Run Engine
     if let Err(e) = engine.run(strategy).await {

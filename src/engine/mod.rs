@@ -49,9 +49,8 @@ impl Engine {
     pub fn new(
         config: StrategyConfig,
         exchange_config: crate::config::exchange::ExchangeConfig,
-        ws_port: Option<u16>,
+        broadcaster: StatusBroadcaster,
     ) -> Self {
-        let broadcaster = StatusBroadcaster::new(ws_port);
         Self {
             config,
             exchange_config,

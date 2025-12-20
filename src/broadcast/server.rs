@@ -56,6 +56,10 @@ impl StatusBroadcaster {
         // We ignore "channel closed" errors as we might not have any subscribers
         let _ = self.sender.send(event);
     }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<WSEvent> {
+        self.sender.subscribe()
+    }
 }
 
 async fn run_server(

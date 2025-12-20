@@ -488,7 +488,7 @@ impl Strategy for PerpGridStrategy {
 
     fn on_order_filled(
         &mut self,
-        _side: &str,
+        side: &str,
         size: f64,
         px: f64,
         _fee: f64,
@@ -503,6 +503,14 @@ impl Strategy for PerpGridStrategy {
             {
                 if cloid_val == acq_cloid {
                     info!("Acquisition filled @ {}", px);
+
+                    // Update Position Size
+                    if side.eq_ignore_ascii_case("buy") {
+                        self.position_size += size;
+                    } else {
+                        self.position_size -= size;
+                    }
+
                     // Update Zones Entry Price
                     for zone in &mut self.zones {
                         // Long Bias: We bought, now WaitingSell (Close Long). Set entry.
@@ -527,6 +535,18 @@ impl Strategy for PerpGridStrategy {
                 let (next_px, is_next_buy) = {
                     let zone = &mut self.zones[zone_idx];
                     zone.order_id = None;
+
+                    // Update Position Size based on Zone State
+                    match zone.state {
+                        ZoneState::WaitingBuy => {
+                            // Buying
+                            self.position_size += size;
+                        }
+                        ZoneState::WaitingSell => {
+                            // Selling
+                            self.position_size -= size;
+                        }
+                    }
 
                     let (next_state, entry_px, _pnl, next_px, is_next_buy) = match (
                         zone.state,
@@ -799,5 +819,97 @@ mod tests {
             }
             _ => panic!("Expected Limit Order"),
         }
+    }
+
+    #[test]
+    fn test_perp_grid_inventory_tracking() {
+        let symbol = "HYPE".to_string();
+        let mut ctx = create_test_context(&symbol);
+        ctx.set_balance("USDC".to_string(), 1000.0);
+
+        let config = StrategyConfig::PerpGrid {
+            symbol: symbol.clone(),
+            leverage: 1,
+            is_isolated: true,
+            upper_price: 120.0,
+            lower_price: 80.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 3, // 80, 100, 120
+            total_investment: 100.0,
+            grid_bias: GridBias::Long,
+            trigger_price: None,
+        };
+
+        let mut strategy = PerpGridStrategy::new(config);
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // 1. Initial State: Empty position
+        assert_eq!(strategy.position_size, 0.0);
+
+        // 2. Acquisition Fill (if any)
+        // With current setup (Long Bias, Price 100, Range 80-120), zones are:
+        // 80-100 (WaitingBuy), 100-120 (WaitingSell).
+        // Bias Long + WaitingSell -> Buy to Open.
+        // So initialize_zones determines we need position for the upper zone.
+        // It enters AcquiringAssets.
+
+        if let StrategyState::AcquiringAssets { cloid, target_size } = strategy.state {
+            assert!(target_size > 0.0);
+
+            // Fill Acquisition
+            strategy
+                .on_order_filled("buy", target_size, 100.0, 0.0, Some(cloid), &mut ctx)
+                .unwrap();
+
+            // Check inventory updated
+            assert_eq!(strategy.position_size, target_size);
+        } else {
+            panic!("Expected AcquiringAssets state");
+        }
+
+        // 3. Grid Trading Fills
+        // Now Running.
+        // Zone 0 (80-100) is WaitingBuy.
+        // Zone 1 (100-120) is WaitingSell.
+
+        // Find Active Order for Zone 0 (Buy @ 80)
+        let zone0_idx = 0;
+        let zone0 = &strategy.zones[zone0_idx];
+        assert_eq!(zone0.state, ZoneState::WaitingBuy);
+        let order_id = zone0.order_id.expect("Zone 0 should have order");
+
+        let size = zone0.size;
+
+        // Simulate Fill: Buy @ 80
+        strategy
+            .on_order_filled("buy", size, 80.0, 0.0, Some(order_id), &mut ctx)
+            .unwrap();
+
+        // Expect inventory increase (Long Bias + Buy = Add to Position)
+        // Previous position was `target_size` (from acquisition).
+        // Now should be `target_size + size`.
+        let expected_size = strategy.zones[1].size + size; // Approx
+        assert!(
+            (strategy.position_size - expected_size).abs() < 0.0001,
+            "Position size mismatch after BUY"
+        );
+
+        // Zone 0 flips to WaitingSell (Close Long). placing Sell @ 100.
+        let zone0 = &strategy.zones[zone0_idx];
+        assert_eq!(zone0.state, ZoneState::WaitingSell);
+        let sell_oid = zone0.order_id.expect("Zone 0 should have new sell order");
+
+        // Simulate Fill: Sell @ 100
+        strategy
+            .on_order_filled("sell", size, 100.0, 0.0, Some(sell_oid), &mut ctx)
+            .unwrap();
+
+        // Expect inventory decrease
+        // Back to initial acquisition size
+        let expected_size_after_sell = strategy.zones[1].size;
+        assert!(
+            (strategy.position_size - expected_size_after_sell).abs() < 0.0001,
+            "Position size mismatch after SELL"
+        );
     }
 }

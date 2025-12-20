@@ -137,7 +137,7 @@ The executable (e.g., `.AppImage`) will be generated in `frontend/dist`.
 **Run:**
 Simply execute the generated binary:
 ```bash
-./frontend/dist/web-client-0.0.0.AppImage
+./frontend/dist/hyperliquid-dashboard-0.0.0.AppImage
 ```
 
 ### Features

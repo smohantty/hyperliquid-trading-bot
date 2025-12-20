@@ -35,19 +35,27 @@ impl EngineRuntime {
     }
 }
 
+use crate::broadcast::{MarketEvent, OrderEvent, StatusBroadcaster, WSEvent};
+
+// ... existing imports ...
+
 pub struct Engine {
     config: StrategyConfig,
     exchange_config: crate::config::exchange::ExchangeConfig,
+    broadcaster: StatusBroadcaster,
 }
 
 impl Engine {
     pub fn new(
         config: StrategyConfig,
         exchange_config: crate::config::exchange::ExchangeConfig,
+        ws_port: Option<u16>,
     ) -> Self {
+        let broadcaster = StatusBroadcaster::new(ws_port);
         Self {
             config,
             exchange_config,
+            broadcaster,
         }
     }
 
@@ -244,6 +252,12 @@ impl Engine {
 
         let mut runtime = EngineRuntime::new(ctx);
         let mut balance_refresh_timer = tokio::time::interval(std::time::Duration::from_secs(30));
+        let mut status_summary_timer =
+            tokio::time::interval(std::time::Duration::from_millis(1000)); // 1Hz status update
+
+        // Broadcast Config
+        let config_json = serde_json::to_value(&self.config).unwrap_or(serde_json::Value::Null);
+        self.broadcaster.send(WSEvent::Config(config_json));
 
         info!("Starting Event Loop...");
         loop {
@@ -251,6 +265,11 @@ impl Engine {
                  _ = balance_refresh_timer.tick() => {
                     debug!("Refreshing balances...");
                     self.fetch_balances(&mut info_client, user_address, &mut runtime.ctx).await;
+                 }
+                 _ = status_summary_timer.tick() => {
+                    // Periodic Status Broadcast
+                    let summary = strategy.get_status_snapshot(&runtime.ctx);
+                    self.broadcaster.send(WSEvent::Summary(summary));
                  }
                  _ = tokio::signal::ctrl_c() => {
                     info!("Shutdown signal received. Stopping Engine...");
@@ -305,6 +324,11 @@ impl Engine {
             info.last_price = mid_price;
         }
 
+        // Broadcast Market Update (Real-time)
+        // Optimization: Could throttle this if it's too much data, but mid_price updates are usually manageable
+        self.broadcaster
+            .send(WSEvent::MarketUpdate(MarketEvent { price: mid_price }));
+
         // Call Strategy
         if let Err(e) = strategy.on_tick(mid_price, &mut runtime.ctx) {
             error!("Strategy error: {}", e);
@@ -329,6 +353,18 @@ impl Engine {
                 "Processing Cancellation Request for cloid: {}",
                 cloid_to_cancel
             );
+
+            // Broadcast Order Update (Cancel Sent)
+            self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                oid: 0,
+                cloid: Some(format!("0x{:x}", cloid_to_cancel)),
+                side: "UNKNOWN".to_string(), // We don't track side for cancels effectively here without lookup
+                price: 0.0,
+                size: 0.0,
+                status: "CANCELLING".to_string(),
+                fee: 0.0,
+            }));
+
             let cancel_req = hyperliquid_rust_sdk::ClientCancelRequestCloid {
                 asset: coin.to_string(),
                 cloid: uuid::Uuid::from_u128(cloid_to_cancel),
@@ -367,6 +403,15 @@ impl Engine {
 
         match order_req {
             crate::model::OrderRequest::Cancel { cloid } => {
+                self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                    oid: 0,
+                    cloid: Some(format!("0x{:x}", cloid)),
+                    side: "UNKNOWN".to_string(),
+                    price: 0.0,
+                    size: 0.0,
+                    status: "CANCELLING".to_string(),
+                    fee: 0.0,
+                }));
                 // Handled via separate cancellation logic usually, but keep fallback
                 info!(
                     "Processing Cancel variant in Order Queue for cloid: {}",
@@ -444,6 +489,23 @@ impl Engine {
             cloid: cloid.map(uuid::Uuid::from_u128),
         };
 
+        // Broadcast Order Placed (OPEN via Request)
+        if let Some(c) = cloid {
+            self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                oid: 0, // Not assigned yet
+                cloid: Some(format!("0x{:x}", c)),
+                side: if is_buy {
+                    "Buy".to_string()
+                } else {
+                    "Sell".to_string()
+                },
+                price: limit_px,
+                size: sz,
+                status: "OPENING".to_string(),
+                fee: 0.0,
+            }));
+        }
+
         info!(
             "(Live) Sending: {} {} {} @ {}",
             if sdk_req.is_buy { "BUY" } else { "SELL" },
@@ -490,6 +552,21 @@ impl Engine {
                         let px: f64 = avg_px_str.parse().unwrap_or(0.0);
                         info!("Immediate Fill detected for {}. Notifying strategy.", c);
 
+                        // Broadcast Filled
+                        self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                            oid: 0,
+                            cloid: Some(format!("0x{:x}", c)),
+                            side: if is_buy {
+                                "Buy".to_string()
+                            } else {
+                                "Sell".to_string()
+                            },
+                            price: px,
+                            size: amount,
+                            status: "FILLED".to_string(),
+                            fee: 0.0, // Fee not always available immediately in response
+                        }));
+
                         let side_str = if is_buy { "B" } else { "S" };
                         if let Err(e) = strategy.on_order_filled(
                             side_str,
@@ -514,12 +591,36 @@ impl Engine {
                                 accumulated_fees: 0.0,
                             },
                         );
+
+                        // Broadcast Placing/Resting confirmed
+                        self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                            oid: 0,
+                            cloid: Some(format!("0x{:x}", c)),
+                            side: if is_buy {
+                                "Buy".to_string()
+                            } else {
+                                "Sell".to_string()
+                            },
+                            price: limit_px,
+                            size: target_sz,
+                            status: "OPEN".to_string(),
+                            fee: 0.0,
+                        }));
                     }
                 }
             }
             Err(e) => {
                 error!("Failed to place order: {:?}", e);
                 if let Some(c) = cloid {
+                    self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                        oid: 0,
+                        cloid: Some(format!("0x{:x}", c)),
+                        side: "UNKNOWN".to_string(),
+                        price: 0.0,
+                        size: 0.0,
+                        status: "FAILED".to_string(),
+                        fee: 0.0,
+                    }));
                     if let Err(strategy_err) = strategy.on_order_failed(c, &mut runtime.ctx) {
                         error!("Strategy on_order_failed error: {}", strategy_err);
                     }
@@ -573,6 +674,21 @@ impl Engine {
                     "S"
                 };
                 let fee: f64 = fill.fee.parse().unwrap_or(0.0);
+
+                // Broadcast Fill Event
+                self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                    oid: fill.oid,
+                    cloid: cloid.map(|c| format!("0x{:x}", c)),
+                    side: if side == "B" {
+                        "Buy".to_string()
+                    } else {
+                        "Sell".to_string()
+                    },
+                    price: px,
+                    size: amount,
+                    status: "FILLED".to_string(),
+                    fee,
+                }));
 
                 if let Some(c) = cloid {
                     if runtime.completed_cloids.contains(&c) {

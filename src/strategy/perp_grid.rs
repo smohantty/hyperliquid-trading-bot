@@ -582,16 +582,62 @@ impl Strategy for PerpGridStrategy {
         Ok(())
     }
 
-    fn on_order_failed(&mut self, cloid: u128, _ctx: &mut StrategyContext) -> Result<()> {
-        if let Some(zone_idx) = self.active_orders.remove(&cloid) {
-            warn!(
-                "Order failed for zone {}. Resetting state to allow retry.",
-                zone_idx
-            );
-            let zone = &mut self.zones[zone_idx];
-            zone.order_id = None;
-        }
+    fn on_order_failed(&mut self, _cloid: u128, _ctx: &mut StrategyContext) -> Result<()> {
         Ok(())
+    }
+
+    fn get_status_snapshot(&self, ctx: &StrategyContext) -> crate::broadcast::types::StatusSummary {
+        use crate::broadcast::types::{InventoryStats, StatusSummary, WalletStats, ZoneStatus};
+
+        let current_mid = ctx
+            .market_info(&self.symbol)
+            .map(|m| m.last_price)
+            .unwrap_or(0.0);
+        let grid_size = self.zones.first().map(|z| z.size).unwrap_or(0.0);
+
+        let refined_zones: Vec<ZoneStatus> = self
+            .zones
+            .iter()
+            .map(|z| {
+                let side = if z.lower_price < current_mid {
+                    "Buy"
+                } else {
+                    "Sell"
+                };
+                let status = if z.order_id.is_some() { "Open" } else { "Idle" };
+                ZoneStatus {
+                    price: z.lower_price,
+                    side: side.to_string(),
+                    status: status.to_string(),
+                    size: grid_size,
+                }
+            })
+            .collect();
+
+        StatusSummary {
+            strategy_name: "PerpGrid".to_string(),
+            symbol: self.symbol.clone(),
+            realized_pnl: self.realized_pnl,
+            unrealized_pnl: self.unrealized_pnl,
+            total_fees: self.total_fees,
+            inventory: InventoryStats {
+                base_size: self.position_size,
+                avg_entry_price: self.avg_entry_price,
+            },
+            wallet: WalletStats {
+                base_balance: 0.0,
+                quote_balance: ctx.balance("USDC"),
+            },
+            price: current_mid,
+            zones: refined_zones,
+            custom: serde_json::json!({
+                "leverage": self.leverage,
+                "grid_bias": format!("{:?}", self.grid_bias),
+                "long_inventory": if self.position_size > 0.0 { self.position_size } else { 0.0 },
+                "short_inventory": if self.position_size < 0.0 { self.position_size.abs() } else { 0.0 },
+                "state": format!("{:?}", self.state),
+            }),
+        }
     }
 }
 

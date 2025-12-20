@@ -1,34 +1,49 @@
 # Requirements
 
-### 7. Performance Metrics
-- **Strategy Level**:
-    - `realized_pnl`: Accumulated from closed trades.
-    - `total_fees`: Accumulated execution fees.
-    - `unrealized_pnl`: `(Mark - AvgEntry) * Size` (for Long), `(AvgEntry - Mark) * Size` (for Short).
-- **Zone Level**:
-    - `roundtrip_count`.
 
-## Engine Refactoring (Planned)
+## Bot Status Broadcasting (WebSocket)
 
-The `Engine::run` method has grown too large and complex. To adhere to modern Rust practices and improve maintainability, we will refactor it by extracting distinct responsibilities into helper methods or a dedicated runtime struct.
+To enable visualizing the bot's state on any frontend (Web, Telegram, CLI), the bot will host a lightweight WebSocket server to broadcast real-time updates.
 
-### Proposed Structure
+### 1. Data Protocol
+*   **Format**: JSON.
+*   **Structure**: All messages are wrapped in a standard Envelope.
+    ```json
+    {
+      "type": "EventType",
+      "ts": "ISO-8601 or UnixMs",
+      "payload": { ... }
+    }
+    ```
 
-1.  **Initialization Phase** (Extract specific setup helpers):
-    -   `setup_clients()`: Initialize `InfoClient` and `ExchangeClient`.
-    -   `load_market_metadata()`: Fetch and build the `HashMap<String, MarketInfo>`.
-    -   `fetch_initial_balances()`: Populate `StrategyContext` with initial Spot and Perp balances.
+### 2. Event Types
 
-2.  **Event Loop Breakdown** (Extract loop logic):
-    -   `process_tick(price, strategy, ctx, pending_orders)`: Handle `AllMids` updates, strategy ticking, and order queue processing.
-    -   `process_order_queue(strategy, ctx, exchange_client, pending_orders)`: Handle placement of orders from `ctx.order_queue`.
-    -   `process_cancellations(ctx, exchange_client)`: Handle cancellation requests.
-    -   `handle_user_event(event, strategy, ctx, pending_orders, completed_cloids)`: Process WebSocket user events (Fills), deduplication, and strategy notification.
+#### A. `config` (On Connect/Change)
+*   Broadcasts the static configuration of the running strategy.
+*   **Payload**: The serialized TOML config (e.g., `SpotGridConfig`). Allows frontend to see "What are we running?".
 
-3.  **State Management**:
-    -   Consider introducing an inner `EngineRuntime` or `EngineState` struct to hold the mutable state (`ctx`, `pending_orders`, `completed_cloids`) so we don't need to pass 5+ arguments to every helper function.
+#### B. `summary` (Periodic/On-Change)
+Broadcasts dynamic status.
+*   **General Stats**:
+    *   `pnl`: { `realized`: f64, `unrealized`: f64, `total_fees`: f64 }
+    *   `inventory`: { `size`: f64, `avg_entry_price`: f64 }
+    *   `wallet`: { `base`: f64, `quote`: f64 }
+    *   `market`: { `current_price`: f64 }
+*   **Strategy-Specific (`zones`)**:
+    *   List of Grid Zones: `[{ price: 100.0, side: "Buy", status: "Open" }, { price: 101.0, side: "Sell", status: "Filled" }]`.
+    *   This explicitly supports the CLOB-style visualization the user requested.
 
-### Goal
--   Reduce `run` method to a high-level orchestration flow.
--   Isolate protocol-specific logic (e.g., parsing API responses) from control flow.
--   Improve testability of individual components.
+#### C. `order_fill` (Real-time)
+Broadcasts when an order is filled.
+*   Fields: `side`, `price`, `size`, `role` (Maker/Taker), `fee`.
+
+### 3. Server Configuration
+*   **Method**: Command Line Argument.
+    *   `--ws-port <PORT>`
+*   **Default**: `9000` (if argument not provided).
+*   **Disable**: Setting port to `0` or a specific flag (e.g. `--no-ws`) could disable it, but for now we'll just assume it runs unless port binding fails.
+
+### 4. Implementation Details
+*   **Technology**: `tokio-tungstenite` for the server.
+*   **Concurrency**: The server runs in a separate generic Tokio task. The `Engine` pushes updates to it via a `broadcast` channel (MPMC).
+*   **Trait Extension**: Strategies must implement a method `get_status_snapshot() -> serde_json::Value` to provide custom data for the `summary` event.

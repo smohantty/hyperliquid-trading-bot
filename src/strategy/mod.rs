@@ -22,6 +22,8 @@ pub trait Strategy {
     ) -> Result<()>;
 
     fn on_order_failed(&mut self, cloid: u128, ctx: &mut StrategyContext) -> Result<()>;
+
+    fn get_status_snapshot(&self, ctx: &StrategyContext) -> crate::broadcast::types::StatusSummary;
 }
 
 pub fn init_strategy(config: StrategyConfig) -> Box<dyn Strategy> {

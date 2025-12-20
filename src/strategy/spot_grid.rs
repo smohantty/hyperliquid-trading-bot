@@ -517,15 +517,69 @@ impl Strategy for SpotGridStrategy {
     }
 
     fn on_order_failed(&mut self, cloid: u128, _ctx: &mut StrategyContext) -> Result<()> {
-        if let Some(zone_idx) = self.active_orders.remove(&cloid) {
-            warn!(
-                "Order failed for zone {}. Resetting state to allow retry.",
-                zone_idx
-            );
-            let zone = &mut self.zones[zone_idx];
-            zone.order_id = None;
-        }
+        log::warn!("Order failed callback for cloid: {}", cloid);
         Ok(())
+    }
+
+    fn get_status_snapshot(&self, ctx: &StrategyContext) -> crate::broadcast::types::StatusSummary {
+        use crate::broadcast::types::{InventoryStats, StatusSummary, WalletStats, ZoneStatus};
+
+        let current_mid = ctx
+            .market_info(&self.symbol)
+            .map(|m| m.last_price)
+            .unwrap_or(0.0);
+        let grid_size = self.zones.first().map(|z| z.size).unwrap_or(0.0);
+        let coin = self.symbol.split('/').next().unwrap_or("UNKNOWN");
+
+        let refined_zones: Vec<ZoneStatus> = self
+            .zones
+            .iter()
+            .map(|z| {
+                let side = if z.lower_price < current_mid {
+                    "Buy"
+                } else {
+                    "Sell"
+                };
+                let status = if z.order_id.is_some() { "Open" } else { "Idle" };
+                ZoneStatus {
+                    price: z.lower_price,
+                    side: side.to_string(),
+                    status: status.to_string(),
+                    size: grid_size,
+                }
+            })
+            .collect();
+
+        // Calculate approx unrealized pnl for spot inventory
+        let unrealized_pnl = if self.inventory > 0.0 && self.avg_entry_price > 0.0 {
+            (current_mid - self.avg_entry_price) * self.inventory
+        } else {
+            0.0
+        };
+
+        StatusSummary {
+            strategy_name: "SpotGrid".to_string(),
+            symbol: self.symbol.clone(),
+            realized_pnl: self.realized_pnl,
+            unrealized_pnl,
+            total_fees: self.total_fees,
+            inventory: InventoryStats {
+                base_size: self.inventory,
+                avg_entry_price: self.avg_entry_price,
+            },
+            wallet: WalletStats {
+                base_balance: ctx.balance(coin),
+                quote_balance: ctx.balance("USDC"),
+            },
+            price: current_mid,
+            zones: refined_zones,
+            custom: serde_json::json!({
+                "grid_count": self.zones.len(),
+                "range_low": self.lower_price,
+                "range_high": self.upper_price,
+                "roundtrips": self.trade_count / 2, // Approximation
+            }),
+        }
     }
 }
 

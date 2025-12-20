@@ -105,6 +105,9 @@ Sent immediately upon connection. Contains the full strategy configuration.
   "event_type": "config",
   "data": {
     // ... mirrors the .toml config file ...
+    // See "Parameters" in strategy docs:
+    // - SpotGrid: ../strategies/spot_grid.md#parameters
+    // - PerpGrid: ../strategies/perp_grid.md#parameters
   }
 }
 ```

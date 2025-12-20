@@ -113,9 +113,9 @@ A modern React-based dashboard is included to visualize the bot's status in real
     ```
 
 2.  **Start the Web Client**:
-    Open a new terminal in the `web-client` directory:
+    Open a new terminal in the `frontend` directory:
     ```bash
-    cd web-client
+    cd frontend
     npm install  # First time only
     npm run dev
     ```

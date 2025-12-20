@@ -30,6 +30,9 @@ struct GridZone {
     is_short_oriented: bool,
     entry_price: f64,
     order_id: Option<u128>,
+
+    // Performance Metrics
+    roundtrip_count: u32,
 }
 
 #[allow(dead_code)]
@@ -221,6 +224,7 @@ impl PerpGridStrategy {
                 is_short_oriented,
                 entry_price: 0.0,
                 order_id: None,
+                roundtrip_count: 0,
             });
         }
 
@@ -561,6 +565,7 @@ impl Strategy for PerpGridStrategy {
                         }
                         (ZoneState::WaitingSell, false) => {
                             let pnl = (px - zone.entry_price) * size;
+                            zone.roundtrip_count += 1;
                             info!(
                                 "Zone {} | SELL (Close Long) Filled @ {} | PnL: {:.4} | Next: BUY (Open) @ {}",
                                 zone_idx, px, pnl, zone.lower_price
@@ -582,6 +587,7 @@ impl Strategy for PerpGridStrategy {
                         }
                         (ZoneState::WaitingBuy, true) => {
                             let pnl = (zone.entry_price - px) * size;
+                            zone.roundtrip_count += 1;
                             info!(
                                 "Zone {} | BUY (Close Short) Filled @ {} | PnL: {:.4} | Next: SELL (Open) @ {}",
                                 zone_idx, px, pnl, zone.upper_price
@@ -649,6 +655,9 @@ impl Strategy for PerpGridStrategy {
             })
             .collect();
 
+        // Calculate actual total roundtrips from zones
+        let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
+
         StatusSummary {
             strategy_name: "PerpGrid".to_string(),
             symbol: self.symbol.clone(),
@@ -671,6 +680,7 @@ impl Strategy for PerpGridStrategy {
                 "long_inventory": if self.position_size > 0.0 { self.position_size } else { 0.0 },
                 "short_inventory": if self.position_size < 0.0 { self.position_size.abs() } else { 0.0 },
                 "state": format!("{:?}", self.state),
+                "roundtrips": total_roundtrips,
             }),
         }
     }

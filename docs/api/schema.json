@@ -4,177 +4,425 @@
   "description": "Schema for events broadcasted by the trading bot via WebSocket.",
   "type": "object",
   "oneOf": [
-    { "$ref": "#/definitions/ConfigEvent" },
-    { "$ref": "#/definitions/SummaryEvent" },
-    { "$ref": "#/definitions/OrderUpdateEvent" },
-    { "$ref": "#/definitions/MarketUpdateEvent" },
-    { "$ref": "#/definitions/ErrorEvent" }
+    {
+      "$ref": "#/definitions/ConfigEvent"
+    },
+    {
+      "$ref": "#/definitions/SummaryEvent"
+    },
+    {
+      "$ref": "#/definitions/OrderUpdateEvent"
+    },
+    {
+      "$ref": "#/definitions/MarketUpdateEvent"
+    },
+    {
+      "$ref": "#/definitions/ErrorEvent"
+    }
   ],
   "definitions": {
     "ConfigEvent": {
       "type": "object",
       "properties": {
-        "event_type": { "const": "config" },
-        "data": { "$ref": "#/definitions/StrategyConfig" }
+        "event_type": {
+          "const": "config"
+        },
+        "data": {
+          "$ref": "#/definitions/StrategyConfig"
+        }
       },
-      "required": ["event_type", "data"]
+      "required": [
+        "event_type",
+        "data"
+      ]
     },
     "SummaryEvent": {
       "type": "object",
       "properties": {
-        "event_type": { "const": "summary" },
-        "data": { "$ref": "#/definitions/StatusSummary" }
+        "event_type": {
+          "const": "summary"
+        },
+        "data": {
+          "$ref": "#/definitions/StatusSummary"
+        }
       },
-      "required": ["event_type", "data"]
+      "required": [
+        "event_type",
+        "data"
+      ]
     },
     "OrderUpdateEvent": {
       "type": "object",
       "properties": {
-        "event_type": { "const": "order_update" },
-        "data": { "$ref": "#/definitions/OrderEvent" }
+        "event_type": {
+          "const": "order_update"
+        },
+        "data": {
+          "$ref": "#/definitions/OrderEvent"
+        }
       },
-      "required": ["event_type", "data"]
+      "required": [
+        "event_type",
+        "data"
+      ]
     },
     "MarketUpdateEvent": {
       "type": "object",
       "properties": {
-        "event_type": { "const": "market_update" },
-        "data": { "$ref": "#/definitions/MarketEvent" }
+        "event_type": {
+          "const": "market_update"
+        },
+        "data": {
+          "$ref": "#/definitions/MarketEvent"
+        }
       },
-      "required": ["event_type", "data"]
+      "required": [
+        "event_type",
+        "data"
+      ]
     },
     "ErrorEvent": {
       "type": "object",
       "properties": {
-        "event_type": { "const": "error" },
-        "data": { "type": "string" }
+        "event_type": {
+          "const": "error"
+        },
+        "data": {
+          "type": "string"
+        }
       },
-      "required": ["event_type", "data"]
+      "required": [
+        "event_type",
+        "data"
+      ]
     },
     "StrategyConfig": {
       "type": "object",
       "oneOf": [
         {
           "title": "Spot Grid Config",
-          "required": ["type", "symbol", "upper_price", "lower_price", "grid_type", "grid_count", "total_investment"],
+          "required": [
+            "type",
+            "symbol",
+            "upper_price",
+            "lower_price",
+            "grid_type",
+            "grid_count",
+            "total_investment"
+          ],
           "properties": {
-            "type": { "const": "spot_grid" },
-            "symbol": { "type": "string" },
-            "upper_price": { "type": "number" },
-            "lower_price": { "type": "number" },
-            "grid_type": { "enum": ["arithmetic", "geometric"] },
-            "grid_count": { "type": "integer", "minimum": 2 },
-            "total_investment": { "type": "number" },
-            "trigger_price": { "type": ["number", "null"] }
+            "type": {
+              "const": "spot_grid"
+            },
+            "symbol": {
+              "type": "string"
+            },
+            "upper_price": {
+              "type": "number"
+            },
+            "lower_price": {
+              "type": "number"
+            },
+            "grid_type": {
+              "enum": [
+                "arithmetic",
+                "geometric"
+              ]
+            },
+            "grid_count": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "total_investment": {
+              "type": "number"
+            },
+            "trigger_price": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
           }
         },
         {
           "title": "Perp Grid Config",
-          "required": ["type", "symbol", "leverage", "upper_price", "lower_price", "grid_type", "grid_count", "total_investment", "grid_bias"],
+          "required": [
+            "type",
+            "symbol",
+            "leverage",
+            "upper_price",
+            "lower_price",
+            "grid_type",
+            "grid_count",
+            "total_investment",
+            "grid_bias"
+          ],
           "properties": {
-            "type": { "const": "perp_grid" },
-            "symbol": { "type": "string" },
-            "leverage": { "type": "integer", "minimum": 1 },
-            "is_isolated": { "type": "boolean", "default": true },
-            "upper_price": { "type": "number" },
-            "lower_price": { "type": "number" },
-            "grid_type": { "enum": ["arithmetic", "geometric"] },
-            "grid_count": { "type": "integer", "minimum": 2 },
-            "total_investment": { "type": "number", "description": "Notional Value (Position Size)" },
-            "grid_bias": { "enum": ["long", "short", "neutral"] },
-            "trigger_price": { "type": ["number", "null"] }
+            "type": {
+              "const": "perp_grid"
+            },
+            "symbol": {
+              "type": "string"
+            },
+            "leverage": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "is_isolated": {
+              "type": "boolean",
+              "default": true
+            },
+            "upper_price": {
+              "type": "number"
+            },
+            "lower_price": {
+              "type": "number"
+            },
+            "grid_type": {
+              "enum": [
+                "arithmetic",
+                "geometric"
+              ]
+            },
+            "grid_count": {
+              "type": "integer",
+              "minimum": 2
+            },
+            "total_investment": {
+              "type": "number",
+              "description": "Notional Value (Position Size)"
+            },
+            "grid_bias": {
+              "enum": [
+                "long",
+                "short",
+                "neutral"
+              ]
+            },
+            "trigger_price": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
           }
         }
       ]
     },
     "StatusSummary": {
       "type": "object",
-      "required": ["strategy_name", "symbol", "realized_pnl", "unrealized_pnl", "total_fees", "inventory", "wallet", "price", "zones", "custom"],
+      "required": [
+        "strategy_name",
+        "symbol",
+        "realized_pnl",
+        "unrealized_pnl",
+        "total_fees",
+        "inventory",
+        "wallet",
+        "price",
+        "zones",
+        "custom"
+      ],
       "properties": {
-        "strategy_name": { "type": "string" },
-        "symbol": { "type": "string" },
-        "realized_pnl": { "type": "number" },
-        "unrealized_pnl": { "type": "number" },
-        "total_fees": { "type": "number" },
-        "inventory": { "$ref": "#/definitions/InventoryStats" },
-        "wallet": { "$ref": "#/definitions/WalletStats" },
-        "price": { "type": "number" },
+        "strategy_name": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "realized_pnl": {
+          "type": "number"
+        },
+        "unrealized_pnl": {
+          "type": "number"
+        },
+        "total_fees": {
+          "type": "number"
+        },
+        "inventory": {
+          "$ref": "#/definitions/InventoryStats"
+        },
+        "wallet": {
+          "$ref": "#/definitions/WalletStats"
+        },
+        "price": {
+          "type": "number"
+        },
         "zones": {
           "type": "array",
-          "items": { "$ref": "#/definitions/ZoneStatus" }
+          "items": {
+            "$ref": "#/definitions/ZoneStatus"
+          }
         },
         "custom": {
           "type": "object",
           "oneOf": [
-             {
-               "title": "Spot Grid Custom Data",
-               "required": ["grid_count", "range_low", "range_high", "roundtrips"],
-               "properties": {
-                 "grid_count": { "type": "integer" },
-                 "range_low": { "type": "number" },
-                 "range_high": { "type": "number" },
-                 "roundtrips": { "type": "integer" }
-               }
-             },
-             {
-               "title": "Perp Grid Custom Data",
-               "required": ["leverage", "grid_bias", "long_inventory", "short_inventory", "state"],
-               "properties": {
-                 "leverage": { "type": "integer" },
-                 "grid_bias": { "type": "string" },
-                 "long_inventory": { "type": "number" },
-                 "short_inventory": { "type": "number" },
-                 "state": { "type": "string" }
-               }
-             }
+            {
+              "title": "Spot Grid Custom Data",
+              "required": [
+                "grid_count",
+                "range_low",
+                "range_high",
+                "roundtrips"
+              ],
+              "properties": {
+                "grid_count": {
+                  "type": "integer"
+                },
+                "range_low": {
+                  "type": "number"
+                },
+                "range_high": {
+                  "type": "number"
+                },
+                "roundtrips": {
+                  "type": "integer"
+                }
+              }
+            },
+            {
+              "title": "Perp Grid Custom Data",
+              "required": [
+                "leverage",
+                "grid_bias",
+                "long_inventory",
+                "short_inventory",
+                "state",
+                "roundtrips"
+              ],
+              "properties": {
+                "leverage": {
+                  "type": "integer"
+                },
+                "grid_bias": {
+                  "type": "string"
+                },
+                "long_inventory": {
+                  "type": "number"
+                },
+                "short_inventory": {
+                  "type": "number"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "roundtrips": {
+                  "type": "integer"
+                }
+              }
+            }
           ]
         }
       }
     },
     "InventoryStats": {
       "type": "object",
-      "required": ["base_size", "avg_entry_price"],
+      "required": [
+        "base_size",
+        "avg_entry_price"
+      ],
       "properties": {
-        "base_size": { "type": "number" },
-        "avg_entry_price": { "type": "number" }
+        "base_size": {
+          "type": "number"
+        },
+        "avg_entry_price": {
+          "type": "number"
+        }
       }
     },
     "WalletStats": {
       "type": "object",
-      "required": ["base_balance", "quote_balance"],
+      "required": [
+        "base_balance",
+        "quote_balance"
+      ],
       "properties": {
-        "base_balance": { "type": "number" },
-        "quote_balance": { "type": "number" }
+        "base_balance": {
+          "type": "number"
+        },
+        "quote_balance": {
+          "type": "number"
+        }
       }
     },
     "ZoneStatus": {
       "type": "object",
-      "required": ["price", "side", "status", "size"],
+      "required": [
+        "price",
+        "side",
+        "status",
+        "size"
+      ],
       "properties": {
-        "price": { "type": "number" },
-        "side": { "type": "string", "enum": ["Buy", "Sell"] },
-        "status": { "type": "string", "enum": ["Open", "Idle"] },
-        "size": { "type": "number" }
+        "price": {
+          "type": "number"
+        },
+        "side": {
+          "type": "string",
+          "enum": [
+            "Buy",
+            "Sell"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "Open",
+            "Idle"
+          ]
+        },
+        "size": {
+          "type": "number"
+        }
       }
     },
     "OrderEvent": {
       "type": "object",
-      "required": ["oid", "side", "price", "size", "status", "fee"],
+      "required": [
+        "oid",
+        "side",
+        "price",
+        "size",
+        "status",
+        "fee"
+      ],
       "properties": {
-        "oid": { "type": "integer", "minimum": 0 },
-        "cloid": { "type": ["string", "null"] },
-        "side": { "type": "string" },
-        "price": { "type": "number" },
-        "size": { "type": "number" },
-        "status": { "type": "string" },
-        "fee": { "type": "number" }
+        "oid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cloid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "side": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number"
+        },
+        "size": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        },
+        "fee": {
+          "type": "number"
+        }
       }
     },
     "MarketEvent": {
       "type": "object",
-      "required": ["price"],
+      "required": [
+        "price"
+      ],
       "properties": {
-        "price": { "type": "number" }
+        "price": {
+          "type": "number"
+        }
       }
     }
   }

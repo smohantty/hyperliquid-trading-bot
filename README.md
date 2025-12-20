@@ -101,6 +101,34 @@ New connections immediately receive the Strategy Configuration and the latest St
 *   `order_update`: Real-time order fills/placements.
 *   `market_update`: Price ticks.
 
+## Dashboard Web App
+
+A modern React-based dashboard is included to visualize the bot's status in real-time.
+
+### Running the Dashboard
+
+1.  **Start the Bot** (Ensure it's running and broadcasting):
+    ```bash
+    cargo run --release -- --config configs/<your_strategy>.toml
+    ```
+
+2.  **Start the Web Client**:
+    Open a new terminal in the `web-client` directory:
+    ```bash
+    cd web-client
+    npm install  # First time only
+    npm run dev
+    ```
+
+3.  **Access the Interface**:
+    Open your browser and navigate to `http://localhost:5173`.
+
+### Features
+*   **Real-time PnL & Balance Tracking**
+*   **Live Grid Visualization** (Order Book style)
+*   **Active Strategy Configuration**
+*   **Connection Status Indicator**
+
 ## Telegram Integration 📱
 The bot can send real-time notifications to your Telegram.
 

@@ -104,10 +104,40 @@ Sent immediately upon connection. Contains the full strategy configuration.
 {
   "event_type": "config",
   "data": {
-    // ... mirrors the .toml config file ...
-    // See "Parameters" in strategy docs:
-    // - SpotGrid: ../strategies/spot_grid.md#parameters
-    // - PerpGrid: ../strategies/perp_grid.md#parameters
+    // Variant 1: Spot Grid
+    // {
+    //   "type": "spot_grid",
+    //   "symbol": "HYPE/USDC",
+    //   "upper_price": 110.0,
+    //   "lower_price": 90.0,
+    //   "grid_type": "arithmetic", // or "geometric"
+    //   "grid_count": 50,
+    //   "total_investment": 1000.0,
+    //   "trigger_price": 105.0     // Optional
+    // }
+
+    // Variant 2: Perp Grid
+    // {
+    //   "type": "perp_grid",
+    //   "symbol": "HYPE-PERP",
+    //   "leverage": 10,
+    //   "is_isolated": true,
+    //   "upper_price": 120.0,
+    //   "lower_price": 80.0,
+    //   "grid_type": "arithmetic",
+    //   "grid_count": 50,
+    //   "total_investment": 1000.0, // Notional Value
+    //   "grid_bias": "long",        // "long", "short", "neutral"
+    //   "trigger_price": null
+    // }
+  }
+}
+```
+
+See [Strategy Configuration](../config/strategy.rs) for the exact Rust structs.
+Parameters are also detailed in:
+*   [Spot Grid Docs](../strategies/spot_grid.md#parameters)
+*   [Perp Grid Docs](../strategies/perp_grid.md#parameters)
   }
 }
 ```

@@ -123,6 +123,23 @@ A modern React-based dashboard is included to visualize the bot's status in real
 3.  **Access the Interface**:
     Open your browser and navigate to `http://localhost:5173`.
 
+### Desktop App (Electron)
+
+You can also run the dashboard as a standalone desktop application.
+
+**Build:**
+```bash
+cd frontend
+npm run electron:build
+```
+The executable (e.g., `.AppImage`) will be generated in `frontend/dist`.
+
+**Run:**
+Simply execute the generated binary:
+```bash
+./frontend/dist/web-client-0.0.0.AppImage
+```
+
 ### Features
 *   **Real-time PnL & Balance Tracking**
 *   **Live Grid Visualization** (Order Book style)

@@ -1,48 +1,55 @@
-# Hyperliquid Trading Bot Agent Context
+# Hyperliquid Trading Bot: Agent Instructions
 
-## Project Goal
-Build a robust, modular, and high-performance trading bot for the Hyperliquid exchange (Spot and Perpetual markets) using Rust. The bot features real-time WebSocket interaction and bidirectional grid strategies.
+## 1. Project Context
+You are working on a high-performance, event-driven trading bot for Hyperliquid (Spot & Perp).
+The codebase is written in **Rust** and uses `tokio` for concurrency.
 
-## System Architecture
+### Critical Documentation
+Before starting any task, **YOU MUST READ** these documents to understand the system:
+-   **Architecture**: `docs/design.md` (System overview, components, data flow).
+-   **Strategies**: `docs/strategies/` (Detailed logic for `SpotGrid` and `PerpGrid`).
+-   **Usage**: `README.md` (Setup, CLI commands, Config).
 
-### 1. Core Engine (`src/engine/`)
-- **`mod.rs`**: The heart of the bot. Orchestrates the WebSocket event loop (AllMids, UserEvents), handles order placement via `ExchangeClient`, and routes events to strategies.
-- **`context.rs`**: Provides `StrategyContext`, an abstraction layer for strategies to place orders, query market metadata, and check balances without knowing SDK internals.
+## 2. Mandatory Workflow
+You must strictly follow this process for every user request involving code changes:
 
+### Phase 1: Requirements Gathering
+1.  **Analyze**: Read the User Request.
+2.  **Document**: Create or Update `requirements.md` (in the root or strictly associated with the task).
+    *   Define *what* needs to be done.
+    *   Identify edge cases.
+    *   List parameters to change.
 
-### 2. Strategy Layer (`src/strategy/`)
-- **`mod.rs`**: Defines the `Strategy` trait with methods for `on_tick` and `on_order_filled`.
-- **`spot_grid.rs`**: Advanced spot grid with arithmetic/geometric spacing and CLOID-based fill matching.
-- **`perp_grid.rs`**: Bidirectional perpetual grid with:
-    - **Grid Bias**: `Long`, `Short`, and `Neutral` modes.
-    - **Leverage Support**: Dynamic position sizing based on account leverage.
-    - **PnL Handling**: Correct entry/exit math for both long and short positions.
+### Phase 2: Planning
+1.  **Plan**: Create `implementation_plan.md`.
+    *   Link to the Requirements.
+    *   List specific files to modify.
+    *   Describe the logic changes (pseudo-code if complex).
+    *   Define verification steps (Tests, Manual checks).
+2.  **Review**: **STOP and Ask the User** to review the Plan. Do *not* write code until the plan is approved.
 
-### 3. Configuration Management (`src/config/`)
-- **`strategy.rs`**: Strong types for all strategy parameters, including `GridBias`, `GridType`, and `leverage`.
-- **`creator.rs`**: Interactive CLI wizard using `dialoguer` to safely generate TOML configs.
-- **`exchange.rs`**: credential loading from `.env` using `dotenvy`.
+### Phase 3: Execution
+1.  **Implement**: Write the code according to the approved plan.
+2.  **Documentation**:
+    *   **CRITICAL**: If you change behavior, add a feature, or modify a strategy, you **MUST** update the relevant documentation in `docs/` or `README.md` immediately. Code and Docs must never drift apart.
 
-## Key Technical Design Decisions
+### Phase 4: Verification
+1.  **Compiles?**: Always run `cargo check`.
+2.  **Tests?**: Run `cargo test` if applicable.
+3.  **Verify**: Confirm the change meets the Requirements.
 
-### CLOID Order Matching
-The bot uses `uuid::Uuid` as Client Order IDs (CLOIDs).
-- **Match-on-Fill**: When a `UserEvent::Fill` arrives, the `Engine` passes the `cloid` to the strategy.
-- **Resilience**: Strategies use an `active_orders: HashMap<Uuid, usize>` to instantly map fills back to specific grid zones, even across restarts.
+## 3. System Architecture Constraints
+*   **Engine vs Strategy**: The `Engine` (`src/engine/`) manages connections and state. The `Strategy` (`src/strategy/`) is pure logic.
+    *   *Never* put networking/API calls inside a Strategy.
+    *   Strategies process `on_tick` and `on_order_filled` and return standard actions.
+*   **Broadcasting**: Status updates should be sent via the `StatusBroadcaster` (`src/broadcast/`).
+*   **Safety**: All `Result`s must be handled. Avoid `unwrap()` in critical paths.
 
-### Safety Mechanisms
-- **Safe Mode**: Toggleable in `main.rs` to simulate trading without sending orders to the exchange.
-- **Precision Handling**: The bot fetches `szDecimals` and `pxDecimals` from Hyperliquid metadata to ensure all orders satisfy exchange constraints.
+## 4. Key Locations
+*   **Config**: `src/config/`
+*   **Engine**: `src/engine/`
+*   **Strategies**: `src/strategy/`
+*   **Broadcasting**: `src/broadcast/`
+*   **Docs**: `docs/`
 
-## Current Status (Phases 1-6 Complete)
-- [x] Core Config & CLI Wizard
-- [x] WebSocket Event Loop & Info/Exchange Client Integration
-- [x] Spot Grid Strategy (Live Trading Verified)
-
-- [x] Perpetual Grid Strategy (Bidirectional, Biased, Leveraged)
-- [x] Testnet Verification (Live Order Flow Confirmed)
-
-## Development workflow
-- **Run Bot**: `cargo run -- --config configs/your_config.toml`
-- **Interactive Setup**: `cargo run -- --create`
-- **Environment**: Ensure `.env` contains `PRIVATE_KEY` and optionally `NETWORK=testnet`.
+Remember: **Documentation is part of the Code.** Update it.

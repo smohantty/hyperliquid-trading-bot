@@ -239,44 +239,20 @@ impl PerpGridStrategy {
 
                 let raw_price = if is_buy {
                     // Long Bias/Buy: Find highest grid level BELOW market price
-                    let nearest = self
-                        .zones
+                    self.zones
                         .iter()
                         .map(|z| z.lower_price)
                         .filter(|&p| p < market_price)
-                        .fold(0.0 / 0.0, f64::max); // Use NaN as initial to detect empty
-
-                    if nearest.is_nan() {
-                        // Price is below all zones? Use lowest zone or market?
-                        // Spot logic uses lowest zone. Let's use market * 0.99 if completely out of bounds,
-                        // or just the lowest grid limit.
-                        // If we are below the grid, we probably shouldn't be starting Long Bias?
-                        // But if we are, let's just use the lowest grid price.
-                        self.zones
-                            .first()
-                            .map(|z| z.lower_price)
-                            .unwrap_or(market_price)
-                    } else {
-                        nearest
-                    }
+                        .max_by(|a, b| a.partial_cmp(b).unwrap())
+                        .unwrap_or(market_price)
                 } else {
                     // Short Bias/Sell: Find lowest grid level ABOVE market price
-                    let nearest = self
-                        .zones
+                    self.zones
                         .iter()
                         .map(|z| z.upper_price)
                         .filter(|&p| p > market_price)
-                        .fold(f64::INFINITY, f64::min);
-
-                    if nearest.is_infinite() {
-                        // Price is above all zones.
-                        self.zones
-                            .last()
-                            .map(|z| z.upper_price)
-                            .unwrap_or(market_price)
-                    } else {
-                        nearest
-                    }
+                        .min_by(|a, b| a.partial_cmp(b).unwrap())
+                        .unwrap_or(market_price)
                 };
                 (
                     info.round_price(raw_price),

@@ -23,6 +23,17 @@ async fn main() -> Result<()> {
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("info,hyperliquid_trading_bot=debug"),
     )
+    .format(|buf, record| {
+        use std::io::Write;
+        writeln!(
+            buf,
+            "[{} {} {}] {}",
+            chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
+            record.level(),
+            record.target(),
+            record.args()
+        )
+    })
     .init();
     let args = Args::parse();
 

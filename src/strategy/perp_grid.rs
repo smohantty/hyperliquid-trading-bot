@@ -146,6 +146,19 @@ impl PerpGridStrategy {
         let investment_per_zone = self.total_investment / num_zones as f64;
         let initial_price = self.trigger_price.unwrap_or(last_price);
 
+        // Validation: Check if wallet has enough margin
+        let wallet_balance = ctx.balance("USDC");
+
+        let max_notional = wallet_balance * self.leverage as f64;
+
+        if max_notional < self.total_investment {
+            warn!(
+                "Insufficient Margin! Balance: {}, Lev: {}, Max Notional: {}, Required: {}. Bailing out.",
+                wallet_balance, self.leverage, max_notional, self.total_investment
+            );
+            return;
+        }
+
         self.zones.clear();
         let mut total_position_required = 0.0;
 
@@ -157,7 +170,9 @@ impl PerpGridStrategy {
             // Borrow for size calc
             let size = {
                 let info = ctx.market_info(&self.symbol).unwrap();
-                let raw_size = (investment_per_zone * self.leverage as f64) / mid_price;
+                // total_investment is Notional.
+                // Size = Notional / Price
+                let raw_size = investment_per_zone / mid_price;
                 info.ensure_min_sz(mid_price, 10.0)
                     .max(info.round_size(raw_size))
             };
@@ -702,6 +717,7 @@ mod tests {
     fn test_perp_grid_execution_flow() {
         let symbol = "HYPE".to_string();
         let mut ctx = create_test_context(&symbol);
+        ctx.set_balance("USDC".to_string(), 1000.0);
 
         let config = StrategyConfig::PerpGrid {
             symbol: symbol.clone(),

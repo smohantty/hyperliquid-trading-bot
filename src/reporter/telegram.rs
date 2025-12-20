@@ -37,9 +37,12 @@ impl TelegramReporter {
         let bot = self.bot.clone();
         let chat_id = self.chat_id;
 
-        // Shared state for the Command Handler to access the latest Summary
+        // Shared state for the Command Handler to access the latest Summary and Config
         let last_summary: Arc<Mutex<Option<StatusSummary>>> = Arc::new(Mutex::new(None));
+        let last_config: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
+        
         let last_summary_evt = last_summary.clone();
+        let last_config_evt = last_config.clone();
 
         // Spawn Command Handler (REPL)
         let bot_repl = bot.clone();
@@ -47,15 +50,26 @@ impl TelegramReporter {
             let handler =
                 Update::filter_message().endpoint(move |bot: Bot, msg: Message| {
                     let summary_lock = last_summary.clone();
+                    let config_lock = last_config.clone();
                     async move {
                         if let Some(text) = msg.text() {
                             if text == "/status" {
                                 let summary = summary_lock.lock().await;
+                                let config = config_lock.lock().await;
+                                
                                 if let Some(s) = &*summary {
-                                    let resp = format!(
+                                    let mut resp = format!(
                                         "🟢 <b>{}</b>\nSymbol: <code>{}</code>\n💰 PnL: <code>{:.2}</code> (Unrl: <code>{:.2}</code>)\n📉 Price: <code>{:.4}</code>\n📦 Inv: <code>{:.4}</code> @ <code>{:.4}</code>",
                                         s.strategy_name, s.symbol, s.realized_pnl, s.unrealized_pnl, s.price, s.inventory.base_size, s.inventory.avg_entry_price
                                     );
+                                    
+                                    if let Some(c) = &*config {
+                                        // Format config as pretty JSON
+                                        if let Ok(config_str) = serde_json::to_string_pretty(c) {
+                                            resp.push_str(&format!("\n\n⚙️ <b>Config:</b>\n<pre>{}</pre>", config_str));
+                                        }
+                                    }
+                                    
                                     bot.send_message(msg.chat.id, resp)
                                         .parse_mode(teloxide::types::ParseMode::Html)
                                         .await?;
@@ -86,6 +100,11 @@ impl TelegramReporter {
                             // Update cache
                             let mut lock = last_summary_evt.lock().await;
                             *lock = Some(s);
+                        }
+                        WSEvent::Config(c) => {
+                            // Update config cache
+                            let mut lock = last_config_evt.lock().await;
+                            *lock = Some(c);
                         }
                         WSEvent::OrderUpdate(o) => {
                             if o.status == "FILLED" {

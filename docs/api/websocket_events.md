@@ -5,6 +5,7 @@ The bot exposes a WebSocket server (default port `9000`) that broadcasts real-ti
 ## Connection
 *   **URL**: `ws://<HOST>:<PORT>` (e.g., `ws://localhost:9000`)
 *   **Protocol**: JSON-based messages.
+*   **Schema**: [schema.json](./schema.json) offers a formal description of all events.
 
 ## Event Envelope
 All messages are wrapped in a standard envelope structure if using raw sockets, or sent as direct JSON objects depending on the broadcast implementation. Currently, the bot sends distinct JSON objects with an `event_type` field.

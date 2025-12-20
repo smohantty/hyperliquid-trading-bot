@@ -106,7 +106,11 @@ The bot can send real-time notifications to your Telegram.
 
 ### Setup
 1.  **Create a Bot**: Talk to [@BotFather](https://t.me/botfather) on Telegram to create a new bot and get a **Token**.
-2.  **Get Chat ID**: Start your bot and send a message. Visit `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` to find your `chat.id`.
+2.  **Get Chat ID**:
+    *   Open your new bot in Telegram.
+    *   Click **Start** or send a message (e.g., "Hello").
+    *   Visit `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` in your browser.
+    *   Look for `"chat":{"id":12345678,...}` in the JSON response. This `12345678` is your `TELEGRAM_CHAT_ID`.
 3.  **Update `.env`**:
     ```env
     TELEGRAM_BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11

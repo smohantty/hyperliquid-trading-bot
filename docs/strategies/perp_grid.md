@@ -6,7 +6,7 @@ A grid strategy designed for Perpetual Futures, supporting Leverage and Long/Sho
 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
-| `symbol` | String | Perp pair (e.g., "HYPE-PERP"). |
+| `symbol` | String | Perp pair (e.g., "HYPE"). |
 | `leverage` | u32 | Leverage multiplier (e.g., 10x). |
 | `grid_bias` | Enum | `Neutral`, `Long`, or `Short`. Determines initial positioning. |
 | `upper_price` | f64 | Highest price of range. |

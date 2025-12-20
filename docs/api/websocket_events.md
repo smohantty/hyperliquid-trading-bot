@@ -119,7 +119,7 @@ Sent immediately upon connection. Contains the full strategy configuration.
     // Variant 2: Perp Grid
     // {
     //   "type": "perp_grid",
-    //   "symbol": "HYPE-PERP",
+    //   "symbol": "HYPE",
     //   "leverage": 10,
     //   "is_isolated": true,
     //   "upper_price": 120.0,

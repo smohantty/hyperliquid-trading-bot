@@ -233,11 +233,50 @@ impl PerpGridStrategy {
             let (activation_price, target_size, is_buy) = {
                 // Borrow Info (Immutable)
                 let info = ctx.market_info(&self.symbol).unwrap();
+                // Use nearest grid level for acquisition (Passive/Grid-Aligned)
+                let market_price = info.last_price;
                 let is_buy = total_position_required > 0.0;
+
                 let raw_price = if is_buy {
-                    initial_price * 1.05
+                    // Long Bias/Buy: Find highest grid level BELOW market price
+                    let nearest = self
+                        .zones
+                        .iter()
+                        .map(|z| z.lower_price)
+                        .filter(|&p| p < market_price)
+                        .fold(0.0 / 0.0, f64::max); // Use NaN as initial to detect empty
+
+                    if nearest.is_nan() {
+                        // Price is below all zones? Use lowest zone or market?
+                        // Spot logic uses lowest zone. Let's use market * 0.99 if completely out of bounds,
+                        // or just the lowest grid limit.
+                        // If we are below the grid, we probably shouldn't be starting Long Bias?
+                        // But if we are, let's just use the lowest grid price.
+                        self.zones
+                            .first()
+                            .map(|z| z.lower_price)
+                            .unwrap_or(market_price)
+                    } else {
+                        nearest
+                    }
                 } else {
-                    initial_price * 0.95
+                    // Short Bias/Sell: Find lowest grid level ABOVE market price
+                    let nearest = self
+                        .zones
+                        .iter()
+                        .map(|z| z.upper_price)
+                        .filter(|&p| p > market_price)
+                        .fold(f64::INFINITY, f64::min);
+
+                    if nearest.is_infinite() {
+                        // Price is above all zones.
+                        self.zones
+                            .last()
+                            .map(|z| z.upper_price)
+                            .unwrap_or(market_price)
+                    } else {
+                        nearest
+                    }
                 };
                 (
                     info.round_price(raw_price),

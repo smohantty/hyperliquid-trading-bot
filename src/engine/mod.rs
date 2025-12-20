@@ -201,6 +201,8 @@ impl Engine {
         info!("Subscribed to UserEvents for {:?}.", user_address);
 
         let mut pending_orders: HashMap<u128, PendingOrder> = HashMap::new();
+        let mut completed_cloids: std::collections::HashSet<u128> =
+            std::collections::HashSet::new(); // Track immediate fills to avoid duplicates
 
         let mut balance_refresh_timer = tokio::time::interval(std::time::Duration::from_secs(30));
 
@@ -316,15 +318,20 @@ impl Engine {
                                         };
 
                                          info!("(Live) Sending: {} {} {} @ {}", if sdk_req.is_buy { "BUY" } else { "SELL" }, sdk_req.sz, coin, sdk_req.limit_px);
-                                         match _exchange_client.order(sdk_req, None).await {
+                                             match _exchange_client.order(sdk_req, None).await {
                                              Ok(res) => {
                                                  // Extract Status Summary
+                                                 let mut immediate_fill = None;
                                                  let status_msg = match res {
                                                      hyperliquid_rust_sdk::ExchangeResponseStatus::Ok(exchange_res) => {
                                                          if let Some(data) = &exchange_res.data {
                                                              data.statuses.iter().map(|s| match s {
                                                                  hyperliquid_rust_sdk::ExchangeDataStatus::Resting(r) => format!("Resting (oid: {})", r.oid),
-                                                                 hyperliquid_rust_sdk::ExchangeDataStatus::Filled(f) => format!("Filled (oid: {})", f.oid),
+                                                                 hyperliquid_rust_sdk::ExchangeDataStatus::Filled(f) => {
+                                                                     // Capture fill details for immediate notification
+                                                                     immediate_fill = Some((f.total_sz.clone(), f.avg_px.clone()));
+                                                                     format!("Filled (oid: {})", f.oid)
+                                                                 },
                                                                  hyperliquid_rust_sdk::ExchangeDataStatus::Error(e) => format!("Error: {}", e),
                                                                  _ => format!("{:?}", s),
                                                              }).collect::<Vec<_>>().join(", ")
@@ -336,14 +343,30 @@ impl Engine {
                                                  };
 
                                                  info!("Response: {}", status_msg);
-                                                // Record in pending_orders if cloid exists
-                                                if let Some(c) = cloid {
-                                                    pending_orders.insert(c, PendingOrder {
-                                                        target_size: target_sz,
-                                                        filled_size: 0.0,
-                                                        weighted_avg_px: 0.0,
-                                                        accumulated_fees: 0.0,
-                                                    });
+
+                                                if let Some((total_sz_str, avg_px_str)) = immediate_fill {
+                                                    if let Some(c) = cloid {
+                                                        let amount: f64 = total_sz_str.parse().unwrap_or(0.0);
+                                                        let px: f64 = avg_px_str.parse().unwrap_or(0.0);
+                                                        // Note: Fee is unknown in immediate response, assumed 0.0 or handled by reconciliation
+                                                        info!("Immediate Fill detected for {}. Notifying strategy.", c);
+
+                                                        let side_str = if is_buy { "B" } else { "S" };
+                                                        if let Err(e) = strategy.on_order_filled(side_str, amount, px, 0.0, Some(c), &mut ctx) {
+                                                            error!("Strategy on_order_filled error: {}", e);
+                                                        }
+                                                        completed_cloids.insert(c);
+                                                    }
+                                                } else {
+                                                    // Record in pending_orders if cloid exists AND not immediately filled
+                                                    if let Some(c) = cloid {
+                                                        pending_orders.insert(c, PendingOrder {
+                                                            target_size: target_sz,
+                                                            filled_size: 0.0,
+                                                            weighted_avg_px: 0.0,
+                                                            accumulated_fees: 0.0,
+                                                        });
+                                                    }
                                                 }
                                             },
                                             Err(e) => {
@@ -421,6 +444,11 @@ impl Engine {
 
                                     // Pass to strategy or aggregate
                                     if let Some(c) = cloid {
+                                        if completed_cloids.contains(&c) {
+                                            debug!("Ignored duplicate fill for completed cloid: {}", c);
+                                            continue;
+                                        }
+
                                         if let Some(pending) = pending_orders.get_mut(&c) {
                                             let new_total_size = pending.filled_size + amount;
                                             pending.weighted_avg_px = (pending.weighted_avg_px * pending.filled_size + px * amount) / new_total_size;

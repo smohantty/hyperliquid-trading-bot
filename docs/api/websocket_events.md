@@ -51,6 +51,10 @@ Sent periodically (e.g., every tick or second) to provide a snapshot of the stra
 ## Strategy-Specific Data (`custom`)
 
 The `custom` field in the `summary` event changes schema based on the running strategy.
+See the strategy documentation for the authoritative schema:
+
+*   [**Spot Grid Data**](../strategies/spot_grid.md#websocket-data-custom)
+*   [**Perp Grid Data**](../strategies/perp_grid.md#websocket-data-custom)
 
 ### Spot Grid (`SpotGrid`)
 ```json

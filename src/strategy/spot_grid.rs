@@ -557,6 +557,9 @@ impl Strategy for SpotGridStrategy {
             0.0
         };
 
+        // Calculate actual total roundtrips from zones
+        let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
+
         StatusSummary {
             strategy_name: "SpotGrid".to_string(),
             symbol: self.symbol.clone(),
@@ -577,7 +580,7 @@ impl Strategy for SpotGridStrategy {
                 "grid_count": self.zones.len(),
                 "range_low": self.lower_price,
                 "range_high": self.upper_price,
-                "roundtrips": self.trade_count / 2, // Approximation
+                "roundtrips": total_roundtrips,
             }),
         }
     }

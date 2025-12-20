@@ -53,11 +53,11 @@ impl TelegramReporter {
                                 let summary = summary_lock.lock().await;
                                 if let Some(s) = &*summary {
                                     let resp = format!(
-                                        "🟢 **{}**\nSymbol: `{}`\n💰 PnL: `{:.2}` (Unrl: `{:.2}`)\n📉 Price: `{:.4}`\n📦 Inv: `{:.4}` @ `{:.4}`",
+                                        "🟢 <b>{}</b>\nSymbol: <code>{}</code>\n💰 PnL: <code>{:.2}</code> (Unrl: <code>{:.2}</code>)\n📉 Price: <code>{:.4}</code>\n📦 Inv: <code>{:.4}</code> @ <code>{:.4}</code>",
                                         s.strategy_name, s.symbol, s.realized_pnl, s.unrealized_pnl, s.price, s.inventory.base_size, s.inventory.avg_entry_price
                                     );
                                     bot.send_message(msg.chat.id, resp)
-                                        .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+                                        .parse_mode(teloxide::types::ParseMode::Html)
                                         .await?;
                                 } else {
                                     bot.send_message(msg.chat.id, "⚠️ No Status Available yet.")
@@ -91,12 +91,12 @@ impl TelegramReporter {
                             if o.status == "FILLED" {
                                 let icon = if o.side == "Buy" { "🟢" } else { "🔴" };
                                 let msg = format!(
-                                    "{} **Order Filled**\nSide: {}\nSize: `{}`\nPrice: `{}`",
+                                    "{} <b>Order Filled</b>\nSide: {}\nSize: <code>{}</code>\nPrice: <code>{}</code>",
                                     icon, o.side, o.size, o.price
                                 );
                                 if let Err(e) = bot
                                     .send_message(chat_id, msg)
-                                    .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+                                    .parse_mode(teloxide::types::ParseMode::Html)
                                     .await
                                 {
                                     error!("Failed to send Telegram notification: {}", e);

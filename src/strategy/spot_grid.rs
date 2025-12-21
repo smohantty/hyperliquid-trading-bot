@@ -1,7 +1,7 @@
 use super::common;
 use super::types::{GridType, ZoneState};
 use crate::config::strategy::StrategyConfig;
-use crate::engine::context::StrategyContext;
+use crate::engine::context::{MarketInfo, StrategyContext};
 use crate::model::OrderRequest;
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
@@ -103,13 +103,27 @@ impl SpotGridStrategy {
         }
 
         let market_info = match ctx.market_info(&self.symbol) {
-            Some(info) => info,
+            Some(info) => info.clone(),
             None => {
                 error!("[SPOT_GRID] No market info for {}", self.symbol);
                 return Err(anyhow!("No market info for {}", self.symbol));
             }
         };
 
+        // 1. Generate Zones
+        let total_base_required = self.generate_grid_levels(&market_info);
+
+        let base_coin = self.symbol.split('/').next().unwrap_or(&self.symbol);
+        info!(
+            "[SPOT_GRID] Zones initialized. Total {} Required: {}",
+            base_coin, total_base_required
+        );
+
+        // 2. Check Assets & Acquire if necessary
+        self.check_initial_acquisition(ctx, &market_info, total_base_required)
+    }
+
+    fn generate_grid_levels(&mut self, market_info: &MarketInfo) -> f64 {
         // Generate Levels
         let prices: Vec<f64> = common::calculate_grid_prices(
             self.grid_type.clone(),
@@ -168,18 +182,21 @@ impl SpotGridStrategy {
         }
 
         // Normalize total requirement to exchange precision
-        total_base_required = market_info.round_size(total_base_required);
+        market_info.round_size(total_base_required)
+    }
 
-        // Pre-flight check: Assets acquisition
+    fn check_initial_acquisition(
+        &mut self,
+        ctx: &mut StrategyContext,
+        market_info: &MarketInfo,
+        total_base_required: f64,
+    ) -> Result<()> {
         let base_coin = self.symbol.split('/').next().unwrap_or(&self.symbol);
-
-        info!(
-            "[SPOT_GRID] Zones initialized. Total {} Required: {}",
-            base_coin, total_base_required
-        );
-
-        let available_base = ctx.get_spot_available(base_coin); // Use available for trading logic
+        let available_base = ctx.get_spot_available(base_coin);
         let deficit = total_base_required - available_base;
+
+        // Use trigger_price if available, otherwise last_price
+        let initial_price = self.trigger_price.unwrap_or(market_info.last_price);
 
         if deficit > market_info.round_size(0.0) {
             // Acquisition Mode
@@ -204,7 +221,7 @@ impl SpotGridStrategy {
                 }
             }
 
-            // Apply 0.2% safety buffer to cover exchange fees, ensuring we have enough for SELL orders
+            // Apply 0.2% safety buffer to cover exchange fees
             let deficit_with_buffer = deficit * 1.002;
             let min_acq_sz = market_info.ensure_min_sz(acquisition_price, 10.1);
             let rounded_deficit = min_acq_sz.max(market_info.round_size(deficit_with_buffer));
@@ -297,6 +314,146 @@ impl SpotGridStrategy {
             });
         }
     }
+
+    fn handle_acquisition_fill(
+        &mut self,
+        size: f64,
+        px: f64,
+        fee: f64,
+        ctx: &mut StrategyContext,
+    ) -> Result<()> {
+        info!(
+            "[SPOT_GRID] Acquisition order filled! Size: {} @ {}. Fee: {}. Starting grid.",
+            size, px, fee
+        );
+        self.total_fees += fee;
+
+        // Acquisition Fill: Initialize/Update Inventory
+        // Weighted Average incase we already had some (unlikely but safe)
+        let new_inventory = self.inventory + size;
+        if new_inventory > 0.0 {
+            self.avg_entry_price =
+                (self.avg_entry_price * self.inventory + px * size) / new_inventory;
+        }
+        self.inventory = new_inventory;
+
+        // Update entry_price for all waiting SELL zones to the actual acquisition price
+        for zone in &mut self.zones {
+            if zone.state == ZoneState::WaitingSell {
+                zone.entry_price = px;
+            }
+        }
+
+        self.state = StrategyState::Running;
+        self.refresh_orders(ctx);
+        Ok(())
+    }
+
+    fn handle_buy_fill(
+        &mut self,
+        zone_idx: usize,
+        size: f64,
+        px: f64,
+        fee: f64,
+        ctx: &mut StrategyContext,
+    ) -> Result<()> {
+        let zone = &mut self.zones[zone_idx];
+
+        info!(
+            "[SPOT_GRID] Zone {} | BUY Filled @ {} | Size: {} | Fee: {:.4} | Next: SELL @ {}",
+            zone_idx, px, size, fee, zone.upper_price
+        );
+
+        // Update Strategy Fees
+        self.total_fees += fee;
+
+        // Buy Fill: Increase Inventory & Update Avg Entry Price
+        let new_inventory = self.inventory + size;
+        if new_inventory > 0.0 {
+            // Weighted Average Cost Basis
+            self.avg_entry_price =
+                (self.avg_entry_price * self.inventory + px * size) / new_inventory;
+        }
+        self.inventory = new_inventory;
+
+        zone.state = ZoneState::WaitingSell;
+        zone.entry_price = px;
+
+        let next_cloid = ctx.generate_cloid();
+        let price = zone.upper_price;
+
+        info!(
+            "[SPOT_GRID] Zone {} | Placing SELL Order @ {} (cloid: {})",
+            zone_idx, price, next_cloid
+        );
+
+        self.active_orders.insert(next_cloid, zone_idx);
+        zone.order_id = Some(next_cloid);
+
+        ctx.place_order(OrderRequest::Limit {
+            symbol: self.symbol.clone(),
+            is_buy: false,
+            price,
+            sz: zone.size,
+            reduce_only: false,
+            cloid: Some(next_cloid),
+        });
+
+        Ok(())
+    }
+
+    fn handle_sell_fill(
+        &mut self,
+        zone_idx: usize,
+        size: f64,
+        px: f64,
+        fee: f64,
+        ctx: &mut StrategyContext,
+    ) -> Result<()> {
+        let zone = &mut self.zones[zone_idx];
+        let pnl = (px - zone.entry_price) * size;
+
+        // Update Zone Metrics
+        zone.roundtrip_count += 1;
+
+        // Update Strategy Metrics
+        self.realized_pnl += pnl;
+        self.total_fees += fee;
+
+        // Sell Fill: Decrease Inventory
+        self.inventory = (self.inventory - size).max(0.0);
+        // Avg Entry Price remains unchanged on partial reduction (FIFO/WAC standard)
+
+        info!(
+            "[SPOT_GRID] Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Fee: {:.4} | Next: BUY @ {}",
+            zone_idx, px, size, pnl, fee, zone.lower_price
+        );
+
+        zone.state = ZoneState::WaitingBuy;
+        zone.entry_price = 0.0;
+
+        let next_cloid = ctx.generate_cloid();
+        let price = zone.lower_price;
+
+        info!(
+            "[SPOT_GRID] Zone {} | Placing BUY Order @ {} (cloid: {})",
+            zone_idx, price, next_cloid
+        );
+
+        self.active_orders.insert(next_cloid, zone_idx);
+        zone.order_id = Some(next_cloid);
+
+        ctx.place_order(OrderRequest::Limit {
+            symbol: self.symbol.clone(),
+            is_buy: true,
+            price,
+            sz: zone.size,
+            reduce_only: false,
+            cloid: Some(next_cloid),
+        });
+
+        Ok(())
+    }
 }
 
 impl Strategy for SpotGridStrategy {
@@ -353,129 +510,35 @@ impl Strategy for SpotGridStrategy {
             // Check for Acquisition Fill
             if let StrategyState::AcquiringAssets { cloid: acq_cloid } = self.state {
                 if cloid_val == acq_cloid {
-                    info!(
-                        "[SPOT_GRID] Acquisition order filled! Size: {} @ {}. Fee: {}. Starting grid.",
-                        size, px, fee
-                    );
-                    self.total_fees += fee;
-
-                    // Acquisition Fill: Initialize/Update Inventory
-                    // Weighted Average incase we already had some (unlikely but safe)
-                    let new_inventory = self.inventory + size;
-                    if new_inventory > 0.0 {
-                        self.avg_entry_price =
-                            (self.avg_entry_price * self.inventory + px * size) / new_inventory;
-                    }
-                    self.inventory = new_inventory;
-
-                    // Update entry_price for all waiting SELL zones to the actual acquisition price
-                    for zone in &mut self.zones {
-                        if zone.state == ZoneState::WaitingSell {
-                            zone.entry_price = px;
-                        }
-                    }
-
-                    self.state = StrategyState::Running;
-                    self.refresh_orders(ctx);
-                    return Ok(());
+                    return self.handle_acquisition_fill(size, px, fee, ctx);
                 }
             }
 
             if let Some(zone_idx) = self.active_orders.remove(&cloid_val) {
-                let zone = &mut self.zones[zone_idx];
-
-                if zone.order_id != Some(cloid_val) {
-                    warn!(
-                        "[SPOT_GRID] Zone {} order_id mismatch! Expected {:?}, got {:?}",
-                        zone_idx, zone.order_id, cloid_val
-                    );
+                // Validate Cloid
+                {
+                    let zone = &self.zones[zone_idx];
+                    if zone.order_id != Some(cloid_val) {
+                        warn!(
+                            "[SPOT_GRID] Zone {} order_id mismatch! Expected {:?}, got {:?}",
+                            zone_idx, zone.order_id, cloid_val
+                        );
+                    }
                 }
-                zone.order_id = None;
+
+                // Update Zone State
+                self.zones[zone_idx].order_id = None;
                 self.trade_count += 1;
 
-                match zone.state {
+                // Clone state to avoid borrow issues while calling helpers
+                let state = self.zones[zone_idx].state;
+
+                match state {
                     ZoneState::WaitingBuy => {
-                        info!(
-                            "[SPOT_GRID] Zone {} | BUY Filled @ {} | Size: {} | Fee: {:.4} | Next: SELL @ {}",
-                            zone_idx, px, size, fee, zone.upper_price
-                        );
-
-                        // Update Strategy Fees
-                        self.total_fees += fee;
-
-                        // Buy Fill: Increase Inventory & Update Avg Entry Price
-                        let new_inventory = self.inventory + size;
-                        if new_inventory > 0.0 {
-                            // Weighted Average Cost Basis
-                            self.avg_entry_price =
-                                (self.avg_entry_price * self.inventory + px * size) / new_inventory;
-                        }
-                        self.inventory = new_inventory;
-
-                        zone.state = ZoneState::WaitingSell;
-                        zone.entry_price = px;
-
-                        let next_cloid = ctx.generate_cloid();
-                        let price = zone.upper_price;
-
-                        info!(
-                            "[SPOT_GRID] Zone {} | Placing SELL Order @ {} (cloid: {})",
-                            zone_idx, price, next_cloid
-                        );
-
-                        self.active_orders.insert(next_cloid, zone_idx);
-                        zone.order_id = Some(next_cloid);
-
-                        ctx.place_order(OrderRequest::Limit {
-                            symbol: self.symbol.clone(),
-                            is_buy: false,
-                            price,
-                            sz: zone.size,
-                            reduce_only: false,
-                            cloid: Some(next_cloid),
-                        });
+                        self.handle_buy_fill(zone_idx, size, px, fee, ctx)?;
                     }
                     ZoneState::WaitingSell => {
-                        let pnl = (px - zone.entry_price) * size;
-
-                        // Update Zone Metrics
-                        zone.roundtrip_count += 1;
-
-                        // Update Strategy Metrics
-                        self.realized_pnl += pnl;
-                        self.total_fees += fee;
-
-                        // Sell Fill: Decrease Inventory
-                        self.inventory = (self.inventory - size).max(0.0);
-                        // Avg Entry Price remains unchanged on partial reduction (FIFO/WAC standard)
-
-                        info!(
-                            "[SPOT_GRID] Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Fee: {:.4} | Next: BUY @ {}",
-                            zone_idx, px, size, pnl, fee, zone.lower_price
-                        );
-
-                        zone.state = ZoneState::WaitingBuy;
-                        zone.entry_price = 0.0;
-
-                        let next_cloid = ctx.generate_cloid();
-                        let price = zone.lower_price;
-
-                        info!(
-                            "[SPOT_GRID] Zone {} | Placing BUY Order @ {} (cloid: {})",
-                            zone_idx, price, next_cloid
-                        );
-
-                        self.active_orders.insert(next_cloid, zone_idx);
-                        zone.order_id = Some(next_cloid);
-
-                        ctx.place_order(OrderRequest::Limit {
-                            symbol: self.symbol.clone(),
-                            is_buy: true,
-                            price,
-                            sz: zone.size,
-                            reduce_only: false,
-                            cloid: Some(next_cloid),
-                        });
+                        self.handle_sell_fill(zone_idx, size, px, fee, ctx)?;
                     }
                 }
             } else {
@@ -646,6 +709,7 @@ mod tests {
         );
         let mut ctx = StrategyContext::new(markets);
         ctx.update_spot_balance("HYPE".to_string(), 0.0, 0.0); // Zero assets
+        ctx.update_spot_balance("USDC".to_string(), 2000.0, 2000.0); // Sufficient Quote
 
         if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
             info.last_price = 100.0;

@@ -2,7 +2,7 @@ use super::common;
 use super::types::{GridType, ZoneState};
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{MarketInfo, StrategyContext, MIN_NOTIONAL_VALUE};
-use crate::model::{Cloid, OrderRequest};
+use crate::model::{Cloid, OrderFill, OrderRequest, OrderSide};
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
@@ -294,7 +294,7 @@ impl SpotGridStrategy {
 
                 ctx.place_order(OrderRequest::Limit {
                     symbol: self.symbol.clone(),
-                    is_buy: true,
+                    side: OrderSide::Buy,
                     price: acquisition_price,
                     sz: rounded_deficit,
                     reduce_only: false,
@@ -359,7 +359,7 @@ impl SpotGridStrategy {
 
                 ctx.place_order(OrderRequest::Limit {
                     symbol: self.symbol.clone(),
-                    is_buy: false,
+                    side: OrderSide::Sell,
                     price: acquisition_price,
                     sz: rounded_sell_sz,
                     reduce_only: false,
@@ -417,7 +417,7 @@ impl SpotGridStrategy {
             );
             ctx.place_order(OrderRequest::Limit {
                 symbol: self.symbol.clone(),
-                is_buy,
+                side: if is_buy { OrderSide::Buy } else { OrderSide::Sell },
                 price,
                 sz: size,
                 reduce_only: false,
@@ -428,33 +428,28 @@ impl SpotGridStrategy {
 
     fn handle_acquisition_fill(
         &mut self,
-        side: &str,
-        size: f64,
-        px: f64,
-        fee: f64,
+        fill: &OrderFill,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
-        let is_buy = side.eq_ignore_ascii_case("buy") || side.eq_ignore_ascii_case("b");
-
         info!(
             "[SPOT_GRID] Rebalancing fill received! {} {} @ {}. Fee: {}. Starting grid.",
-            if is_buy { "Purchased" } else { "Sold" },
-            size,
-            px,
-            fee
+            if fill.side.is_buy() { "Purchased" } else { "Sold" },
+            fill.size,
+            fill.price,
+            fill.fee
         );
-        self.total_fees += fee;
+        self.total_fees += fill.fee;
 
         // Update Inventory
-        if is_buy {
-            let new_inventory = self.inventory + size;
+        if fill.side.is_buy() {
+            let new_inventory = self.inventory + fill.size;
             if new_inventory > 0.0 {
                 self.avg_entry_price =
-                    (self.avg_entry_price * self.inventory + px * size) / new_inventory;
+                    (self.avg_entry_price * self.inventory + fill.price * fill.size) / new_inventory;
             }
             self.inventory = new_inventory;
         } else {
-            self.inventory = (self.inventory - size).max(0.0);
+            self.inventory = (self.inventory - fill.size).max(0.0);
             // Avg entry price remains same on sell
         }
 
@@ -462,7 +457,7 @@ impl SpotGridStrategy {
         // or keep as is if we sold (selling usually means we are at the top of the grid anyway)
         for zone in &mut self.zones {
             if zone.state == ZoneState::WaitingSell {
-                zone.entry_price = px;
+                zone.entry_price = fill.price;
             }
         }
 
@@ -474,32 +469,30 @@ impl SpotGridStrategy {
     fn handle_buy_fill(
         &mut self,
         zone_idx: usize,
-        size: f64,
-        px: f64,
-        fee: f64,
+        fill: &OrderFill,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
         let zone = &mut self.zones[zone_idx];
 
         info!(
             "[SPOT_GRID] Zone {} | BUY Filled @ {} | Size: {} | Fee: {:.4} | Next: SELL @ {}",
-            zone_idx, px, size, fee, zone.upper_price
+            zone_idx, fill.price, fill.size, fill.fee, zone.upper_price
         );
 
         // Update Strategy Fees
-        self.total_fees += fee;
+        self.total_fees += fill.fee;
 
         // Buy Fill: Increase Inventory & Update Avg Entry Price
-        let new_inventory = self.inventory + size;
+        let new_inventory = self.inventory + fill.size;
         if new_inventory > 0.0 {
             // Weighted Average Cost Basis
             self.avg_entry_price =
-                (self.avg_entry_price * self.inventory + px * size) / new_inventory;
+                (self.avg_entry_price * self.inventory + fill.price * fill.size) / new_inventory;
         }
         self.inventory = new_inventory;
 
         zone.state = ZoneState::WaitingSell;
-        zone.entry_price = px;
+        zone.entry_price = fill.price;
 
         let next_cloid = ctx.generate_cloid();
         let price = zone.upper_price;
@@ -514,7 +507,7 @@ impl SpotGridStrategy {
 
         ctx.place_order(OrderRequest::Limit {
             symbol: self.symbol.clone(),
-            is_buy: false,
+            side: OrderSide::Sell,
             price,
             sz: zone.size,
             reduce_only: false,
@@ -527,28 +520,26 @@ impl SpotGridStrategy {
     fn handle_sell_fill(
         &mut self,
         zone_idx: usize,
-        size: f64,
-        px: f64,
-        fee: f64,
+        fill: &OrderFill,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
         let zone = &mut self.zones[zone_idx];
-        let pnl = (px - zone.entry_price) * size;
+        let pnl = (fill.price - zone.entry_price) * fill.size;
 
         // Update Zone Metrics
         zone.roundtrip_count += 1;
 
         // Update Strategy Metrics
         self.realized_pnl += pnl;
-        self.total_fees += fee;
+        self.total_fees += fill.fee;
 
         // Sell Fill: Decrease Inventory
-        self.inventory = (self.inventory - size).max(0.0);
+        self.inventory = (self.inventory - fill.size).max(0.0);
         // Avg Entry Price remains unchanged on partial reduction (FIFO/WAC standard)
 
         info!(
             "[SPOT_GRID] Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Fee: {:.4} | Next: BUY @ {}",
-            zone_idx, px, size, pnl, fee, zone.lower_price
+            zone_idx, fill.price, fill.size, pnl, fill.fee, zone.lower_price
         );
 
         zone.state = ZoneState::WaitingBuy;
@@ -567,7 +558,7 @@ impl SpotGridStrategy {
 
         ctx.place_order(OrderRequest::Limit {
             symbol: self.symbol.clone(),
-            is_buy: true,
+            side: OrderSide::Buy,
             price,
             sz: zone.size,
             reduce_only: false,
@@ -619,20 +610,12 @@ impl Strategy for SpotGridStrategy {
         Ok(())
     }
 
-    fn on_order_filled(
-        &mut self,
-        _side: &str,
-        size: f64,
-        px: f64,
-        fee: f64,
-        cloid: Option<Cloid>,
-        ctx: &mut StrategyContext,
-    ) -> Result<()> {
-        if let Some(cloid_val) = cloid {
+    fn on_order_filled(&mut self, fill: &OrderFill, ctx: &mut StrategyContext) -> Result<()> {
+        if let Some(cloid_val) = fill.cloid {
             // Check for Acquisition Fill
             if let StrategyState::AcquiringAssets { cloid: acq_cloid } = self.state {
                 if cloid_val == acq_cloid {
-                    return self.handle_acquisition_fill(_side, size, px, fee, ctx);
+                    return self.handle_acquisition_fill(fill, ctx);
                 }
             }
 
@@ -657,10 +640,10 @@ impl Strategy for SpotGridStrategy {
 
                 match state {
                     ZoneState::WaitingBuy => {
-                        self.handle_buy_fill(zone_idx, size, px, fee, ctx)?;
+                        self.handle_buy_fill(zone_idx, fill, ctx)?;
                     }
                     ZoneState::WaitingSell => {
-                        self.handle_sell_fill(zone_idx, size, px, fee, ctx)?;
+                        self.handle_sell_fill(zone_idx, fill, ctx)?;
                     }
                 }
             } else {
@@ -670,7 +653,10 @@ impl Strategy for SpotGridStrategy {
                 );
             }
         } else {
-            debug!("[SPOT_GRID] Fill received without CLOID at price {}", px);
+            debug!(
+                "[SPOT_GRID] Fill received without CLOID at price {}",
+                fill.price
+            );
         }
 
         Ok(())
@@ -864,7 +850,16 @@ mod tests {
         };
 
         strategy
-            .on_order_filled("B", fill_size, fill_price, fee, Some(acq_cloid), &mut ctx)
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Buy,
+                    size: fill_size,
+                    price: fill_price,
+                    fee,
+                    cloid: Some(acq_cloid),
+                },
+                &mut ctx,
+            )
             .unwrap();
 
         // Verify that WaitingSell zones now have entry_price = fill_price
@@ -939,11 +934,13 @@ mod tests {
 
         strategy
             .on_order_filled(
-                "B",
-                fill_size,
-                fill_price,
-                buy_fee,
-                Some(order_id),
+                &OrderFill {
+                    side: OrderSide::Buy,
+                    size: fill_size,
+                    price: fill_price,
+                    fee: buy_fee,
+                    cloid: Some(order_id),
+                },
                 &mut ctx,
             )
             .unwrap();
@@ -965,11 +962,13 @@ mod tests {
 
         strategy
             .on_order_filled(
-                "S",
-                fill_size,
-                sell_price,
-                sell_fee,
-                Some(sell_order_id),
+                &OrderFill {
+                    side: OrderSide::Sell,
+                    size: fill_size,
+                    price: sell_price,
+                    fee: sell_fee,
+                    cloid: Some(sell_order_id),
+                },
                 &mut ctx,
             )
             .unwrap();
@@ -1039,7 +1038,16 @@ mod tests {
         strategy.active_orders.insert(order_id, zone_idx);
 
         strategy
-            .on_order_filled("B", 10.0, 100.0, 0.1, Some(order_id), &mut ctx)
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Buy,
+                    size: 10.0,
+                    price: 100.0,
+                    fee: 0.1,
+                    cloid: Some(order_id),
+                },
+                &mut ctx,
+            )
             .unwrap();
 
         assert_eq!(strategy.inventory, 10.0);
@@ -1054,7 +1062,16 @@ mod tests {
         strategy.active_orders.insert(order_id_2, zone_idx);
 
         strategy
-            .on_order_filled("B", 10.0, 110.0, 0.1, Some(order_id_2), &mut ctx)
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Buy,
+                    size: 10.0,
+                    price: 110.0,
+                    fee: 0.1,
+                    cloid: Some(order_id_2),
+                },
+                &mut ctx,
+            )
             .unwrap();
 
         assert_eq!(strategy.inventory, 20.0);
@@ -1068,7 +1085,16 @@ mod tests {
         strategy.active_orders.insert(order_id_3, zone_idx);
 
         strategy
-            .on_order_filled("S", 5.0, 120.0, 0.1, Some(order_id_3), &mut ctx)
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Sell,
+                    size: 5.0,
+                    price: 120.0,
+                    fee: 0.1,
+                    cloid: Some(order_id_3),
+                },
+                &mut ctx,
+            )
             .unwrap();
 
         assert_eq!(strategy.inventory, 15.0);
@@ -1118,8 +1144,8 @@ mod tests {
         // Check placed order
         assert_eq!(ctx.order_queue.len(), 1);
         match &ctx.order_queue[0] {
-            crate::model::OrderRequest::Limit { is_buy, sz, .. } => {
-                assert_eq!(*is_buy, false, "Expected a SELL order for rebalancing");
+            crate::model::OrderRequest::Limit { side, sz, .. } => {
+                assert_eq!(*side, OrderSide::Sell, "Expected a SELL order for rebalancing");
                 assert!(*sz > 0.0);
             }
             _ => panic!("Expected Limit order"),
@@ -1135,7 +1161,16 @@ mod tests {
         assert_eq!(strategy.inventory, 100.0);
 
         strategy
-            .on_order_filled("S", 5.0, 105.0, 0.1, Some(acq_cloid), &mut ctx)
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Sell,
+                    size: 5.0,
+                    price: 105.0,
+                    fee: 0.1,
+                    cloid: Some(acq_cloid),
+                },
+                &mut ctx,
+            )
             .unwrap();
 
         // After sell fill, inventory should be 95

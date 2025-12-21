@@ -61,11 +61,48 @@ impl<'de> Deserialize<'de> for Cloid {
     }
 }
 
+/// Order side: Buy or Sell
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OrderSide {
+    Buy,
+    Sell,
+}
+
+impl OrderSide {
+    pub fn is_buy(&self) -> bool {
+        matches!(self, OrderSide::Buy)
+    }
+
+    pub fn is_sell(&self) -> bool {
+        matches!(self, OrderSide::Sell)
+    }
+}
+
+impl fmt::Display for OrderSide {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OrderSide::Buy => write!(f, "Buy"),
+            OrderSide::Sell => write!(f, "Sell"),
+        }
+    }
+}
+
+/// Represents a filled order notification from the exchange.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrderFill {
+    pub side: OrderSide,
+    pub size: f64,
+    pub price: f64,
+    pub fee: f64,
+    pub cloid: Option<Cloid>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OrderRequest {
     Limit {
         symbol: String,
-        is_buy: bool,
+        side: OrderSide,
         price: f64,
         sz: f64,
         reduce_only: bool,
@@ -73,7 +110,7 @@ pub enum OrderRequest {
     },
     Market {
         symbol: String,
-        is_buy: bool,
+        side: OrderSide,
         sz: f64,
         cloid: Option<Cloid>,
     },

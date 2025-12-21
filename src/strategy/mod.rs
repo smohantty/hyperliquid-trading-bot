@@ -7,22 +7,12 @@ pub mod spot_grid;
 pub mod types;
 
 use crate::engine::context::StrategyContext;
-use crate::model::Cloid;
+use crate::model::{Cloid, OrderFill};
 use anyhow::Result;
 
 pub trait Strategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()>;
-    // Generic fill handling - using a minimal struct or SDK type?
-    // Using simple arguments for now to match UserEvents parsing plan
-    fn on_order_filled(
-        &mut self,
-        side: &str,
-        size: f64,
-        px: f64,
-        fee: f64,
-        cloid: Option<Cloid>,
-        ctx: &mut StrategyContext,
-    ) -> Result<()>;
+    fn on_order_filled(&mut self, fill: &OrderFill, ctx: &mut StrategyContext) -> Result<()>;
 
     fn on_order_failed(&mut self, cloid: Cloid, ctx: &mut StrategyContext) -> Result<()>;
 

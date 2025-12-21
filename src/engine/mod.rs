@@ -2,7 +2,7 @@ pub mod context;
 
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{MarketInfo, StrategyContext};
-use crate::model::Cloid;
+use crate::model::{Cloid, OrderFill, OrderSide};
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use ethers::signers::{LocalWallet, Signer};
@@ -439,7 +439,7 @@ impl Engine {
         let req_summary = match &order_req {
             crate::model::OrderRequest::Limit {
                 symbol,
-                is_buy,
+                side,
                 price,
                 sz,
                 reduce_only,
@@ -447,7 +447,7 @@ impl Engine {
             } => {
                 format!(
                     "LIMIT {} {} {} @ {}{}",
-                    if *is_buy { "BUY" } else { "SELL" },
+                    side,
                     sz,
                     symbol,
                     price,
@@ -455,14 +455,9 @@ impl Engine {
                 )
             }
             crate::model::OrderRequest::Market {
-                symbol, is_buy, sz, ..
+                symbol, side, sz, ..
             } => {
-                format!(
-                    "MARKET {} {} {}",
-                    if *is_buy { "BUY" } else { "SELL" },
-                    sz,
-                    symbol
-                )
+                format!("MARKET {} {} {}", side, sz, symbol)
             }
             crate::model::OrderRequest::Cancel { cloid } => format!("CANCEL {}", cloid),
         };
@@ -498,16 +493,16 @@ impl Engine {
         }
 
         let target_symbol = self.config.symbol();
-        let (is_buy, limit_px, sz, reduce_only, order_type, cloid, target_sz) = match order_req {
+        let (side, limit_px, sz, reduce_only, order_type, cloid, target_sz) = match order_req {
             crate::model::OrderRequest::Limit {
                 symbol: _,
-                is_buy,
+                side,
                 price,
                 sz,
                 reduce_only,
                 cloid,
             } => (
-                is_buy,
+                side,
                 price,
                 sz,
                 reduce_only,
@@ -519,11 +514,11 @@ impl Engine {
             ),
             crate::model::OrderRequest::Market {
                 symbol: _,
-                is_buy,
+                side,
                 sz,
                 cloid,
             } => {
-                let aggressive_price = if is_buy {
+                let aggressive_price = if side.is_buy() {
                     mid_price * 1.1
                 } else {
                     mid_price * 0.9
@@ -532,7 +527,7 @@ impl Engine {
                 let rounded_aggressive_price = market_info.round_price(aggressive_price);
 
                 (
-                    is_buy,
+                    side,
                     rounded_aggressive_price,
                     sz,
                     false,
@@ -548,7 +543,7 @@ impl Engine {
 
         let sdk_req = ClientOrderRequest {
             asset: coin.to_string(),
-            is_buy,
+            is_buy: side.is_buy(),
             limit_px,
             sz,
             reduce_only,
@@ -561,11 +556,7 @@ impl Engine {
             self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                 oid: 0, // Not assigned yet
                 cloid: Some(c.to_string()),
-                side: if is_buy {
-                    "Buy".to_string()
-                } else {
-                    "Sell".to_string()
-                },
+                side: side.to_string(),
                 price: limit_px,
                 size: sz,
                 status: "OPENING".to_string(),
@@ -577,7 +568,7 @@ impl Engine {
         if let Some(logger) = &self.audit_logger {
             logger.log_req(
                 target_symbol,
-                if is_buy { "Buy" } else { "Sell" },
+                &side.to_string(),
                 limit_px,
                 sz,
                 reduce_only,
@@ -635,24 +626,21 @@ impl Engine {
                         self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                             oid: 0,
                             cloid: Some(c.to_string()),
-                            side: if is_buy {
-                                "Buy".to_string()
-                            } else {
-                                "Sell".to_string()
-                            },
+                            side: side.to_string(),
                             price: px,
                             size: amount,
                             status: "FILLED".to_string(),
                             fee: 0.0, // Fee not always available immediately in response
                         }));
 
-                        let side_str = if is_buy { "B" } else { "S" };
                         if let Err(e) = strategy.on_order_filled(
-                            side_str,
-                            amount,
-                            px,
-                            0.0,
-                            Some(c),
+                            &OrderFill {
+                                side,
+                                size: amount,
+                                price: px,
+                                fee: 0.0,
+                                cloid: Some(c),
+                            },
                             &mut runtime.ctx,
                         ) {
                             error!("Strategy on_order_filled error: {}", e);
@@ -676,11 +664,7 @@ impl Engine {
                         self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                             oid: 0,
                             cloid: Some(c.to_string()),
-                            side: if is_buy {
-                                "Buy".to_string()
-                            } else {
-                                "Sell".to_string()
-                            },
+                            side: side.to_string(),
                             price: limit_px,
                             size: target_sz,
                             status: "OPEN".to_string(),
@@ -741,9 +725,9 @@ impl Engine {
                 let cloid: Option<Cloid> = fill.cloid.as_ref().and_then(|s| Cloid::from_hex_str(s));
 
                 let side = if fill.dir.to_lowercase().starts_with('b') {
-                    "B"
+                    OrderSide::Buy
                 } else {
-                    "S"
+                    OrderSide::Sell
                 };
                 let fee: f64 = fill.fee.parse().unwrap_or(0.0);
 
@@ -762,7 +746,7 @@ impl Engine {
 
                     logger.log_fill(
                         display_symbol,
-                        if side == "B" { "Buy" } else { "Sell" },
+                        &side.to_string(),
                         px,
                         amount,
                         record_reduce_only,
@@ -776,7 +760,7 @@ impl Engine {
                     cloid
                         .map(|c| c.to_string())
                         .unwrap_or_else(|| "no-cloid".to_string()),
-                    if side == "B" { "BUY" } else { "SELL" },
+                    side,
                     amount,
                     px,
                     fee
@@ -786,11 +770,7 @@ impl Engine {
                 self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                     oid: fill.oid,
                     cloid: cloid.map(|c| c.to_string()),
-                    side: if side == "B" {
-                        "Buy".to_string()
-                    } else {
-                        "Sell".to_string()
-                    },
+                    side: side.to_string(),
                     price: px,
                     size: amount,
                     status: "FILLED".to_string(),
@@ -824,11 +804,13 @@ impl Engine {
                             runtime.pending_orders.remove(&c);
 
                             if let Err(e) = strategy.on_order_filled(
-                                side,
-                                final_sz,
-                                final_px,
-                                final_fee,
-                                Some(c),
+                                &OrderFill {
+                                    side,
+                                    size: final_sz,
+                                    price: final_px,
+                                    fee: final_fee,
+                                    cloid: Some(c),
+                                },
                                 &mut runtime.ctx,
                             ) {
                                 error!("Strategy on_order_filled error: {}", e);
@@ -837,20 +819,29 @@ impl Engine {
                     } else {
                         info!("Fill for untracked cloid {}. Forwarding immediately.", c);
                         if let Err(e) = strategy.on_order_filled(
-                            side,
-                            amount,
-                            px,
-                            fee,
-                            Some(c),
+                            &OrderFill {
+                                side,
+                                size: amount,
+                                price: px,
+                                fee,
+                                cloid: Some(c),
+                            },
                             &mut runtime.ctx,
                         ) {
                             error!("Strategy on_order_filled error: {}", e);
                         }
                     }
                 } else {
-                    if let Err(e) =
-                        strategy.on_order_filled(side, amount, px, fee, None, &mut runtime.ctx)
-                    {
+                    if let Err(e) = strategy.on_order_filled(
+                        &OrderFill {
+                            side,
+                            size: amount,
+                            price: px,
+                            fee,
+                            cloid: None,
+                        },
+                        &mut runtime.ctx,
+                    ) {
                         error!("Strategy on_order_filled error: {}", e);
                     }
                 }

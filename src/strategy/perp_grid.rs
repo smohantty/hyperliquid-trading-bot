@@ -1,6 +1,6 @@
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{StrategyContext, MIN_NOTIONAL_VALUE};
-use crate::model::{Cloid, OrderRequest};
+use crate::model::{Cloid, OrderFill, OrderRequest, OrderSide};
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
@@ -244,12 +244,16 @@ impl PerpGridStrategy {
             );
             let cloid = ctx.generate_cloid();
 
-            let (activation_price, target_size, is_buy) = {
+            let (activation_price, target_size, side) = {
                 let market_info = ctx.market_info(&self.symbol).unwrap();
                 let market_price = market_info.last_price;
-                let is_buy = total_position_required > 0.0;
+                let side = if total_position_required > 0.0 {
+                    OrderSide::Buy
+                } else {
+                    OrderSide::Sell
+                };
 
-                let raw_price = if is_buy {
+                let raw_price = if side.is_buy() {
                     // Long Bias: Find highest grid level BELOW market
                     self.zones
                         .iter()
@@ -269,7 +273,7 @@ impl PerpGridStrategy {
                 (
                     market_info.round_price(raw_price),
                     market_info.round_size(total_position_required.abs()),
-                    is_buy,
+                    side,
                 )
             };
 
@@ -277,14 +281,14 @@ impl PerpGridStrategy {
                 self.state = StrategyState::AcquiringAssets { cloid, target_size };
                 info!(
                     "[ORDER_REQUEST] [PERP_GRID] REBALANCING: LIMIT {} {} {} @ {}",
-                    if is_buy { "BUY" } else { "SELL" },
+                    side,
                     target_size,
                     self.symbol,
                     activation_price
                 );
                 ctx.place_order(OrderRequest::Limit {
                     symbol: self.symbol.clone(),
-                    is_buy,
+                    side,
                     price: activation_price,
                     sz: target_size,
                     reduce_only: false,
@@ -312,20 +316,24 @@ impl PerpGridStrategy {
 
         for idx in 0..self.zones.len() {
             if self.zones[idx].order_id.is_none() {
-                let (is_buy, price, size, reduce_only) = {
+                let (side, price, size, reduce_only) = {
                     let zone = &self.zones[idx];
-                    let is_buy = matches!(zone.state, ZoneState::WaitingBuy);
-                    let price = if is_buy {
+                    let side = if matches!(zone.state, ZoneState::WaitingBuy) {
+                        OrderSide::Buy
+                    } else {
+                        OrderSide::Sell
+                    };
+                    let price = if side.is_buy() {
                         zone.lower_price
                     } else {
                         zone.upper_price
                     };
                     let reduce_only = if zone.is_short_oriented {
-                        is_buy
+                        side.is_buy()
                     } else {
-                        !is_buy
+                        side.is_sell()
                     };
-                    (is_buy, price, zone.size, reduce_only)
+                    (side, price, zone.size, reduce_only)
                 };
 
                 let cloid = ctx.generate_cloid();
@@ -335,7 +343,7 @@ impl PerpGridStrategy {
                 info!(
                     "[ORDER_REQUEST] [PERP_GRID] GRID_LVL_{}: LIMIT {} {} {} @ {}{}",
                     idx,
-                    if is_buy { "BUY" } else { "SELL" },
+                    side,
                     size,
                     self.symbol,
                     price,
@@ -344,7 +352,7 @@ impl PerpGridStrategy {
 
                 ctx.place_order(OrderRequest::Limit {
                     symbol: self.symbol.clone(),
-                    is_buy,
+                    side,
                     price: market_info.round_price(price),
                     sz: market_info.round_size(size),
                     reduce_only,
@@ -359,7 +367,7 @@ impl PerpGridStrategy {
         &mut self,
         zone_idx: usize,
         price: f64,
-        is_buy: bool,
+        side: OrderSide,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
         let zone = &mut self.zones[zone_idx];
@@ -386,15 +394,15 @@ impl PerpGridStrategy {
         // Short Bias: Buy = Close (Reduce), Sell = Open.
         let reduce_only = if zone.is_short_oriented {
             // Short Bias
-            is_buy // Buying to close short
+            side.is_buy() // Buying to close short
         } else {
             // Long Bias
-            !is_buy // Selling to close long
+            side.is_sell() // Selling to close long
         };
 
         info!(
             "[ORDER_REQUEST] [PERP_GRID] COUNTER_ORDER: LIMIT {} {} {} @ {}{}",
-            if is_buy { "BUY" } else { "SELL" },
+            side,
             rounded_size,
             self.symbol,
             rounded_price,
@@ -406,7 +414,7 @@ impl PerpGridStrategy {
 
         ctx.place_order(OrderRequest::Limit {
             symbol: self.symbol.clone(),
-            is_buy,
+            side,
             price: rounded_price,
             sz: rounded_size,
             reduce_only,
@@ -462,40 +470,32 @@ impl Strategy for PerpGridStrategy {
         Ok(())
     }
 
-    fn on_order_filled(
-        &mut self,
-        side: &str,
-        size: f64,
-        px: f64,
-        _fee: f64,
-        cloid: Option<Cloid>,
-        ctx: &mut StrategyContext,
-    ) -> Result<()> {
-        if let Some(cloid_val) = cloid {
+    fn on_order_filled(&mut self, fill: &OrderFill, ctx: &mut StrategyContext) -> Result<()> {
+        if let Some(cloid_val) = fill.cloid {
             // Check for Acquisition Fill
             if let StrategyState::AcquiringAssets {
                 cloid: acq_cloid, ..
             } = self.state
             {
                 if cloid_val == acq_cloid {
-                    info!("[PERP_GRID] Acquisition filled @ {}", px);
+                    info!("[PERP_GRID] Acquisition filled @ {}", fill.price);
 
                     // Update Position Size
-                    if side.eq_ignore_ascii_case("buy") {
-                        self.position_size += size;
+                    if fill.side.is_buy() {
+                        self.position_size += fill.size;
                     } else {
-                        self.position_size -= size;
+                        self.position_size -= fill.size;
                     }
 
                     // Update Zones Entry Price
                     for zone in &mut self.zones {
                         // Long Bias: We bought, now WaitingSell (Close Long). Set entry.
                         if !zone.is_short_oriented && zone.state == ZoneState::WaitingSell {
-                            zone.entry_price = px;
+                            zone.entry_price = fill.price;
                         }
                         // Short Bias: We sold, now WaitingBuy (Close Short). Set entry.
                         if zone.is_short_oriented && zone.state == ZoneState::WaitingBuy {
-                            zone.entry_price = px;
+                            zone.entry_price = fill.price;
                         }
                     }
 
@@ -508,7 +508,7 @@ impl Strategy for PerpGridStrategy {
             if let Some(zone_idx) = self.active_orders.remove(&cloid_val) {
                 self.trade_count += 1;
 
-                let (next_px, is_next_buy) = {
+                let (next_px, next_side) = {
                     let zone = &mut self.zones[zone_idx];
                     zone.order_id = None;
 
@@ -516,70 +516,70 @@ impl Strategy for PerpGridStrategy {
                     match zone.state {
                         ZoneState::WaitingBuy => {
                             // Buying
-                            self.position_size += size;
+                            self.position_size += fill.size;
                         }
                         ZoneState::WaitingSell => {
                             // Selling
-                            self.position_size -= size;
+                            self.position_size -= fill.size;
                         }
                     }
 
-                    let (next_state, entry_px, _pnl, next_px, is_next_buy) = match (
+                    let (next_state, entry_px, _pnl, next_px, next_side) = match (
                         zone.state,
                         zone.is_short_oriented,
                     ) {
                         (ZoneState::WaitingBuy, false) => {
                             info!(
                                 "[PERP_GRID] Zone {} | BUY (Open Long) Filled @ {} | Size: {} | Next: SELL (Close) @ {}",
-                                zone_idx, px, size, zone.upper_price
+                                zone_idx, fill.price, fill.size, zone.upper_price
                             );
-                            (ZoneState::WaitingSell, px, None, zone.upper_price, false)
+                            (ZoneState::WaitingSell, fill.price, None, zone.upper_price, OrderSide::Sell)
                         }
                         (ZoneState::WaitingSell, false) => {
-                            let pnl = (px - zone.entry_price) * size;
+                            let pnl = (fill.price - zone.entry_price) * fill.size;
                             zone.roundtrip_count += 1;
                             info!(
                                 "[PERP_GRID] Zone {} | SELL (Close Long) Filled @ {} | PnL: {:.4} | Next: BUY (Open) @ {}",
-                                zone_idx, px, pnl, zone.lower_price
+                                zone_idx, fill.price, pnl, zone.lower_price
                             );
                             (
                                 ZoneState::WaitingBuy,
                                 0.0,
                                 Some(pnl),
                                 zone.lower_price,
-                                true,
+                                OrderSide::Buy,
                             )
                         }
                         (ZoneState::WaitingSell, true) => {
                             info!(
                                 "[PERP_GRID] Zone {} | SELL (Open Short) Filled @ {} | Size: {} | Next: BUY (Close) @ {}",
-                                zone_idx, px, size, zone.lower_price
+                                zone_idx, fill.price, fill.size, zone.lower_price
                             );
-                            (ZoneState::WaitingBuy, px, None, zone.lower_price, true)
+                            (ZoneState::WaitingBuy, fill.price, None, zone.lower_price, OrderSide::Buy)
                         }
                         (ZoneState::WaitingBuy, true) => {
-                            let pnl = (zone.entry_price - px) * size;
+                            let pnl = (zone.entry_price - fill.price) * fill.size;
                             zone.roundtrip_count += 1;
                             info!(
                                 "[PERP_GRID] Zone {} | BUY (Close Short) Filled @ {} | PnL: {:.4} | Next: SELL (Open) @ {}",
-                                zone_idx, px, pnl, zone.upper_price
+                                zone_idx, fill.price, pnl, zone.upper_price
                             );
                             (
                                 ZoneState::WaitingSell,
                                 0.0,
                                 Some(pnl),
                                 zone.upper_price,
-                                false,
+                                OrderSide::Sell,
                             )
                         }
                     };
 
                     zone.state = next_state;
                     zone.entry_price = entry_px;
-                    (next_px, is_next_buy)
+                    (next_px, next_side)
                 };
 
-                self.place_counter_order(zone_idx, next_px, is_next_buy, ctx)?;
+                self.place_counter_order(zone_idx, next_px, next_side, ctx)?;
             } else {
                 debug!(
                     "[PERP_GRID] Fill received for unknown/inactive Perp CLOID: {}",
@@ -589,7 +589,7 @@ impl Strategy for PerpGridStrategy {
         } else {
             debug!(
                 "[PERP_GRID] Fill received without CLOID in PerpStrategy at price {}",
-                px
+                fill.price
             );
         }
         Ok(())
@@ -746,7 +746,16 @@ mod tests {
         ctx.order_queue.clear();
 
         strategy
-            .on_order_filled("buy", 0.5, 100.0, 0.0, Some(cloid), &mut ctx)
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Buy,
+                    size: 0.5,
+                    price: 100.0,
+                    fee: 0.0,
+                    cloid: Some(cloid),
+                },
+                &mut ctx,
+            )
             .unwrap();
         assert!(matches!(strategy.state, StrategyState::Running));
 
@@ -761,8 +770,8 @@ mod tests {
         let buy_orders: Vec<_> = orders
             .iter()
             .filter(|o| match o {
-                crate::model::OrderRequest::Limit { is_buy, .. } => *is_buy,
-                crate::model::OrderRequest::Market { is_buy, .. } => *is_buy,
+                crate::model::OrderRequest::Limit { side, .. } => side.is_buy(),
+                crate::model::OrderRequest::Market { side, .. } => side.is_buy(),
                 _ => false,
             })
             .collect();
@@ -770,8 +779,8 @@ mod tests {
         let sell_orders: Vec<_> = orders
             .iter()
             .filter(|o| match o {
-                crate::model::OrderRequest::Limit { is_buy, .. } => !*is_buy,
-                crate::model::OrderRequest::Market { is_buy, .. } => !*is_buy,
+                crate::model::OrderRequest::Limit { side, .. } => side.is_sell(),
+                crate::model::OrderRequest::Market { side, .. } => side.is_sell(),
                 _ => false,
             })
             .collect();
@@ -840,7 +849,16 @@ mod tests {
 
             // Fill Acquisition
             strategy
-                .on_order_filled("buy", target_size, 100.0, 0.0, Some(cloid), &mut ctx)
+                .on_order_filled(
+                    &OrderFill {
+                        side: OrderSide::Buy,
+                        size: target_size,
+                        price: 100.0,
+                        fee: 0.0,
+                        cloid: Some(cloid),
+                    },
+                    &mut ctx,
+                )
                 .unwrap();
 
             // Check inventory updated
@@ -864,7 +882,16 @@ mod tests {
 
         // Simulate Fill: Buy @ 80
         strategy
-            .on_order_filled("buy", size, 80.0, 0.0, Some(order_id), &mut ctx)
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Buy,
+                    size,
+                    price: 80.0,
+                    fee: 0.0,
+                    cloid: Some(order_id),
+                },
+                &mut ctx,
+            )
             .unwrap();
 
         // Expect inventory increase (Long Bias + Buy = Add to Position)
@@ -883,7 +910,16 @@ mod tests {
 
         // Simulate Fill: Sell @ 100
         strategy
-            .on_order_filled("sell", size, 100.0, 0.0, Some(sell_oid), &mut ctx)
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Sell,
+                    size,
+                    price: 100.0,
+                    fee: 0.0,
+                    cloid: Some(sell_oid),
+                },
+                &mut ctx,
+            )
             .unwrap();
 
         // Expect inventory decrease

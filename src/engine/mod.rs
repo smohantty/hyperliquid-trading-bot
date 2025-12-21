@@ -436,15 +436,29 @@ impl Engine {
     ) {
         let req_summary = match &order_req {
             crate::model::OrderRequest::Limit {
-                is_buy, price, sz, ..
+                symbol,
+                is_buy,
+                price,
+                sz,
+                reduce_only,
+                ..
             } => format!(
-                "{} {} @ {}",
+                "LIMIT {} {} {} @ {}{}",
                 if *is_buy { "BUY" } else { "SELL" },
                 sz,
-                price
+                symbol,
+                price,
+                if *reduce_only { " (RO)" } else { "" }
             ),
-            crate::model::OrderRequest::Market { is_buy, sz, .. } => {
-                format!("MARKET {} {}", if *is_buy { "BUY" } else { "SELL" }, sz)
+            crate::model::OrderRequest::Market {
+                symbol, is_buy, sz, ..
+            } => {
+                format!(
+                    "MARKET {} {} {}",
+                    if *is_buy { "BUY" } else { "SELL" },
+                    sz,
+                    symbol
+                )
             }
             crate::model::OrderRequest::Cancel { cloid } => format!("CANCEL {}", cloid),
         };
@@ -567,11 +581,9 @@ impl Engine {
         }
 
         info!(
-            "[ORDER_SENT] 0x{:x} -> Exchange ({} {} @ {})",
+            "[ORDER_SENT] 0x{:x} -> Exchange ({})",
             cloid.unwrap_or(0),
-            if sdk_req.is_buy { "BUY" } else { "SELL" },
-            sdk_req.sz,
-            sdk_req.limit_px
+            req_summary
         );
         match exchange_client.order(sdk_req, None).await {
             Ok(res) => {

@@ -197,7 +197,7 @@ impl SpotGridStrategy {
 
             // Zone ABOVE price line (lower > price): We acquired base at initial_price -> Sell at upper
             // Zone AT or BELOW price line: We have quote, waiting to buy at lower
-            let pending_side = if initial_price < lower {
+            let pending_side = if lower > initial_price {
                 OrderSide::Sell  // Zone above price line → sell at upper, then ping-pong
             } else {
                 OrderSide::Buy   // Zone at/below price line → buy at lower, then ping-pong

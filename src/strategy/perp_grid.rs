@@ -186,7 +186,7 @@ impl PerpGridStrategy {
                     // Long bias: acquire long positions above price, wait to open below
                     // Zone ABOVE price (lower > price): Have long → Sell to close
                     // Zone AT/BELOW price (lower <= price): No position → Buy to open
-                    if initial_price < lower {
+                    if lower > initial_price {
                         (OrderSide::Sell, false)  // Zone above → close long
                     } else {
                         (OrderSide::Buy, false)   // Zone at/below → open long
@@ -196,7 +196,7 @@ impl PerpGridStrategy {
                     // Short bias: acquire short positions below price, wait to open above
                     // Zone BELOW price (upper < price): Have short → Buy to close
                     // Zone AT/ABOVE price (upper >= price): No position → Sell to open
-                    if initial_price > upper {
+                    if upper < initial_price {
                         (OrderSide::Buy, true)    // Zone below → close short
                     } else {
                         (OrderSide::Sell, true)   // Zone at/above → open short

@@ -30,15 +30,15 @@ const SummaryCard: React.FC = () => {
     const pnlSign = totalPnl >= 0 ? '+' : '';
 
     if (isPerp) {
-        const perpData = summary.data as typeof summary.data & { 
-            position_side: string; 
-            leverage: number; 
+        const perpData = summary.data as typeof summary.data & {
+            position_side: string;
+            leverage: number;
             grid_bias: string;
             margin_balance: number;
         };
-        
-        const positionColor = perpData.position_side === 'Long' ? 'var(--color-buy)' : 
-                              perpData.position_side === 'Short' ? 'var(--color-sell)' : 
+
+        const positionColor = perpData.position_side === 'Long' ? 'var(--color-buy)' :
+                              perpData.position_side === 'Short' ? 'var(--color-sell)' :
                               'var(--text-tertiary)';
 
         return (
@@ -59,11 +59,11 @@ const SummaryCard: React.FC = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <span style={{ fontSize: '18px', fontWeight: 600 }}>{s.symbol}</span>
                         <span style={{
-                            background: perpData.grid_bias === 'Long' ? 'rgba(14, 203, 129, 0.15)' : 
-                                       perpData.grid_bias === 'Short' ? 'rgba(246, 70, 93, 0.15)' : 
+                            background: perpData.grid_bias === 'Long' ? 'rgba(14, 203, 129, 0.15)' :
+                                       perpData.grid_bias === 'Short' ? 'rgba(246, 70, 93, 0.15)' :
                                        'rgba(240, 185, 11, 0.15)',
-                            color: perpData.grid_bias === 'Long' ? 'var(--color-buy)' : 
-                                   perpData.grid_bias === 'Short' ? 'var(--color-sell)' : 
+                            color: perpData.grid_bias === 'Long' ? 'var(--color-buy)' :
+                                   perpData.grid_bias === 'Short' ? 'var(--color-sell)' :
                                    'var(--accent-yellow)',
                             padding: '4px 8px',
                             borderRadius: '4px',
@@ -215,15 +215,15 @@ const SummaryCard: React.FC = () => {
     );
 };
 
-const StatItem: React.FC<{ 
-    label: string; 
-    value: string; 
+const StatItem: React.FC<{
+    label: string;
+    value: string;
     subValue?: string;
     valueColor?: string;
     isLast?: boolean;
 }> = ({ label, value, subValue, valueColor, isLast }) => (
-    <div style={{ 
-        flex: 1, 
+    <div style={{
+        flex: 1,
         padding: '16px 20px',
         borderRight: isLast ? 'none' : '1px solid var(--border-color)'
     }}>

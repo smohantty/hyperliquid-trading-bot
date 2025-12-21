@@ -64,12 +64,12 @@ const ActivityLog: React.FC = () => {
 const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
     const isBuy = order.side === 'Buy';
     const isFilled = order.status === 'FILLED';
-    
+
     const sideColor = isBuy ? 'var(--color-buy)' : 'var(--color-sell)';
-    const statusColor = isFilled ? 'var(--color-buy)' : 
-                        order.status === 'OPEN' ? 'var(--text-primary)' : 
+    const statusColor = isFilled ? 'var(--color-buy)' :
+                        order.status === 'OPEN' ? 'var(--text-primary)' :
                         order.status === 'OPENING' ? 'var(--accent-yellow)' :
-                        order.status === 'CANCELLED' ? 'var(--text-tertiary)' : 
+                        order.status === 'CANCELLED' ? 'var(--text-tertiary)' :
                         'var(--color-sell)';
 
     return (
@@ -96,8 +96,8 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
             </span>
 
             {/* Size @ Price */}
-            <span style={{ 
-                flex: 1, 
+            <span style={{
+                flex: 1,
                 fontFamily: 'var(--font-mono)',
                 color: 'var(--text-primary)'
             }}>
@@ -105,7 +105,7 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
             </span>
 
             {/* Status */}
-            <span style={{ 
+            <span style={{
                 color: statusColor,
                 fontSize: '10px',
                 fontWeight: 500
@@ -115,7 +115,7 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
 
             {/* Fee */}
             {isFilled && order.fee > 0 && (
-                <span style={{ 
+                <span style={{
                     color: 'var(--text-tertiary)',
                     fontSize: '10px',
                     fontFamily: 'var(--font-mono)'

@@ -44,27 +44,27 @@ const ConfigPanel: React.FC = () => {
                 <ConfigCell label="Zones" value={config.grid_count.toString()} />
                 <ConfigCell label="Investment" value={`$${config.total_investment.toLocaleString()}`} />
                 <ConfigCell label="Spacing" value={config.grid_type.charAt(0).toUpperCase() + config.grid_type.slice(1)} />
-                
+
                 {isPerp && (
                     <>
-                        <ConfigCell 
-                            label="Leverage" 
-                            value={`${config.leverage}x`} 
+                        <ConfigCell
+                            label="Leverage"
+                            value={`${config.leverage}x`}
                             highlight
                         />
-                        <ConfigCell 
-                            label="Bias" 
-                            value={config.grid_bias?.toUpperCase() || 'NEUTRAL'} 
+                        <ConfigCell
+                            label="Bias"
+                            value={config.grid_bias?.toUpperCase() || 'NEUTRAL'}
                             highlight
                             highlightColor={
-                                config.grid_bias === 'long' ? 'var(--color-buy)' : 
-                                config.grid_bias === 'short' ? 'var(--color-sell)' : 
+                                config.grid_bias === 'long' ? 'var(--color-buy)' :
+                                config.grid_bias === 'short' ? 'var(--color-sell)' :
                                 'var(--accent-yellow)'
                             }
                         />
-                        <ConfigCell 
-                            label="Margin" 
-                            value={config.is_isolated ? 'Isolated' : 'Cross'} 
+                        <ConfigCell
+                            label="Margin"
+                            value={config.is_isolated ? 'Isolated' : 'Cross'}
                         />
                     </>
                 )}
@@ -73,13 +73,13 @@ const ConfigPanel: React.FC = () => {
     );
 };
 
-const ConfigCell: React.FC<{ 
-    label: string; 
+const ConfigCell: React.FC<{
+    label: string;
     value: string;
     highlight?: boolean;
     highlightColor?: string;
 }> = ({ label, value, highlight, highlightColor }) => (
-    <div style={{ 
+    <div style={{
         flex: '1 1 auto',
         minWidth: '100px',
         padding: '12px 16px',
@@ -89,9 +89,9 @@ const ConfigCell: React.FC<{
         <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '4px', textTransform: 'uppercase' }}>
             {label}
         </div>
-        <div style={{ 
-            fontSize: '12px', 
-            fontWeight: highlight ? 600 : 400, 
+        <div style={{
+            fontSize: '12px',
+            fontWeight: highlight ? 600 : 400,
             color: highlight ? (highlightColor || 'var(--accent-yellow)') : 'var(--text-primary)',
             fontFamily: 'var(--font-mono)'
         }}>

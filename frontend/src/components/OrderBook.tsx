@@ -7,12 +7,12 @@ const OrderBook: React.FC = () => {
 
     const { asks, bids } = useMemo(() => {
         if (!gridState || !lastPrice) return { asks: [], bids: [] };
-        
+
         const sortedZones = [...gridState.zones].sort((a, b) => b.upper_price - a.upper_price);
-        
+
         const asks: ZoneInfo[] = [];
         const bids: ZoneInfo[] = [];
-        
+
         sortedZones.forEach(zone => {
             const midPrice = (zone.lower_price + zone.upper_price) / 2;
             if (midPrice > lastPrice) {
@@ -21,7 +21,7 @@ const OrderBook: React.FC = () => {
                 bids.push(zone);
             }
         });
-        
+
         asks.reverse();
         return { asks, bids };
     }, [gridState, lastPrice]);
@@ -51,8 +51,8 @@ const OrderBook: React.FC = () => {
             overflow: 'hidden'
         }}>
             {/* Header */}
-            <div style={{ 
-                padding: '12px 16px', 
+            <div style={{
+                padding: '12px 16px',
                 borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -171,9 +171,9 @@ const OrderBook: React.FC = () => {
 const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid' }> = ({ zone, side }) => {
     const isAsk = side === 'ask';
     const displayPrice = isAsk ? zone.upper_price : zone.lower_price;
-    
+
     const isClose = zone.is_reduce_only || zone.action_type === 'close';
-    const actionColor = isClose ? 'var(--accent-yellow)' : 
+    const actionColor = isClose ? 'var(--accent-yellow)' :
                         zone.pending_side === 'Buy' ? 'var(--color-buy)' : 'var(--color-sell)';
 
     const actionBadge = (

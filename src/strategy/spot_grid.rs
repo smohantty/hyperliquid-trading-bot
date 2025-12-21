@@ -35,6 +35,8 @@ struct GridZone {
 #[allow(dead_code)]
 pub struct SpotGridStrategy {
     symbol: String,
+    base_asset: String,
+    quote_asset: String,
     upper_price: f64,
     lower_price: f64,
     grid_type: GridType,
@@ -70,9 +72,16 @@ impl SpotGridStrategy {
                 total_investment,
                 trigger_price,
             } => {
+                let (base_asset, quote_asset) = match symbol.split_once('/') {
+                    Some((b, q)) => (b.to_string(), q.to_string()),
+                    None => (symbol.clone(), "USDC".to_string()),
+                };
+
                 // Always start in Initializing to allow balance checks in initialize_zones
                 Self {
                     symbol,
+                    base_asset,
+                    quote_asset,
                     upper_price,
                     lower_price,
                     grid_type,
@@ -113,10 +122,9 @@ impl SpotGridStrategy {
         // 1. Generate Zones
         let total_base_required = self.generate_grid_levels(&market_info);
 
-        let base_coin = self.symbol.split('/').next().unwrap_or(&self.symbol);
         info!(
             "[SPOT_GRID] Zones initialized. Total {} Required: {}",
-            base_coin, total_base_required
+            self.base_asset, total_base_required
         );
 
         // 2. Check Assets & Acquire if necessary
@@ -191,8 +199,7 @@ impl SpotGridStrategy {
         market_info: &MarketInfo,
         total_base_required: f64,
     ) -> Result<()> {
-        let base_coin = self.symbol.split('/').next().unwrap_or(&self.symbol);
-        let available_base = ctx.get_spot_available(base_coin);
+        let available_base = ctx.get_spot_available(&self.base_asset);
         let deficit = total_base_required - available_base;
 
         // Use trigger_price if available, otherwise last_price
@@ -229,20 +236,24 @@ impl SpotGridStrategy {
             if rounded_deficit > 0.0 {
                 // Check if we have enough QUOTE (USDC) to buy this deficit
                 let estimated_cost = rounded_deficit * acquisition_price;
-                let available_quote = ctx.get_spot_available("USDC");
+                let available_quote = ctx.get_spot_available(&self.quote_asset);
 
                 if available_quote < estimated_cost {
                     let msg = format!(
-                        "Insufficient Quote Balance for acquisition! Need ~{:.2} USDC, Have {:.2} USDC. Deficit: {} {}", 
-                        estimated_cost, available_quote, rounded_deficit, base_coin
+                        "Insufficient Quote Balance for acquisition! Need ~{:.2} {}, Have {:.2} {}. Deficit: {} {}", 
+                        estimated_cost, self.quote_asset, available_quote, self.quote_asset, rounded_deficit, self.base_asset
                     );
                     error!("[SPOT_GRID] {}", msg);
                     return Err(anyhow!(msg));
                 }
 
                 info!(
-                    "[SPOT_GRID] ACQUISITION_NEEDED. Acquiring {} {}. Cost: ~{:.2} USDC @ {}.",
-                    rounded_deficit, base_coin, estimated_cost, acquisition_price
+                    "[SPOT_GRID] ACQUISITION_NEEDED. Acquiring {} {}. Cost: ~{:.2} {} @ {}.",
+                    rounded_deficit,
+                    self.base_asset,
+                    estimated_cost,
+                    self.quote_asset,
+                    acquisition_price
                 );
                 let cloid = ctx.generate_cloid();
                 self.state = StrategyState::AcquiringAssets { cloid };
@@ -567,7 +578,6 @@ impl Strategy for SpotGridStrategy {
             .map(|m| m.last_price)
             .unwrap_or(0.0);
         let grid_size = self.zones.first().map(|z| z.size).unwrap_or(0.0);
-        let coin = self.symbol.split('/').next().unwrap_or("UNKNOWN");
 
         let refined_zones: Vec<ZoneStatus> = self
             .zones
@@ -609,8 +619,8 @@ impl Strategy for SpotGridStrategy {
                 avg_entry_price: self.avg_entry_price,
             },
             wallet: WalletStats {
-                base_balance: ctx.get_spot_total(coin),
-                quote_balance: ctx.get_spot_total("USDC"),
+                base_balance: ctx.get_spot_total(&self.base_asset),
+                quote_balance: ctx.get_spot_total(&self.quote_asset),
             },
             price: current_mid,
             zones: refined_zones,

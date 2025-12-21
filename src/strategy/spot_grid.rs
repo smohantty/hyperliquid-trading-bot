@@ -124,7 +124,7 @@ impl SpotGridStrategy {
             self.generate_grid_levels(&market_info)?;
 
         info!(
-            "[SPOT_GRID] Zones initialized. {} Required: {}, {} Required: {}",
+            "[SPOT_GRID] Asset Required: {} ( {} ), {} ( {} )",
             self.base_asset, total_base_required, self.quote_asset, total_quote_required
         );
 
@@ -275,11 +275,6 @@ impl SpotGridStrategy {
 
             if rounded_deficit > 0.0 {
                 let estimated_cost = rounded_deficit * acquisition_price;
-
-                info!(
-                    "[SPOT_GRID] Base deficit detected: deficit={} {}, rounded to {} {} (~${:.2}) @ price {}",
-                    base_deficit, self.base_asset, rounded_deficit, self.base_asset, estimated_cost, acquisition_price
-                );
 
                 if available_quote < estimated_cost {
                     let msg = format!(

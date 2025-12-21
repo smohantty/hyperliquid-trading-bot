@@ -1,5 +1,6 @@
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::StrategyContext;
+use crate::model::OrderRequest;
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
@@ -264,14 +265,14 @@ impl PerpGridStrategy {
 
             if target_size > 0.0 {
                 self.state = StrategyState::AcquiringAssets { cloid, target_size };
-                ctx.place_limit_order(
-                    self.symbol.clone(),
+                ctx.place_order(OrderRequest::Limit {
+                    symbol: self.symbol.clone(),
                     is_buy,
-                    activation_price,
-                    target_size,
-                    false,
-                    Some(cloid),
-                );
+                    price: activation_price,
+                    sz: target_size,
+                    reduce_only: false,
+                    cloid: Some(cloid),
+                });
                 return Ok(());
             }
         }
@@ -314,14 +315,14 @@ impl PerpGridStrategy {
                     reduce_only
                 );
 
-                ctx.place_limit_order(
-                    self.symbol.clone(),
+                ctx.place_order(OrderRequest::Limit {
+                    symbol: self.symbol.clone(),
                     is_buy,
                     price,
-                    size,
+                    sz: size,
                     reduce_only,
-                    Some(cloid),
-                );
+                    cloid: Some(cloid),
+                });
             }
         }
         Ok(())
@@ -365,14 +366,14 @@ impl PerpGridStrategy {
             !is_buy // Selling to close long
         };
 
-        ctx.place_limit_order(
-            self.symbol.clone(),
+        ctx.place_order(OrderRequest::Limit {
+            symbol: self.symbol.clone(),
             is_buy,
-            rounded_price,
-            rounded_size,
+            price: rounded_price,
+            sz: rounded_size,
             reduce_only,
-            Some(next_cloid),
-        );
+            cloid: Some(next_cloid),
+        });
 
         Ok(())
     }

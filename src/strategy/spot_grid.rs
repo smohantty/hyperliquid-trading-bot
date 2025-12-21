@@ -2,6 +2,7 @@ use super::common;
 use super::types::{GridType, ZoneState};
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::StrategyContext;
+use crate::model::OrderRequest;
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
@@ -229,14 +230,14 @@ impl SpotGridStrategy {
                 let cloid = ctx.generate_cloid();
                 self.state = StrategyState::AcquiringAssets { cloid };
 
-                ctx.place_limit_order(
-                    self.symbol.clone(),
-                    true,
-                    acquisition_price,
-                    rounded_deficit,
-                    false,
-                    Some(cloid),
-                );
+                ctx.place_order(OrderRequest::Limit {
+                    symbol: self.symbol.clone(),
+                    is_buy: true,
+                    price: acquisition_price,
+                    sz: rounded_deficit,
+                    reduce_only: false,
+                    cloid: Some(cloid),
+                });
                 return Ok(());
             }
         }
@@ -286,14 +287,14 @@ impl SpotGridStrategy {
                 price,
                 cloid
             );
-            ctx.place_limit_order(
-                self.symbol.clone(),
+            ctx.place_order(OrderRequest::Limit {
+                symbol: self.symbol.clone(),
                 is_buy,
                 price,
-                size,
-                false, // reduce_only
-                Some(cloid),
-            );
+                sz: size,
+                reduce_only: false,
+                cloid: Some(cloid),
+            });
         }
     }
 }
@@ -425,14 +426,14 @@ impl Strategy for SpotGridStrategy {
                         self.active_orders.insert(next_cloid, zone_idx);
                         zone.order_id = Some(next_cloid);
 
-                        ctx.place_limit_order(
-                            self.symbol.clone(),
-                            false,
+                        ctx.place_order(OrderRequest::Limit {
+                            symbol: self.symbol.clone(),
+                            is_buy: false,
                             price,
-                            zone.size,
-                            false,
-                            Some(next_cloid),
-                        );
+                            sz: zone.size,
+                            reduce_only: false,
+                            cloid: Some(next_cloid),
+                        });
                     }
                     ZoneState::WaitingSell => {
                         let pnl = (px - zone.entry_price) * size;
@@ -467,14 +468,14 @@ impl Strategy for SpotGridStrategy {
                         self.active_orders.insert(next_cloid, zone_idx);
                         zone.order_id = Some(next_cloid);
 
-                        ctx.place_limit_order(
-                            self.symbol.clone(),
-                            true,
+                        ctx.place_order(OrderRequest::Limit {
+                            symbol: self.symbol.clone(),
+                            is_buy: true,
                             price,
-                            zone.size,
-                            false,
-                            Some(next_cloid),
-                        );
+                            sz: zone.size,
+                            reduce_only: false,
+                            cloid: Some(next_cloid),
+                        });
                     }
                 }
             } else {

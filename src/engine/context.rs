@@ -103,38 +103,8 @@ impl StrategyContext {
         self.markets.get_mut(symbol)
     }
 
-    pub fn place_limit_order(
-        &mut self,
-        symbol: String,
-        is_buy: bool,
-        price: f64,
-        sz: f64,
-        reduce_only: bool,
-        cloid: Option<u128>,
-    ) {
-        self.order_queue.push(OrderRequest::Limit {
-            symbol,
-            is_buy,
-            price,
-            sz,
-            reduce_only,
-            cloid,
-        });
-    }
-
-    pub fn place_market_order(
-        &mut self,
-        symbol: String,
-        is_buy: bool,
-        sz: f64,
-        cloid: Option<u128>,
-    ) {
-        self.order_queue.push(OrderRequest::Market {
-            symbol,
-            is_buy,
-            sz,
-            cloid,
-        });
+    pub fn place_order(&mut self, order: OrderRequest) {
+        self.order_queue.push(order);
     }
 
     pub fn cancel_order(&mut self, cloid: u128) {

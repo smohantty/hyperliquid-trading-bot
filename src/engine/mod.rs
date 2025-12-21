@@ -315,6 +315,10 @@ impl Engine {
                             self.broadcaster.send(WSEvent::PerpGridSummary(s));
                         }
                     }
+
+                    // Also broadcast grid state periodically (ensures cache is populated)
+                    let grid_state = strategy.get_grid_state(&runtime.ctx);
+                    self.broadcaster.send(WSEvent::GridState(grid_state));
                  }
                  _ = tokio::signal::ctrl_c() => {
                     info!("Shutdown signal received. Stopping Engine...");

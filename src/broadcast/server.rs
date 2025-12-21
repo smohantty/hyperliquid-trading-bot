@@ -13,6 +13,7 @@ pub struct StatusBroadcaster {
     sender: broadcast::Sender<WSEvent>,
     last_config: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
+    last_grid_state: Arc<Mutex<Option<WSEvent>>>,
 }
 
 impl StatusBroadcaster {
@@ -20,14 +21,18 @@ impl StatusBroadcaster {
         let (sender, _) = broadcast::channel(100);
         let last_config = Arc::new(Mutex::new(None));
         let last_summary = Arc::new(Mutex::new(None));
+        let last_grid_state = Arc::new(Mutex::new(None));
 
         if let Some(p) = port {
             let sender_clone = sender.clone();
             let config_clone = last_config.clone();
             let summary_clone = last_summary.clone();
+            let grid_state_clone = last_grid_state.clone();
 
             tokio::spawn(async move {
-                if let Err(e) = run_server(p, sender_clone, config_clone, summary_clone).await {
+                if let Err(e) =
+                    run_server(p, sender_clone, config_clone, summary_clone, grid_state_clone).await
+                {
                     error!("WebSocket Server failed: {}", e);
                 }
             });
@@ -37,6 +42,7 @@ impl StatusBroadcaster {
             sender,
             last_config,
             last_summary,
+            last_grid_state,
         }
     }
 
@@ -50,6 +56,11 @@ impl StatusBroadcaster {
             // Cache strategy summaries (either spot or perp)
             WSEvent::SpotGridSummary(_) | WSEvent::PerpGridSummary(_) => {
                 let mut lock = self.last_summary.lock().unwrap();
+                *lock = Some(event.clone());
+            }
+            // Cache grid state for new connections
+            WSEvent::GridState(_) => {
+                let mut lock = self.last_grid_state.lock().unwrap();
                 *lock = Some(event.clone());
             }
             _ => {}
@@ -69,6 +80,7 @@ async fn run_server(
     sender: broadcast::Sender<WSEvent>,
     last_config: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
+    last_grid_state: Arc<Mutex<Option<WSEvent>>>,
 ) -> anyhow::Result<()> {
     let addr = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(&addr).await?;
@@ -78,11 +90,18 @@ async fn run_server(
         let sender_clone = sender.clone();
         let config_clone = last_config.clone();
         let summary_clone = last_summary.clone();
+        let grid_state_clone = last_grid_state.clone();
 
         tokio::spawn(async move {
-            if let Err(e) =
-                handle_connection(stream, peer_addr, sender_clone, config_clone, summary_clone)
-                    .await
+            if let Err(e) = handle_connection(
+                stream,
+                peer_addr,
+                sender_clone,
+                config_clone,
+                summary_clone,
+                grid_state_clone,
+            )
+            .await
             {
                 warn!("Error handling connection from {}: {}", peer_addr, e);
             }
@@ -98,6 +117,7 @@ async fn handle_connection(
     sender: broadcast::Sender<WSEvent>,
     last_config: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
+    last_grid_state: Arc<Mutex<Option<WSEvent>>>,
 ) -> anyhow::Result<()> {
     info!("New WebSocket connection: {}", peer_addr);
 
@@ -108,7 +128,7 @@ async fn handle_connection(
     // Subscribe to broadcast channel
     let mut rx = sender.subscribe();
 
-    // Send Initial State (Config & Latest Summary)
+    // Send Initial State (Config, Summary, and Grid State)
     {
         let config_opt = last_config.lock().unwrap().clone();
         if let Some(event) = config_opt {
@@ -118,6 +138,12 @@ async fn handle_connection(
 
         let summary_opt = last_summary.lock().unwrap().clone();
         if let Some(event) = summary_opt {
+            let json_str = serde_json::to_string(&event)?;
+            ws_sender.send(Message::Text(json_str)).await?;
+        }
+
+        let grid_state_opt = last_grid_state.lock().unwrap().clone();
+        if let Some(event) = grid_state_opt {
             let json_str = serde_json::to_string(&event)?;
             ws_sender.send(Message::Text(json_str)).await?;
         }

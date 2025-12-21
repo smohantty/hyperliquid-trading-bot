@@ -195,12 +195,12 @@ impl SpotGridStrategy {
             let raw_size = quote_per_zone / lower;
             let size = market_info.round_size(raw_size);
 
-            // If price is below upper bound, we already have base asset -> wait to sell
-            // Otherwise, we need to buy first
-            let pending_side = if initial_price < upper {
-                OrderSide::Sell
+            // Zone ABOVE price line (lower > price): We acquired base at initial_price -> Sell at upper
+            // Zone AT or BELOW price line: We have quote, waiting to buy at lower
+            let pending_side = if initial_price < lower {
+                OrderSide::Sell  // Zone above price line → sell at upper, then ping-pong
             } else {
-                OrderSide::Buy
+                OrderSide::Buy   // Zone at/below price line → buy at lower, then ping-pong
             };
 
             if pending_side.is_sell() {
@@ -820,6 +820,10 @@ mod tests {
     fn test_spot_grid_acquisition_trigger() {
         // Scenario: Low Assets. Trigger defined.
         // Expect: Immediate buy order @ TriggerPrice. State -> AcquiringAssets.
+        //
+        // Grid zones with grid_count=5: [90-95], [95-100], [100-105], [105-110]
+        // trigger_price=104 means initial_price=104
+        // Zone [105-110] has lower=105 > 104 → Sell (needs base acquisition)
 
         let config = StrategyConfig::SpotGrid {
             symbol: "HYPE/USDC".to_string(),
@@ -828,7 +832,7 @@ mod tests {
             grid_type: GridType::Arithmetic,
             grid_count: 5,
             total_investment: 1000.0,
-            trigger_price: Some(105.0),
+            trigger_price: Some(104.0), // Below zone [105-110] so it needs base
         };
 
         let mut strategy = SpotGridStrategy::new(config);
@@ -858,7 +862,7 @@ mod tests {
         assert_eq!(ctx.order_queue.len(), 1);
         match &ctx.order_queue[0] {
             crate::model::OrderRequest::Limit { price, .. } => {
-                assert_eq!(*price, 105.0); // Should be trigger price
+                assert_eq!(*price, 104.0); // Should be trigger price
             }
             _ => panic!("Expected Limit order"),
         }

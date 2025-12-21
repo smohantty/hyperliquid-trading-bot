@@ -10,10 +10,12 @@ use std::sync::{Arc, Mutex};
 pub struct OrderRecord {
     pub timestamp: String,
     pub symbol: String,
+    pub asset: String,
     pub order_type: String, // REQ, SENT, FILL, ERROR
     pub side: String,
     pub price: f64,
     pub size: f64,
+    pub reduce_only: bool,
     pub cloid: Option<String>,
     pub order_id: Option<u64>,
     pub fee: Option<f64>,
@@ -47,10 +49,12 @@ impl OrderAuditLogger {
             writer.write_record(&[
                 "timestamp",
                 "symbol",
+                "asset",
                 "order_type",
                 "side",
                 "price",
                 "size",
+                "reduce_only",
                 "cloid",
                 "order_id",
                 "fee",
@@ -74,14 +78,25 @@ impl OrderAuditLogger {
         }
     }
 
-    pub fn log_req(&self, symbol: &str, side: &str, price: f64, size: f64, cloid: Option<String>) {
+    pub fn log_req(
+        &self,
+        symbol: &str,
+        asset: &str,
+        side: &str,
+        price: f64,
+        size: f64,
+        reduce_only: bool,
+        cloid: Option<String>,
+    ) {
         self.log(OrderRecord {
             timestamp: Local::now().to_rfc3339(),
             symbol: symbol.to_string(),
+            asset: asset.to_string(),
             order_type: "REQ".to_string(),
             side: side.to_string(),
             price,
             size,
+            reduce_only,
             cloid,
             order_id: None,
             fee: None,
@@ -92,19 +107,23 @@ impl OrderAuditLogger {
     pub fn log_fill(
         &self,
         symbol: &str,
+        asset: &str,
         side: &str,
         price: f64,
         size: f64,
+        reduce_only: bool,
         cloid: Option<String>,
         fee: f64,
     ) {
         self.log(OrderRecord {
             timestamp: Local::now().to_rfc3339(),
             symbol: symbol.to_string(),
+            asset: asset.to_string(),
             order_type: "FILL".to_string(),
             side: side.to_string(),
             price,
             size,
+            reduce_only,
             cloid,
             order_id: None,
             fee: Some(fee),

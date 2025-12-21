@@ -17,6 +17,7 @@ struct PendingOrder {
     filled_size: f64,
     weighted_avg_px: f64,
     accumulated_fees: f64,
+    reduce_only: bool,
 }
 
 struct EngineRuntime {
@@ -574,10 +575,12 @@ impl Engine {
         // Audit Log: REQ
         if let Some(logger) = &self.audit_logger {
             logger.log_req(
+                &target_symbol,
                 coin,
                 if is_buy { "Buy" } else { "Sell" },
                 limit_px,
                 sz,
+                reduce_only,
                 cloid.map(|c| format!("0x{:x}", c)),
             );
         }
@@ -663,6 +666,7 @@ impl Engine {
                                 filled_size: 0.0,
                                 weighted_avg_px: 0.0,
                                 accumulated_fees: 0.0,
+                                reduce_only,
                             },
                         );
 
@@ -751,11 +755,24 @@ impl Engine {
 
                 // Audit Log: FILL
                 if let Some(logger) = &self.audit_logger {
+                    let record_reduce_only = cloid
+                        .and_then(|c| runtime.pending_orders.get(&c))
+                        .map(|p| p.reduce_only)
+                        .unwrap_or(false);
+
+                    let display_symbol = runtime
+                        .ctx
+                        .market_info(coin)
+                        .map(|m| m.symbol.as_str())
+                        .unwrap_or(coin);
+
                     logger.log_fill(
+                        display_symbol,
                         coin,
                         if side == "B" { "Buy" } else { "Sell" },
                         px,
                         amount,
+                        record_reduce_only,
                         cloid.map(|c| format!("0x{:x}", c)),
                         fee,
                     );

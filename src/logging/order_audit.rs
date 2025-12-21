@@ -41,27 +41,9 @@ impl OrderAuditLogger {
             .open(&file_path)
             .context("Failed to open trades.csv")?;
 
-        let mut writer = csv::WriterBuilder::new()
+        let writer = csv::WriterBuilder::new()
             .has_headers(!file_exists)
             .from_writer(file);
-
-        if !file_exists {
-            writer.write_record(&[
-                "timestamp",
-                "symbol",
-                "asset",
-                "order_type",
-                "side",
-                "price",
-                "size",
-                "reduce_only",
-                "cloid",
-                "order_id",
-                "fee",
-                "notes",
-            ])?;
-            writer.flush()?;
-        }
 
         Ok(Self {
             writer: Arc::new(Mutex::new(writer)),
@@ -129,5 +111,29 @@ impl OrderAuditLogger {
             fee: Some(fee),
             notes: None,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_audit_log_header() {
+        let dir = tempdir().unwrap();
+        let log_dir = dir.path().to_str().unwrap();
+        let logger = OrderAuditLogger::new(log_dir).unwrap();
+
+        logger.log_req("BTC/USDC", "BTC", "Buy", 50000.0, 1.0, false, None);
+
+        let file_path = dir.path().join("trades.csv");
+        let content = std::fs::read_to_string(file_path).unwrap();
+        let lines: Vec<&str> = content.trim().split('\n').collect();
+
+        // Should have exactly 2 lines: header + 1 record
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].contains("timestamp,symbol,asset,order_type,side,price,size,reduce_only,cloid,order_id,fee,notes"));
+        assert!(lines[1].contains("BTC/USDC,BTC,REQ,Buy,50000.0,1.0,false"));
     }
 }

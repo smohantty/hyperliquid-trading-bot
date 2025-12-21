@@ -97,7 +97,25 @@ async fn main() -> Result<()> {
     }
 
     // Initialize Strategy
-    let strategy = init_strategy(config.clone());
+    // Initialize Strategy
+    let strategy = match init_strategy(config.clone()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Strategy initialization failed: {}", e);
+            // Broadcast Error to Reporters
+            broadcaster.send(hyperliquid_trading_bot::broadcast::types::WSEvent::Error(
+                e.to_string(),
+            ));
+
+            if let Some(handle) = reporter_handle {
+                info!("Waiting for Telegram Reporter to shut down...");
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(10), handle).await;
+            } else {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+            std::process::exit(1);
+        }
+    };
 
     // Initialize Engine
     let engine = Engine::new(config, exchange_config, broadcaster.clone());

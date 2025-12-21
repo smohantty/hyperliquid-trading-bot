@@ -26,9 +26,10 @@ pub trait Strategy {
     fn get_status_snapshot(&self, ctx: &StrategyContext) -> crate::broadcast::types::StatusSummary;
 }
 
-pub fn init_strategy(config: StrategyConfig) -> Box<dyn Strategy> {
+pub fn init_strategy(config: StrategyConfig) -> Result<Box<dyn Strategy>> {
+    config.validate()?;
     match config {
-        StrategyConfig::SpotGrid { .. } => Box::new(spot_grid::SpotGridStrategy::new(config)),
-        StrategyConfig::PerpGrid { .. } => Box::new(perp_grid::PerpGridStrategy::new(config)),
+        StrategyConfig::SpotGrid { .. } => Ok(Box::new(spot_grid::SpotGridStrategy::new(config))),
+        StrategyConfig::PerpGrid { .. } => Ok(Box::new(perp_grid::PerpGridStrategy::new(config))),
     }
 }

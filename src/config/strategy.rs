@@ -64,6 +64,34 @@ impl StrategyConfig {
             StrategyConfig::PerpGrid { symbol, .. } => symbol,
         }
     }
+    pub fn validate(&self) -> anyhow::Result<()> {
+        match self {
+            StrategyConfig::SpotGrid {
+                trigger_price,
+                lower_price,
+                upper_price,
+                ..
+            }
+            | StrategyConfig::PerpGrid {
+                trigger_price,
+                lower_price,
+                upper_price,
+                ..
+            } => {
+                if let Some(trigger) = trigger_price {
+                    if *trigger < *lower_price || *trigger > *upper_price {
+                        return Err(anyhow::anyhow!(
+                            "Trigger price {} is outside the grid range [{}, {}].",
+                            trigger,
+                            lower_price,
+                            upper_price
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn print_strategy_help() {

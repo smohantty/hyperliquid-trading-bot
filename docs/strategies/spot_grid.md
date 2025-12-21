@@ -16,44 +16,51 @@ A classic mean-reversion strategy that buys low and sells high within a defined 
 
 ## Logic & State Machine
 
-The strategy operates as a state machine:
+The strategy operates as a state machine to ensure correct asset allocation before the grid starts:
 
 ```mermaid
 stateDiagram-v2
     [*] --> Initializing
-    Initializing --> WaitingForTrigger: if trigger_price is set
-    Initializing --> AcquiringAssets: if inventory < required
-    Initializing --> Running: if inventory sufficient
     
-    WaitingForTrigger --> AcquiringAssets: Price crosses Trigger
-    AcquiringAssets --> Running: Market Buy Filled
+    Initializing --> WaitingForTrigger: trigger_price set & not hit
+    Initializing --> Rebalancing: rebalance needed
+    Initializing --> Running: balances sufficient
     
-    Running --> Running: On Tick (Check Zones)
+    WaitingForTrigger --> Rebalancing: trigger hit & rebalance needed
+    WaitingForTrigger --> Running: trigger hit & balances sufficient
+    
+    Rebalancing --> Running: Rebalance Order Filled
+    
+    Running --> Running: Grid Logic (Refresh Orders)
 ```
 
-### 1. Initial Asset Acquisition
-On startup, the bot performs a **Strict Balance Check**:
-1.  Calculates the required inventory (Base Asset) to populate all zones above the current price.
-2.  Checks `Available Base Balance`.
-3.  **Validation**: If a deficit exists, it calculates the estimated cost in Quote (USDC). If `Available Quote Balance < Estimated Cost`, the bot **exits with an error**. It will not start with insufficient funds.
+### 1. Pre-Flight Validations
+Before placing any orders, the bot performs two critical checks:
 
-If funds are sufficient:
-*   **If Inventory is Low**: It enters `AcquiringAssets` state and places a Market Buy to bridge the gap.
-*   **If Inventory is Sufficient**: It proceeds directly to `Running`.
+1.  **Minimum Notional Validation**: Ensures that `total_investment / (grid_count - 1)` is at least **$11.0**. If the investment per zone is too low, the strategy fails to initialize.
+2.  **Total Portfolio Value Check**: Calculates `Total Value = (Available Base * Price) + Available Quote`. 
+    *   The **Price** used is the `trigger_price` (if set) or current market price.
+    *   If `Total Value < total_investment`, the bot **exits with an error**. You must have enough total funds across both assets to cover the requested grid investment.
 
-### 2. Grid Zones
-The range is divided into zones. Each zone has two states:
+### 2. Bidirectional Asset Rebalancing
+If the total value is sufficient but the specific asset split is wrong for the current price, the bot performs **Active Rebalancing**:
+
+*   **Buying Base**: If you have too much USDC and not enough BTC for the "Sell" zones, the bot places a **Limit Buy** order (at the `initial_price`) to acquire the deficit.
+*   **Selling Base**: If you have enough BTC but not enough USDC for the "Buy" zones, the bot places a **Limit Sell** order (at the `initial_price`) to generate the required quote liquidity.
+
+Once the rebalancing order is filled, the bot seeds its internal `inventory` tracking with the actual wallet balance and starts the grid.
+
+### 3. Execution
+The grid consists of multiple `zones`:
 *   **WaitingBuy**: Current Price > Zone Upper. Ready to buy if price drops.
 *   **WaitingSell**: Current Price < Zone Lower. Holding asset, ready to sell if price rises.
 
-### 3. Execution
-*   When a **Buy Order** fills: The zone transitions to `WaitingSell`. A Sell Limit order is placed at the zone's upper price.
-*   When a **Sell Order** fills: The zone transitions to `WaitingBuy`. A Buy Limit order is placed at the zone's lower price.
+When an order fills, the zone "flips" its state and places a counter-order on the opposite boundary.
 
 ## Boundary Behavior
 *   **Price > Upper Price**: All assets are sold (converted to Quote). Bot waits for price to drop.
 *   **Price < Lower Price**: All capital is in Base Asset. Bot waits for price to rise. No new buy orders are placed.
 
 ## WebSocket Data (`custom`)
-The `status` event contains strategy-specific data in the `custom` field.
-For the authoritative JSON Schema definition, see **[schema.json](../api/schema.json)** (Look for `Spot Grid Custom Data` definitions).
+The `status` event contains strategy-specific data in the `custom` field, including `inventory`, `avg_entry_price`, and `total_fees`.
+For the authoritative JSON Schema definition, see **[schema.json](../api/schema.json)**.

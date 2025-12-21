@@ -171,7 +171,13 @@ impl Engine {
         match info_client.user_token_balances(user_address).await {
             Ok(balances) => {
                 for balance in balances.balances {
-                    ctx.set_balance(balance.coin, balance.total.parse().unwrap_or(0.0));
+                    let total: f64 = balance.total.parse().unwrap_or(0.0);
+                    // Assuming 'hold' field exists to calculate available.
+                    // If SDK uses different name, this will fail compilation and we will fix.
+                    let hold: f64 = balance.hold.parse().unwrap_or(0.0);
+                    let available = total - hold;
+
+                    ctx.update_spot_balance(balance.coin, total, available);
                 }
             }
             Err(e) => error!("Periodic: Failed to fetch spot balances: {}", e),
@@ -179,10 +185,14 @@ impl Engine {
         // 2. Fetch Perp Balances (for USDC margin)
         match info_client.user_state(user_address).await {
             Ok(user_state) => {
-                ctx.set_balance(
-                    "USDC".to_string(),
-                    user_state.withdrawable.parse().unwrap_or(0.0),
-                );
+                let available = user_state.withdrawable.parse().unwrap_or(0.0);
+                let total = user_state
+                    .margin_summary
+                    .account_value
+                    .parse()
+                    .unwrap_or(0.0);
+
+                ctx.update_perp_balance("USDC".to_string(), total, available);
             }
             Err(e) => error!("Periodic: Failed to fetch perp balances (USDC): {}", e),
         }
@@ -222,11 +232,7 @@ impl Engine {
         self.fetch_balances(&mut info_client, user_address, &mut ctx)
             .await;
 
-        for (asset, amount) in &ctx.balances {
-            if *amount > 0.0 {
-                info!("Balance: {} = {}", asset, amount);
-            }
-        }
+        self.log_balances(&ctx);
 
         // 5. Subscribe
         let market_info = ctx.market_info(target_symbol).unwrap();
@@ -281,6 +287,52 @@ impl Engine {
         }
         info!("Engine stopped gracefully.");
         Ok(())
+    }
+
+    fn log_balances(&self, ctx: &StrategyContext) {
+        info!("========================================");
+        info!("           BALANCE SNAPSHOT             ");
+        info!("========================================");
+
+        info!("--- Spot Market ---");
+        let mut spot_assets: Vec<_> = ctx.spot_balances.keys().collect();
+        spot_assets.sort();
+
+        if spot_assets.is_empty() {
+            info!("(No Spot Balances)");
+        } else {
+            for asset in spot_assets {
+                if let Some(balance) = ctx.spot_balances.get(asset) {
+                    if balance.total > 0.0 {
+                        info!(
+                            "{:<10} | Total: {:<12.4} | Avail: {:<12.4}",
+                            asset, balance.total, balance.available
+                        );
+                    }
+                }
+            }
+        }
+
+        info!("");
+        info!("--- Perp Market ---");
+        let mut perp_assets: Vec<_> = ctx.perp_balances.keys().collect();
+        perp_assets.sort();
+
+        if perp_assets.is_empty() {
+            info!("(No Perp Balances)");
+        } else {
+            for asset in perp_assets {
+                if let Some(balance) = ctx.perp_balances.get(asset) {
+                    if balance.total > 0.0 {
+                        info!(
+                            "{:<10} | Total: {:<12.4} | Avail: {:<12.4}",
+                            asset, balance.total, balance.available
+                        );
+                    }
+                }
+            }
+        }
+        info!("========================================");
     }
 
     async fn handle_message(

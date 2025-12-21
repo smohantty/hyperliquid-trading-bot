@@ -65,9 +65,16 @@ impl MarketInfo {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Balance {
+    pub total: f64,
+    pub available: f64,
+}
+
 pub struct StrategyContext {
     pub markets: HashMap<String, MarketInfo>,
-    pub balances: HashMap<String, f64>,
+    pub spot_balances: HashMap<String, Balance>,
+    pub perp_balances: HashMap<String, Balance>,
     pub order_queue: Vec<OrderRequest>,
     pub cancellation_queue: Vec<u128>,
     pub next_cloid: u128,
@@ -77,7 +84,8 @@ impl StrategyContext {
     pub fn new(markets: HashMap<String, MarketInfo>) -> Self {
         Self {
             markets,
-            balances: HashMap::new(),
+            spot_balances: HashMap::new(),
+            perp_balances: HashMap::new(),
             order_queue: Vec::new(),
             cancellation_queue: Vec::new(),
             next_cloid: std::time::SystemTime::now()
@@ -139,11 +147,43 @@ impl StrategyContext {
         cloid
     }
 
-    pub fn balance(&self, asset: &str) -> f64 {
-        *self.balances.get(asset).unwrap_or(&0.0)
+    // --- Balance Accessors ---
+
+    pub fn update_spot_balance(&mut self, asset: String, total: f64, available: f64) {
+        self.spot_balances
+            .insert(asset, Balance { total, available });
     }
 
-    pub fn set_balance(&mut self, asset: String, amount: f64) {
-        self.balances.insert(asset, amount);
+    pub fn update_perp_balance(&mut self, asset: String, total: f64, available: f64) {
+        self.perp_balances
+            .insert(asset, Balance { total, available });
+    }
+
+    pub fn get_spot_total(&self, asset: &str) -> f64 {
+        self.spot_balances
+            .get(asset)
+            .map(|b| b.total)
+            .unwrap_or(0.0)
+    }
+
+    pub fn get_spot_available(&self, asset: &str) -> f64 {
+        self.spot_balances
+            .get(asset)
+            .map(|b| b.available)
+            .unwrap_or(0.0)
+    }
+
+    pub fn get_perp_total(&self, asset: &str) -> f64 {
+        self.perp_balances
+            .get(asset)
+            .map(|b| b.total)
+            .unwrap_or(0.0)
+    }
+
+    pub fn get_perp_available(&self, asset: &str) -> f64 {
+        self.perp_balances
+            .get(asset)
+            .map(|b| b.available)
+            .unwrap_or(0.0)
     }
 }

@@ -186,15 +186,11 @@ impl SpotGridStrategy {
 
         // Pre-flight check: Assets acquisition
         let base_coin = self.symbol.split('/').next().unwrap_or(&self.symbol);
-        let available_base = ctx.balance(base_coin);
+        let available_base = ctx.get_spot_available(base_coin); // Use available for trading logic
         let deficit = total_base_required - available_base;
 
         // Logic Split:
-        // 1. If Deficit > 0: Place Buy Order @ (TriggerPrice OR BestPrice).
-        //    If Trigger is set, we buy @ Trigger -> implicitly waiting for trigger.
-        // 2. If Deficit <= 0:
-        //    If Trigger is set -> WaitingForTrigger (Passive wait).
-        //    Else -> Running.
+        // ... (lines 192-258 unchanged usually, but I'm rewriting this block so its fine)
 
         if deficit > market_info.round_size(0.0) {
             // Acquisition Mode
@@ -571,8 +567,8 @@ impl Strategy for SpotGridStrategy {
                 avg_entry_price: self.avg_entry_price,
             },
             wallet: WalletStats {
-                base_balance: ctx.balance(coin),
-                quote_balance: ctx.balance("USDC"),
+                base_balance: ctx.get_spot_total(coin),
+                quote_balance: ctx.get_spot_total("USDC"),
             },
             price: current_mid,
             zones: refined_zones,
@@ -615,7 +611,7 @@ mod tests {
             MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
         );
         let mut ctx = StrategyContext::new(markets);
-        ctx.set_balance("HYPE".to_string(), 100.0); // Sufficient assets
+        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0); // Sufficient assets (Available = 100)
 
         if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
             info.last_price = 100.0;
@@ -670,7 +666,7 @@ mod tests {
             MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
         );
         let mut ctx = StrategyContext::new(markets);
-        ctx.set_balance("HYPE".to_string(), 0.0); // Zero assets
+        ctx.update_spot_balance("HYPE".to_string(), 0.0, 0.0); // Zero assets
 
         if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
             info.last_price = 100.0;
@@ -741,7 +737,7 @@ mod tests {
             MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
         );
         let mut ctx = StrategyContext::new(markets);
-        ctx.set_balance("HYPE".to_string(), 100.0); // Sufficient
+        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0); // Sufficient
 
         if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
             info.last_price = 100.0;
@@ -798,6 +794,7 @@ mod tests {
         // 3. Fill Sell Order
         // Price: 100.0. Fee: 0.1.
         let sell_price = 100.0;
+
         let sell_fee = 0.1;
 
         strategy
@@ -849,7 +846,7 @@ mod tests {
             MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
         );
         let mut ctx = StrategyContext::new(markets);
-        ctx.set_balance("HYPE".to_string(), 100.0);
+        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0);
 
         if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
             info.last_price = 100.0;

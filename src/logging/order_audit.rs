@@ -10,14 +10,12 @@ use std::sync::{Arc, Mutex};
 pub struct OrderRecord {
     pub timestamp: String,
     pub symbol: String,
-    pub asset: String,
-    pub order_type: String, // REQ, SENT, FILL, ERROR
+    pub order_type: String, // REQ, FILL
     pub side: String,
     pub price: f64,
     pub size: f64,
     pub reduce_only: bool,
     pub cloid: Option<String>,
-    pub order_id: Option<u64>,
     pub fee: Option<f64>,
     pub notes: Option<String>,
 }
@@ -63,7 +61,6 @@ impl OrderAuditLogger {
     pub fn log_req(
         &self,
         symbol: &str,
-        asset: &str,
         side: &str,
         price: f64,
         size: f64,
@@ -73,14 +70,12 @@ impl OrderAuditLogger {
         self.log(OrderRecord {
             timestamp: Local::now().to_rfc3339(),
             symbol: symbol.to_string(),
-            asset: asset.to_string(),
             order_type: "REQ".to_string(),
             side: side.to_string(),
             price,
             size,
             reduce_only,
             cloid,
-            order_id: None,
             fee: None,
             notes: None,
         });
@@ -89,7 +84,6 @@ impl OrderAuditLogger {
     pub fn log_fill(
         &self,
         symbol: &str,
-        asset: &str,
         side: &str,
         price: f64,
         size: f64,
@@ -100,14 +94,12 @@ impl OrderAuditLogger {
         self.log(OrderRecord {
             timestamp: Local::now().to_rfc3339(),
             symbol: symbol.to_string(),
-            asset: asset.to_string(),
             order_type: "FILL".to_string(),
             side: side.to_string(),
             price,
             size,
             reduce_only,
             cloid,
-            order_id: None,
             fee: Some(fee),
             notes: None,
         });
@@ -125,7 +117,7 @@ mod tests {
         let log_dir = dir.path().to_str().unwrap();
         let logger = OrderAuditLogger::new(log_dir).unwrap();
 
-        logger.log_req("BTC/USDC", "BTC", "Buy", 50000.0, 1.0, false, None);
+        logger.log_req("BTC/USDC", "Buy", 50000.0, 1.0, false, None);
 
         let file_path = dir.path().join("trades.csv");
         let content = std::fs::read_to_string(file_path).unwrap();
@@ -133,7 +125,8 @@ mod tests {
 
         // Should have exactly 2 lines: header + 1 record
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].contains("timestamp,symbol,asset,order_type,side,price,size,reduce_only,cloid,order_id,fee,notes"));
-        assert!(lines[1].contains("BTC/USDC,BTC,REQ,Buy,50000.0,1.0,false"));
+        assert!(lines[0]
+            .contains("timestamp,symbol,order_type,side,price,size,reduce_only,cloid,fee,notes"));
+        assert!(lines[1].contains("BTC/USDC,REQ,Buy,50000.0,1.0,false"));
     }
 }

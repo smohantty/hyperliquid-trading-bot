@@ -577,7 +577,6 @@ impl Engine {
         if let Some(logger) = &self.audit_logger {
             logger.log_req(
                 target_symbol,
-                coin,
                 if is_buy { "Buy" } else { "Sell" },
                 limit_px,
                 sz,
@@ -763,7 +762,6 @@ impl Engine {
 
                     logger.log_fill(
                         display_symbol,
-                        coin,
                         if side == "B" { "Buy" } else { "Sell" },
                         px,
                         amount,

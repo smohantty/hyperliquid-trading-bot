@@ -124,7 +124,7 @@ impl SpotGridStrategy {
             self.generate_grid_levels(&market_info)?;
 
         info!(
-            "[SPOT_GRID] Asset Required: {} ( {} ), {} ( {} )",
+            "[SPOT_GRID] INITIALIZATION: Asset Required: {} ( {} ), {} ( {} )",
             self.base_asset, total_base_required, self.quote_asset, total_quote_required
         );
 

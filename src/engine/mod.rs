@@ -209,7 +209,7 @@ impl Engine {
 
         // 1. Setup Clients
         let mut info_client = self.setup_info_client().await?;
-        let _exchange_client = self.setup_exchange_client(wallet.clone()).await?;
+        let exchange_client = self.setup_exchange_client(wallet.clone()).await?;
 
         // 2. Load Metadata
         let markets = self.load_metadata(&mut info_client).await?;
@@ -233,6 +233,39 @@ impl Engine {
             .await;
 
         self.log_balances(&ctx);
+
+        // 5. Setup Leverage/Margin for Perp strategies
+        if let StrategyConfig::PerpGrid {
+            leverage,
+            is_isolated,
+            ..
+        } = &self.config
+        {
+            let is_cross = !is_isolated; // is_cross = true means cross margin
+            let margin_mode = if is_cross { "Cross" } else { "Isolated" };
+            info!(
+                "Setting up {} margin with {}x leverage for {}...",
+                margin_mode, leverage, target_symbol
+            );
+
+            match exchange_client
+                .update_leverage(*leverage, target_symbol, is_cross, None)
+                .await
+            {
+                Ok(response) => {
+                    info!(
+                        "Leverage updated: {}x {} margin for {} - {:?}",
+                        leverage, margin_mode, target_symbol, response
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to update leverage for {}: {}. Continuing with existing settings.",
+                        target_symbol, e
+                    );
+                }
+            }
+        }
 
         // 5. Subscribe
         let market_info = ctx.market_info(target_symbol).unwrap();
@@ -280,7 +313,7 @@ impl Engine {
                     break;
                  }
                  Some(message) = receiver.recv() => {
-                     self.handle_message(message, &mut runtime, &mut strategy, &_exchange_client, &string_coin).await?;
+                     self.handle_message(message, &mut runtime, &mut strategy, &exchange_client, &string_coin).await?;
                  }
             }
         }

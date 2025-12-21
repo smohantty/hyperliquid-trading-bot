@@ -5,5 +5,5 @@ upper_price = 90000.0
 lower_price = 87000.0
 grid_type = "geometric"
 grid_count = 20
-total_investment = 300.0
+total_investment = 400.0
 grid_bias = "short"

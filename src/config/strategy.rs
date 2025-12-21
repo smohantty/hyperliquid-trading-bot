@@ -34,7 +34,7 @@ pub enum StrategyConfig {
 }
 
 fn default_is_isolated() -> bool {
-    true
+    false // Default to cross margin (more capital efficient for grid strategies)
 }
 
 impl StrategyConfig {

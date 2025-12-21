@@ -18,9 +18,9 @@ const ActivityLog: React.FC = () => {
             flexDirection: 'column',
             overflow: 'hidden'
         }}>
-            <div style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
+            <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 marginBottom: '0.75rem'
             }}>
@@ -28,8 +28,8 @@ const ActivityLog: React.FC = () => {
                     ACTIVITY LOG
                 </h3>
                 {orderHistory.length > 0 && (
-                    <span style={{ 
-                        fontSize: '0.7rem', 
+                    <span style={{
+                        fontSize: '0.7rem',
                         color: 'var(--text-muted)',
                         background: 'rgba(255,255,255,0.05)',
                         padding: '2px 8px',
@@ -40,16 +40,16 @@ const ActivityLog: React.FC = () => {
                 )}
             </div>
 
-            <div style={{ 
-                flex: 1, 
+            <div style={{
+                flex: 1,
                 overflowY: 'auto',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '4px'
             }}>
                 {orderHistory.length === 0 ? (
-                    <div style={{ 
-                        color: 'var(--text-muted)', 
+                    <div style={{
+                        color: 'var(--text-muted)',
                         fontSize: '0.85rem',
                         display: 'flex',
                         alignItems: 'center',
@@ -72,16 +72,16 @@ const ActivityLog: React.FC = () => {
 const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
     const isBuy = order.side === 'Buy';
     const isFilled = order.status === 'FILLED';
-    
+
     // Determine colors
     const sideColor = isBuy ? 'var(--color-buy)' : 'var(--color-sell)';
-    const statusColor = isFilled ? 'var(--color-buy)' : 
-                        order.status === 'OPEN' ? 'var(--accent-primary)' : 
-                        order.status === 'CANCELLED' ? 'var(--text-muted)' : 
+    const statusColor = isFilled ? 'var(--color-buy)' :
+                        order.status === 'OPEN' ? 'var(--accent-primary)' :
+                        order.status === 'CANCELLED' ? 'var(--text-muted)' :
                         'var(--color-sell)';
-    
-    const icon = isFilled ? '✓' : 
-                 order.status === 'OPEN' ? '○' : 
+
+    const icon = isFilled ? '✓' :
+                 order.status === 'OPEN' ? '○' :
                  order.status === 'CANCELLED' ? '✗' : '•';
 
     return (
@@ -96,8 +96,8 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
             fontSize: '0.8rem'
         }}>
             {/* Status Icon */}
-            <span style={{ 
-                color: statusColor, 
+            <span style={{
+                color: statusColor,
                 fontWeight: 'bold',
                 width: '16px',
                 textAlign: 'center'
@@ -120,8 +120,8 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
             </span>
 
             {/* Size @ Price */}
-            <span style={{ 
-                flex: 1, 
+            <span style={{
+                flex: 1,
                 fontFamily: 'var(--font-mono)',
                 color: 'var(--text-primary)'
             }}>
@@ -129,7 +129,7 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
             </span>
 
             {/* Status */}
-            <span style={{ 
+            <span style={{
                 color: statusColor,
                 fontSize: '0.7rem',
                 fontWeight: 600
@@ -139,7 +139,7 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
 
             {/* Fee (if filled) */}
             {isFilled && order.fee > 0 && (
-                <span style={{ 
+                <span style={{
                     color: 'var(--text-muted)',
                     fontSize: '0.65rem'
                 }}>

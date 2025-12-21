@@ -707,13 +707,17 @@ impl Strategy for PerpGridStrategy {
         // Calculate total roundtrips from zones
         let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
 
-        // Determine position side
-        let position_side = if self.position_size > 0.0 {
-            "Long"
+        // Determine position side and calculate unrealized PnL
+        let (position_side, unrealized_pnl) = if self.position_size > 0.0 {
+            // Long position: profit when price goes up
+            let pnl = (current_price - self.avg_entry_price) * self.position_size;
+            ("Long", pnl)
         } else if self.position_size < 0.0 {
-            "Short"
+            // Short position: profit when price goes down
+            let pnl = (self.avg_entry_price - current_price) * self.position_size.abs();
+            ("Short", pnl)
         } else {
-            "Flat"
+            ("Flat", 0.0)
         };
 
         StrategySummary::PerpGrid(PerpGridSummary {
@@ -724,7 +728,7 @@ impl Strategy for PerpGridStrategy {
             position_side: position_side.to_string(),
             avg_entry_price: self.avg_entry_price,
             realized_pnl: self.realized_pnl,
-            unrealized_pnl: self.unrealized_pnl,
+            unrealized_pnl,
             total_fees: self.total_fees,
             leverage: self.leverage,
             grid_bias: format!("{:?}", self.grid_bias),

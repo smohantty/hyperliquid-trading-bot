@@ -25,6 +25,7 @@ export interface SpotGridSummary {
     symbol: string;
     price: number;
     state: string;
+    uptime: string; // Human-readable uptime, e.g. "2d 14h 30m"
     position_size: number;
     avg_entry_price: number;
     realized_pnl: number;
@@ -43,6 +44,7 @@ export interface PerpGridSummary {
     symbol: string;
     price: number;
     state: string;
+    uptime: string; // Human-readable uptime, e.g. "2d 14h 30m"
     position_size: number;
     position_side: 'Long' | 'Short' | 'Flat';
     avg_entry_price: number;

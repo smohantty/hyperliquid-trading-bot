@@ -46,6 +46,7 @@ pub struct SpotGridSummary {
     pub symbol: String,
     pub price: f64,
     pub state: String, // "Initializing", "Running", "AcquiringAssets", "WaitingForTrigger"
+    pub uptime: String, // Human-readable uptime, e.g. "2d 14h 30m"
 
     // Position
     pub position_size: f64,    // Base asset inventory
@@ -74,6 +75,7 @@ pub struct PerpGridSummary {
     pub symbol: String,
     pub price: f64,
     pub state: String,
+    pub uptime: String, // Human-readable uptime, e.g. "2d 14h 30m"
 
     // Position
     pub position_size: f64,  // Positive = Long, Negative = Short

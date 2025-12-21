@@ -1,4 +1,27 @@
 use super::types::GridType;
+use std::time::Duration;
+
+/// Format a Duration as a human-readable uptime string.
+///
+/// Examples: "2d 14h 30m", "5h 45m", "30m 15s", "45s"
+pub fn format_uptime(duration: Duration) -> String {
+    let total_secs = duration.as_secs();
+
+    let days = total_secs / 86400;
+    let hours = (total_secs % 86400) / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = total_secs % 60;
+
+    if days > 0 {
+        format!("{}d {}h {}m", days, hours, minutes)
+    } else if hours > 0 {
+        format!("{}h {}m", hours, minutes)
+    } else if minutes > 0 {
+        format!("{}m {}s", minutes, seconds)
+    } else {
+        format!("{}s", seconds)
+    }
+}
 
 /// Checks if the current price has crossed the trigger price based on the initial start price.
 ///
@@ -166,5 +189,31 @@ mod tests {
         // At 100: 10/100 = 10%
         assert!((min - 5.0).abs() < 1e-9);
         assert!((max - 10.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_format_uptime_seconds() {
+        assert_eq!(format_uptime(Duration::from_secs(45)), "45s");
+        assert_eq!(format_uptime(Duration::from_secs(0)), "0s");
+    }
+
+    #[test]
+    fn test_format_uptime_minutes() {
+        assert_eq!(format_uptime(Duration::from_secs(90)), "1m 30s");
+        assert_eq!(format_uptime(Duration::from_secs(3599)), "59m 59s");
+    }
+
+    #[test]
+    fn test_format_uptime_hours() {
+        assert_eq!(format_uptime(Duration::from_secs(3600)), "1h 0m");
+        assert_eq!(format_uptime(Duration::from_secs(5400)), "1h 30m");
+        assert_eq!(format_uptime(Duration::from_secs(86399)), "23h 59m");
+    }
+
+    #[test]
+    fn test_format_uptime_days() {
+        assert_eq!(format_uptime(Duration::from_secs(86400)), "1d 0h 0m");
+        assert_eq!(format_uptime(Duration::from_secs(90061)), "1d 1h 1m");
+        assert_eq!(format_uptime(Duration::from_secs(259200)), "3d 0h 0m"); // 3 days
     }
 }

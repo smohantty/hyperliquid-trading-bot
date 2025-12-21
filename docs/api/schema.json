@@ -214,6 +214,7 @@
         "symbol",
         "price",
         "state",
+        "uptime",
         "position_size",
         "avg_entry_price",
         "realized_pnl",
@@ -237,6 +238,10 @@
         "state": {
           "type": "string",
           "description": "Strategy state: Initializing, Running, AcquiringAssets, WaitingForTrigger"
+        },
+        "uptime": {
+          "type": "string",
+          "description": "Human-readable uptime, e.g. '2d 14h 30m'"
         },
         "position_size": {
           "type": "number",
@@ -290,6 +295,7 @@
         "symbol",
         "price",
         "state",
+        "uptime",
         "position_size",
         "position_side",
         "avg_entry_price",
@@ -314,6 +320,10 @@
         },
         "state": {
           "type": "string"
+        },
+        "uptime": {
+          "type": "string",
+          "description": "Human-readable uptime, e.g. '2d 14h 30m'"
         },
         "position_size": {
           "type": "number",

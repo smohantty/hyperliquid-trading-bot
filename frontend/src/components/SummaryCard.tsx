@@ -73,7 +73,12 @@ const SummaryCard: React.FC = () => {
                             {perpData.leverage}x {perpData.grid_bias.toUpperCase()}
                         </span>
                     </div>
-                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{timeStr}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            ⏱️ {s.uptime}
+                        </span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{timeStr}</span>
+                    </div>
                 </div>
 
                 {/* Price & PnL */}
@@ -165,7 +170,12 @@ const SummaryCard: React.FC = () => {
                         SPOT GRID
                     </span>
                 </div>
-                <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{timeStr}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                        ⏱️ {s.uptime}
+                    </span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{timeStr}</span>
+                </div>
             </div>
 
             {/* Price & PnL */}
@@ -226,11 +236,11 @@ const SummaryCard: React.FC = () => {
 // Format grid spacing: "2.50%" for geometric, "0.167% - 0.172%" for arithmetic
 const formatSpacing = (spacing: [number, number]): string => {
     const [min, max] = spacing;
-    
+
     // Determine precision based on value magnitude
     // Small values need more precision to show meaningful differences
     const decimals = min < 1 ? 3 : 2;
-    
+
     // Use relative difference check: if difference is < 1% of the value, treat as same
     const relativeDiff = Math.abs(max - min) / Math.max(min, max);
     if (relativeDiff < 0.01) {

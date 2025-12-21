@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::time::Instant;
 
 use super::common;
 use super::types::{GridBias, GridType, ZoneMode};
@@ -55,6 +56,7 @@ pub struct PerpGridStrategy {
     trade_count: u32,
     state: StrategyState,
     start_price: Option<f64>,
+    start_time: Instant,
 
     // Performance Metrics
     realized_pnl: f64,
@@ -96,6 +98,7 @@ impl PerpGridStrategy {
                 trade_count: 0,
                 state: StrategyState::Initializing,
                 start_price: None,
+                start_time: Instant::now(),
                 realized_pnl: 0.0,
                 total_fees: 0.0,
                 unrealized_pnl: 0.0,
@@ -728,10 +731,14 @@ impl Strategy for PerpGridStrategy {
             self.grid_count,
         );
 
+        // Calculate uptime
+        let uptime = common::format_uptime(self.start_time.elapsed());
+
         StrategySummary::PerpGrid(PerpGridSummary {
             symbol: self.symbol.clone(),
             price: current_price,
             state: format!("{:?}", self.state),
+            uptime,
             position_size: self.position_size,
             position_side: position_side.to_string(),
             avg_entry_price: self.avg_entry_price,

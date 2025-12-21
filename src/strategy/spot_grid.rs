@@ -8,6 +8,7 @@ use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
 use std::collections::HashMap;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +53,7 @@ pub struct SpotGridStrategy {
     state: StrategyState,
     trade_count: u32,
     start_price: Option<f64>,
+    start_time: Instant,
 
     // Strategy Performance
     realized_pnl: f64,
@@ -95,6 +97,7 @@ impl SpotGridStrategy {
                     state: StrategyState::Initializing,
                     trade_count: 0,
                     start_price: None,
+                    start_time: Instant::now(),
                     realized_pnl: 0.0,
                     total_fees: 0.0,
                     inventory: 0.0,
@@ -715,10 +718,14 @@ impl Strategy for SpotGridStrategy {
             self.grid_count,
         );
 
+        // Calculate uptime
+        let uptime = common::format_uptime(self.start_time.elapsed());
+
         StrategySummary::SpotGrid(SpotGridSummary {
             symbol: self.symbol.clone(),
             price: current_price,
             state: format!("{:?}", self.state),
+            uptime,
             position_size: self.inventory,
             avg_entry_price: self.avg_entry_price,
             realized_pnl: self.realized_pnl,

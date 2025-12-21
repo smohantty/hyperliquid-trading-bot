@@ -2,7 +2,7 @@ use super::common;
 use super::types::{GridType, ZoneState};
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{MarketInfo, StrategyContext, MIN_NOTIONAL_VALUE};
-use crate::model::OrderRequest;
+use crate::model::{Cloid, OrderRequest};
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 enum StrategyState {
     Initializing,
     WaitingForTrigger,
-    AcquiringAssets { cloid: u128 },
+    AcquiringAssets { cloid: Cloid },
     Running,
 }
 
@@ -26,7 +26,7 @@ struct GridZone {
     size: f64,
     state: ZoneState,
     entry_price: f64,
-    order_id: Option<u128>,
+    order_id: Option<Cloid>,
 
     // Performance Metrics
     roundtrip_count: u32,
@@ -46,7 +46,7 @@ pub struct SpotGridStrategy {
 
     // Internal State
     zones: Vec<GridZone>,
-    active_orders: HashMap<u128, usize>,
+    active_orders: HashMap<Cloid, usize>,
     state: StrategyState,
     trade_count: u32,
     start_price: Option<f64>,
@@ -278,7 +278,7 @@ impl SpotGridStrategy {
 
                 if available_quote < estimated_cost {
                     let msg = format!(
-                        "Insufficient Quote Balance for acquisition! Need ~{:.2} {}, Have {:.2} {}. Base Deficit: {} {}", 
+                        "Insufficient Quote Balance for acquisition! Need ~{:.2} {}, Have {:.2} {}. Base Deficit: {} {}",
                         estimated_cost, self.quote_asset, available_quote, self.quote_asset, rounded_deficit, self.base_asset
                     );
                     error!("[SPOT_GRID] {}", msg);
@@ -625,7 +625,7 @@ impl Strategy for SpotGridStrategy {
         size: f64,
         px: f64,
         fee: f64,
-        cloid: Option<u128>,
+        cloid: Option<Cloid>,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
         if let Some(cloid_val) = cloid {
@@ -642,7 +642,7 @@ impl Strategy for SpotGridStrategy {
                     let zone = &self.zones[zone_idx];
                     if zone.order_id != Some(cloid_val) {
                         warn!(
-                            "[SPOT_GRID] Zone {} order_id mismatch! Expected {:?}, got {:?}",
+                            "[SPOT_GRID] Zone {} order_id mismatch! Expected {:?}, got {}",
                             zone_idx, zone.order_id, cloid_val
                         );
                     }
@@ -676,7 +676,7 @@ impl Strategy for SpotGridStrategy {
         Ok(())
     }
 
-    fn on_order_failed(&mut self, cloid: u128, _ctx: &mut StrategyContext) -> Result<()> {
+    fn on_order_failed(&mut self, cloid: Cloid, _ctx: &mut StrategyContext) -> Result<()> {
         log::warn!("[SPOT_GRID] Order failed callback for cloid: {}", cloid);
         Ok(())
     }
@@ -1034,7 +1034,7 @@ mod tests {
         let zone_idx = 0;
         let zone = &mut strategy.zones[zone_idx];
         zone.state = ZoneState::WaitingBuy;
-        let order_id = 123;
+        let order_id = Cloid::new();
         zone.order_id = Some(order_id);
         strategy.active_orders.insert(order_id, zone_idx);
 
@@ -1049,7 +1049,7 @@ mod tests {
         // Reset zone to WaitingBuy for test
         let zone = &mut strategy.zones[zone_idx];
         zone.state = ZoneState::WaitingBuy;
-        let order_id_2 = 124;
+        let order_id_2 = Cloid::new();
         zone.order_id = Some(order_id_2);
         strategy.active_orders.insert(order_id_2, zone_idx);
 
@@ -1063,7 +1063,7 @@ mod tests {
         // 4. Sell 5 @ 120
         let zone = &mut strategy.zones[zone_idx];
         zone.state = ZoneState::WaitingSell; // Force state
-        let order_id_3 = 125;
+        let order_id_3 = Cloid::new();
         zone.order_id = Some(order_id_3);
         strategy.active_orders.insert(order_id_3, zone_idx);
 

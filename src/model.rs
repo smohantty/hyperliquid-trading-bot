@@ -1,4 +1,65 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
+use uuid::Uuid;
+
+/// Client Order ID - a unique identifier for orders.
+/// Wraps a UUID, which the SDK converts to "0x{hex}" on the wire.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Cloid(Uuid);
+
+impl Cloid {
+    /// Generate a new random cloid (UUID v4)
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Get the inner UUID (for SDK calls)
+    pub fn as_uuid(&self) -> Uuid {
+        self.0
+    }
+
+    /// Parse from hex string (with or without 0x prefix)
+    /// This is the format returned by fill events from the exchange.
+    pub fn from_hex_str(s: &str) -> Option<Self> {
+        let normalized = s.strip_prefix("0x").unwrap_or(s);
+        u128::from_str_radix(normalized, 16)
+            .ok()
+            .map(|v| Self(Uuid::from_u128(v)))
+    }
+}
+
+impl Default for Cloid {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Debug for Cloid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Cloid({:032x})", self.0.as_u128())
+    }
+}
+
+impl fmt::Display for Cloid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Wire format: 0x prefix (matches what exchange returns)
+        write!(f, "0x{:032x}", self.0.as_u128())
+    }
+}
+
+// Serialize as hex string (matches Display / wire format)
+impl Serialize for Cloid {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for Cloid {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Self::from_hex_str(&s).ok_or_else(|| serde::de::Error::custom("invalid cloid hex string"))
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OrderRequest {
@@ -8,18 +69,53 @@ pub enum OrderRequest {
         price: f64,
         sz: f64,
         reduce_only: bool,
-        cloid: Option<u128>,
+        cloid: Option<Cloid>,
     },
     Market {
         symbol: String,
         is_buy: bool,
         sz: f64,
-        cloid: Option<u128>,
+        cloid: Option<Cloid>,
     },
     Cancel {
-        cloid: u128,
+        cloid: Cloid,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OrderId(pub u64);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cloid_display_format() {
+        let cloid = Cloid::from_hex_str("0x1234abcd").unwrap();
+        let display = cloid.to_string();
+        assert!(display.starts_with("0x"));
+        assert_eq!(display.len(), 34); // "0x" + 32 hex chars
+    }
+
+    #[test]
+    fn test_cloid_roundtrip() {
+        let original = Cloid::new();
+        let hex_str = original.to_string();
+        let parsed = Cloid::from_hex_str(&hex_str).unwrap();
+        assert_eq!(original, parsed);
+    }
+
+    #[test]
+    fn test_cloid_from_hex_without_prefix() {
+        let cloid = Cloid::from_hex_str("1234abcd").unwrap();
+        assert!(cloid.to_string().starts_with("0x"));
+    }
+
+    #[test]
+    fn test_cloid_serde_roundtrip() {
+        let original = Cloid::new();
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: Cloid = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, parsed);
+    }
+}

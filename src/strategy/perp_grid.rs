@@ -1,6 +1,6 @@
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{StrategyContext, MIN_NOTIONAL_VALUE};
-use crate::model::OrderRequest;
+use crate::model::{Cloid, OrderRequest};
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use log::{debug, error, info, warn};
@@ -9,11 +9,12 @@ use std::collections::HashMap;
 
 use super::common;
 use super::types::{GridBias, GridType, ZoneState};
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum StrategyState {
     Initializing,
     WaitingForTrigger,
-    AcquiringAssets { cloid: u128, target_size: f64 },
+    AcquiringAssets { cloid: Cloid, target_size: f64 },
     Running,
 }
 
@@ -26,7 +27,7 @@ struct GridZone {
     state: ZoneState,
     is_short_oriented: bool,
     entry_price: f64,
-    order_id: Option<u128>,
+    order_id: Option<Cloid>,
 
     // Performance Metrics
     roundtrip_count: u32,
@@ -47,7 +48,7 @@ pub struct PerpGridStrategy {
 
     // Internal State
     zones: Vec<GridZone>,
-    active_orders: HashMap<u128, usize>, // cloid -> zone_index
+    active_orders: HashMap<Cloid, usize>, // cloid -> zone_index
     trade_count: u32,
     state: StrategyState,
     start_price: Option<f64>,
@@ -467,7 +468,7 @@ impl Strategy for PerpGridStrategy {
         size: f64,
         px: f64,
         _fee: f64,
-        cloid: Option<u128>,
+        cloid: Option<Cloid>,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
         if let Some(cloid_val) = cloid {
@@ -594,7 +595,7 @@ impl Strategy for PerpGridStrategy {
         Ok(())
     }
 
-    fn on_order_failed(&mut self, _cloid: u128, _ctx: &mut StrategyContext) -> Result<()> {
+    fn on_order_failed(&mut self, _cloid: Cloid, _ctx: &mut StrategyContext) -> Result<()> {
         Ok(())
     }
 

@@ -2,6 +2,7 @@ pub mod context;
 
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{MarketInfo, StrategyContext};
+use crate::model::Cloid;
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use ethers::signers::{LocalWallet, Signer};
@@ -22,8 +23,8 @@ struct PendingOrder {
 
 struct EngineRuntime {
     pub ctx: StrategyContext,
-    pub pending_orders: HashMap<u128, PendingOrder>,
-    pub completed_cloids: HashSet<u128>,
+    pub pending_orders: HashMap<Cloid, PendingOrder>,
+    pub completed_cloids: HashSet<Cloid>,
 }
 
 impl EngineRuntime {
@@ -405,7 +406,7 @@ impl Engine {
             // Broadcast Order Update (Cancel Sent)
             self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                 oid: 0,
-                cloid: Some(format!("0x{:x}", cloid_to_cancel)),
+                cloid: Some(cloid_to_cancel.to_string()),
                 side: "UNKNOWN".to_string(), // We don't track side for cancels effectively here without lookup
                 price: 0.0,
                 size: 0.0,
@@ -415,7 +416,7 @@ impl Engine {
 
             let cancel_req = hyperliquid_rust_sdk::ClientCancelRequestCloid {
                 asset: coin.to_string(),
-                cloid: uuid::Uuid::from_u128(cloid_to_cancel),
+                cloid: cloid_to_cancel.as_uuid(),
             };
             match exchange_client.cancel_by_cloid(cancel_req, None).await {
                 Ok(res) => info!("Cancel successful: {:?}", res),
@@ -471,7 +472,7 @@ impl Engine {
             crate::model::OrderRequest::Cancel { cloid } => {
                 self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                     oid: 0,
-                    cloid: Some(format!("0x{:x}", cloid)),
+                    cloid: Some(cloid.to_string()),
                     side: "UNKNOWN".to_string(),
                     price: 0.0,
                     size: 0.0,
@@ -485,7 +486,7 @@ impl Engine {
                 );
                 let cancel_req = hyperliquid_rust_sdk::ClientCancelRequestCloid {
                     asset: coin.to_string(),
-                    cloid: uuid::Uuid::from_u128(cloid),
+                    cloid: cloid.as_uuid(),
                 };
                 match exchange_client.cancel_by_cloid(cancel_req, None).await {
                     Ok(res) => info!("Cancel successful: {:?}", res),
@@ -552,14 +553,14 @@ impl Engine {
             sz,
             reduce_only,
             order_type,
-            cloid: cloid.map(uuid::Uuid::from_u128),
+            cloid: cloid.map(|c| c.as_uuid()),
         };
 
         // Broadcast Order Placed (OPEN via Request)
         if let Some(c) = cloid {
             self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                 oid: 0, // Not assigned yet
-                cloid: Some(format!("0x{:x}", c)),
+                cloid: Some(c.to_string()),
                 side: if is_buy {
                     "Buy".to_string()
                 } else {
@@ -575,19 +576,21 @@ impl Engine {
         // Audit Log: REQ
         if let Some(logger) = &self.audit_logger {
             logger.log_req(
-                &target_symbol,
+                target_symbol,
                 coin,
                 if is_buy { "Buy" } else { "Sell" },
                 limit_px,
                 sz,
                 reduce_only,
-                cloid.map(|c| format!("0x{:x}", c)),
+                cloid.map(|c| c.to_string()),
             );
         }
 
         info!(
-            "[ORDER_SENT] 0x{:x} -> Exchange ({})",
-            cloid.unwrap_or(0),
+            "[ORDER_SENT] {} -> Exchange ({})",
+            cloid
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "no-cloid".to_string()),
             req_summary
         );
         match exchange_client.order(sdk_req, None).await {
@@ -632,7 +635,7 @@ impl Engine {
                         // Broadcast Filled
                         self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                             oid: 0,
-                            cloid: Some(format!("0x{:x}", c)),
+                            cloid: Some(c.to_string()),
                             side: if is_buy {
                                 "Buy".to_string()
                             } else {
@@ -673,7 +676,7 @@ impl Engine {
                         // Broadcast Placing/Resting confirmed
                         self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                             oid: 0,
-                            cloid: Some(format!("0x{:x}", c)),
+                            cloid: Some(c.to_string()),
                             side: if is_buy {
                                 "Buy".to_string()
                             } else {
@@ -692,7 +695,7 @@ impl Engine {
                 if let Some(c) = cloid {
                     self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                         oid: 0,
-                        cloid: Some(format!("0x{:x}", c)),
+                        cloid: Some(c.to_string()),
                         side: "UNKNOWN".to_string(),
                         price: 0.0,
                         size: 0.0,
@@ -735,16 +738,8 @@ impl Engine {
                 let amount: f64 = fill.sz.parse().unwrap_or(0.0);
                 let px: f64 = fill.px.parse().unwrap_or(0.0);
 
-                let cloid = if let Some(cloid_str) = fill.cloid {
-                    let normalized = if cloid_str.starts_with("0x") {
-                        &cloid_str[2..]
-                    } else {
-                        &cloid_str
-                    };
-                    u128::from_str_radix(normalized, 16).ok()
-                } else {
-                    None
-                };
+                // Parse cloid from fill using Cloid::from_hex_str
+                let cloid: Option<Cloid> = fill.cloid.as_ref().and_then(|s| Cloid::from_hex_str(s));
 
                 let side = if fill.dir.to_lowercase().starts_with('b') {
                     "B"
@@ -773,14 +768,16 @@ impl Engine {
                         px,
                         amount,
                         record_reduce_only,
-                        cloid.map(|c| format!("0x{:x}", c)),
+                        cloid.map(|c| c.to_string()),
                         fee,
                     );
                 }
 
                 info!(
-                    "[ORDER_FILL] 0x{:x} {} {} @ {} (Fee: {})",
-                    cloid.unwrap_or(0),
+                    "[ORDER_FILL] {} {} {} @ {} (Fee: {})",
+                    cloid
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "no-cloid".to_string()),
                     if side == "B" { "BUY" } else { "SELL" },
                     amount,
                     px,
@@ -790,7 +787,7 @@ impl Engine {
                 // Broadcast Fill Event
                 self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                     oid: fill.oid,
-                    cloid: cloid.map(|c| format!("0x{:x}", c)),
+                    cloid: cloid.map(|c| c.to_string()),
                     side: if side == "B" {
                         "Buy".to_string()
                     } else {

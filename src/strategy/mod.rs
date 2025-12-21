@@ -7,6 +7,7 @@ pub mod spot_grid;
 pub mod types;
 
 use crate::engine::context::StrategyContext;
+use crate::model::Cloid;
 use anyhow::Result;
 
 pub trait Strategy {
@@ -19,11 +20,11 @@ pub trait Strategy {
         size: f64,
         px: f64,
         fee: f64,
-        cloid: Option<u128>,
+        cloid: Option<Cloid>,
         ctx: &mut StrategyContext,
     ) -> Result<()>;
 
-    fn on_order_failed(&mut self, cloid: u128, ctx: &mut StrategyContext) -> Result<()>;
+    fn on_order_failed(&mut self, cloid: Cloid, ctx: &mut StrategyContext) -> Result<()>;
 
     fn get_status_snapshot(&self, ctx: &StrategyContext) -> crate::broadcast::types::StatusSummary;
 }

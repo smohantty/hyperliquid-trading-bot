@@ -1,4 +1,4 @@
-use crate::model::OrderRequest;
+use crate::model::{Cloid, OrderRequest};
 use std::collections::HashMap;
 
 pub const MIN_NOTIONAL_VALUE: f64 = 11.0;
@@ -79,8 +79,7 @@ pub struct StrategyContext {
     pub spot_balances: HashMap<String, Balance>,
     pub perp_balances: HashMap<String, Balance>,
     pub order_queue: Vec<OrderRequest>,
-    pub cancellation_queue: Vec<u128>,
-    pub next_cloid: u128,
+    pub cancellation_queue: Vec<Cloid>,
 }
 
 impl StrategyContext {
@@ -91,10 +90,6 @@ impl StrategyContext {
             perp_balances: HashMap::new(),
             order_queue: Vec::new(),
             cancellation_queue: Vec::new(),
-            next_cloid: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos(),
         }
     }
 
@@ -110,14 +105,12 @@ impl StrategyContext {
         self.order_queue.push(order);
     }
 
-    pub fn cancel_order(&mut self, cloid: u128) {
+    pub fn cancel_order(&mut self, cloid: Cloid) {
         self.cancellation_queue.push(cloid);
     }
 
-    pub fn generate_cloid(&mut self) -> u128 {
-        let cloid = self.next_cloid;
-        self.next_cloid += 1;
-        cloid
+    pub fn generate_cloid(&mut self) -> Cloid {
+        Cloid::new()
     }
 
     // --- Balance Accessors ---

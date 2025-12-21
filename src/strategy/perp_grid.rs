@@ -286,9 +286,7 @@ impl PerpGridStrategy {
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         let mut orders_to_place = Vec::new();
 
-        // 1. Identify needed orders (No ctx borrow needed, relying on self state)
-        // BUT we need market info to calculate/round prices? Yes.
-        // So we iterate state, collect raw intent.
+        // 1. Identify needed orders
 
         let mut intents = Vec::new();
         for zone in &self.zones {
@@ -307,12 +305,7 @@ impl PerpGridStrategy {
         for (idx, is_buy, raw_price, raw_size, is_short_linked) in intents {
             let cloid = ctx.generate_cloid();
 
-            let (price, size) = {
-                let info = ctx
-                    .market_info(&self.symbol)
-                    .ok_or_else(|| anyhow!("No market info"))?;
-                (info.round_price(raw_price), info.round_size(raw_size))
-            };
+            let (price, size) = (raw_price, raw_size);
 
             self.zones[idx].order_id = Some(cloid);
             self.active_orders.insert(cloid, idx);
@@ -352,15 +345,7 @@ impl PerpGridStrategy {
         let zone = &mut self.zones[zone_idx];
         let next_cloid = ctx.generate_cloid();
 
-        let (rounded_price, rounded_size) = {
-            let market_info = ctx
-                .market_info(&self.symbol)
-                .ok_or_else(|| anyhow!("Market info not found"))?;
-            (
-                market_info.round_price(price),
-                market_info.round_size(zone.size),
-            )
-        };
+        let (rounded_price, rounded_size) = (price, zone.size);
 
         info!(
             "[PERP_GRID] Zone {} | Placing {:?} order @ {} (cloid: {})",

@@ -268,11 +268,6 @@ impl SpotGridStrategy {
                     ZoneState::WaitingSell => (zone.upper_price, false),
                 };
 
-                let market_info = ctx.market_info(&self.symbol).unwrap();
-                // Ensure price and size are rounded
-                let price = market_info.round_price(price);
-                // zone.size is already rounded and min-checked
-
                 let cloid = ctx.generate_cloid();
                 orders_to_place.push((i, is_buy, price, zone.size, cloid));
             }
@@ -420,8 +415,7 @@ impl Strategy for SpotGridStrategy {
                         zone.entry_price = px;
 
                         let next_cloid = ctx.generate_cloid();
-                        let market_info = ctx.market_info(&self.symbol).unwrap();
-                        let price = market_info.round_price(zone.upper_price);
+                        let price = zone.upper_price;
 
                         info!(
                             "[SPOT_GRID] Zone {} | Placing SELL Order @ {} (cloid: {})",
@@ -463,8 +457,7 @@ impl Strategy for SpotGridStrategy {
                         zone.entry_price = 0.0;
 
                         let next_cloid = ctx.generate_cloid();
-                        let market_info = ctx.market_info(&self.symbol).unwrap();
-                        let price = market_info.round_price(zone.lower_price);
+                        let price = zone.lower_price;
 
                         info!(
                             "[SPOT_GRID] Zone {} | Placing BUY Order @ {} (cloid: {})",

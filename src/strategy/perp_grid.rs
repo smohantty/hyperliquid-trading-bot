@@ -480,11 +480,27 @@ impl Strategy for PerpGridStrategy {
                 if cloid_val == acq_cloid {
                     info!("[PERP_GRID] Acquisition filled @ {}", fill.price);
 
-                    // Update Position Size
+                    // Track fees
+                    self.total_fees += fill.fee;
+
+                    // Update Position Size and Average Entry Price
+                    let old_pos = self.position_size;
                     if fill.side.is_buy() {
                         self.position_size += fill.size;
+                        // Update weighted average entry (opening long)
+                        if self.position_size.abs() > 0.0 {
+                            self.avg_entry_price = (old_pos.abs() * self.avg_entry_price
+                                + fill.size * fill.price)
+                                / self.position_size.abs();
+                        }
                     } else {
                         self.position_size -= fill.size;
+                        // Update weighted average entry (opening short)
+                        if self.position_size.abs() > 0.0 {
+                            self.avg_entry_price = (old_pos.abs() * self.avg_entry_price
+                                + fill.size * fill.price)
+                                / self.position_size.abs();
+                        }
                     }
 
                     // Update Zones Entry Price
@@ -507,8 +523,9 @@ impl Strategy for PerpGridStrategy {
 
             if let Some(zone_idx) = self.active_orders.remove(&cloid_val) {
                 self.trade_count += 1;
+                self.total_fees += fill.fee;
 
-                let (next_px, next_side) = {
+                let (next_px, next_side, pnl) = {
                     let zone = &mut self.zones[zone_idx];
                     zone.order_id = None;
 
@@ -584,7 +601,15 @@ impl Strategy for PerpGridStrategy {
                     // END FILL VALIDATION
                     // ============================================================
 
-                    // Update Position Size based on Zone State
+                    // Determine if this is an opening or closing fill
+                    let is_opening = match (zone.state, zone.is_short_oriented) {
+                        (ZoneState::WaitingBuy, false) => true,  // Open Long
+                        (ZoneState::WaitingSell, true) => true,  // Open Short
+                        _ => false,                               // Closing
+                    };
+
+                    // Update Position Size and Average Entry Price
+                    let old_pos = self.position_size;
                     match zone.state {
                         ZoneState::WaitingBuy => {
                             // Buying
@@ -596,7 +621,17 @@ impl Strategy for PerpGridStrategy {
                         }
                     }
 
-                    let (next_state, entry_px, _pnl, next_px, next_side) = match (
+                    // Update avg_entry_price only for opening fills
+                    if is_opening && self.position_size.abs() > 0.0 {
+                        self.avg_entry_price = (old_pos.abs() * self.avg_entry_price
+                            + fill.size * fill.price)
+                            / self.position_size.abs();
+                    } else if self.position_size.abs() < 0.0001 {
+                        // Position closed, reset avg_entry
+                        self.avg_entry_price = 0.0;
+                    }
+
+                    let (next_state, entry_px, pnl, next_px, next_side) = match (
                         zone.state,
                         zone.is_short_oriented,
                     ) {
@@ -648,8 +683,13 @@ impl Strategy for PerpGridStrategy {
 
                     zone.state = next_state;
                     zone.entry_price = entry_px;
-                    (next_px, next_side)
+                    (next_px, next_side, pnl)
                 };
+
+                // Accumulate realized PnL from closing fills
+                if let Some(pnl) = pnl {
+                    self.realized_pnl += pnl;
+                }
 
                 self.place_counter_order(zone_idx, next_px, next_side, ctx)?;
             } else {

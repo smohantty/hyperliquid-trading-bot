@@ -1,34 +1,42 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo } from 'react';
 import { useBotStore } from '../context/WebSocketContext';
 import type { ZoneInfo } from '../types/schema';
 
 const OrderBook: React.FC = () => {
     const { gridState, lastPrice } = useBotStore();
-    const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-    // Sort zones by price (highest first for CLOB view)
-    const sortedZones = useMemo(() => {
-        if (!gridState) return [];
-        return [...gridState.zones].sort((a, b) => b.upper_price - a.upper_price);
-    }, [gridState]);
-
-    // Auto-scroll to center the active price when zones change
-    useEffect(() => {
-        if (scrollContainerRef.current) {
-            const indicator = scrollContainerRef.current.querySelector('#active-price-indicator');
-            if (indicator) {
-                indicator.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    // Split zones into asks (above price) and bids (below price)
+    const { asks, bids } = useMemo(() => {
+        if (!gridState || !lastPrice) return { asks: [], bids: [] };
+        
+        const sortedZones = [...gridState.zones].sort((a, b) => b.upper_price - a.upper_price);
+        
+        const asks: ZoneInfo[] = [];
+        const bids: ZoneInfo[] = [];
+        
+        sortedZones.forEach(zone => {
+            // Use midpoint of zone for classification
+            const midPrice = (zone.lower_price + zone.upper_price) / 2;
+            if (midPrice > lastPrice) {
+                asks.push(zone);
+            } else {
+                bids.push(zone);
             }
-        }
-    }, [gridState?.zones]);
+        });
+        
+        // Asks: lowest first (closest to current price at bottom)
+        asks.reverse();
+        
+        return { asks, bids };
+    }, [gridState, lastPrice]);
 
     if (!gridState || !lastPrice) {
         return (
             <div style={{
                 background: 'var(--bg-card)',
-                borderRadius: '8px',
+                borderRadius: '12px',
                 border: '1px solid var(--border-light)',
-                padding: '2rem',
+                padding: '3rem',
                 textAlign: 'center',
                 color: 'var(--text-muted)'
             }}>
@@ -43,195 +51,252 @@ const OrderBook: React.FC = () => {
     return (
         <div style={{
             background: 'var(--bg-card)',
-            borderRadius: '8px',
+            borderRadius: '12px',
             border: '1px solid var(--border-light)',
-            height: '600px',
-            display: 'flex',
-            flexDirection: 'column',
             overflow: 'hidden'
         }}>
             {/* Header */}
             <div style={{ 
-                padding: '1rem', 
-                borderBottom: '1px solid var(--border-light)', 
-                fontWeight: 600,
+                padding: '0.75rem 1.25rem', 
+                borderBottom: '1px solid var(--border-light)',
                 display: 'flex',
                 justifyContent: 'space-between',
-                alignItems: 'center'
+                alignItems: 'center',
+                background: 'rgba(255, 255, 255, 0.02)'
             }}>
-                <span>LIVE GRID STRUCTURE</span>
                 <span style={{ 
                     fontSize: '0.75rem', 
+                    fontWeight: 600,
+                    color: 'var(--text-secondary)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em'
+                }}>
+                    📊 Live Grid Structure
+                </span>
+                <span style={{ 
+                    fontSize: '0.65rem', 
                     color: isPerp ? 'var(--accent-secondary)' : 'var(--accent-primary)',
                     background: 'rgba(255,255,255,0.05)',
-                    padding: '4px 8px',
+                    padding: '2px 8px',
                     borderRadius: '4px'
                 }}>
                     {isPerp ? `PERP${biasLabel}` : 'SPOT'}
                 </span>
             </div>
 
-            {/* Column Headers */}
+            {/* CLOB Style Layout */}
             <div style={{
-                display: 'flex',
-                padding: '0.5rem 1rem',
-                fontSize: '0.75rem',
-                color: 'var(--text-muted)',
-                borderBottom: '1px solid var(--border-light)',
-                background: 'rgba(255,255,255,0.02)'
+                display: 'grid',
+                gridTemplateColumns: '1fr auto 1fr',
+                minHeight: '300px'
             }}>
-                <div style={{ width: '25%' }}>PRICE</div>
-                <div style={{ width: '20%', textAlign: 'right' }}>SIZE</div>
-                <div style={{ width: '30%', textAlign: 'center' }}>ACTION</div>
-                <div style={{ width: '25%', textAlign: 'right' }}>STATUS</div>
-            </div>
-
-            {/* Zone List */}
-            <div
-                ref={scrollContainerRef}
-                style={{
-                    flex: 1,
-                    overflowY: 'auto',
-                    position: 'relative',
+                {/* Asks (Sell side) - Left */}
+                <div style={{ 
+                    borderRight: '1px solid var(--border-light)',
                     display: 'flex',
                     flexDirection: 'column'
-                }}
-            >
-                <div style={{ margin: 'auto 0', width: '100%' }}>
-                    {sortedZones.map((zone, i) => {
-                        // Determine the display price (use lower for buys, upper for sells)
-                        const displayPrice = zone.pending_side === 'Buy' ? zone.lower_price : zone.upper_price;
-                        
-                        // Check if we should render the "Current Price" indicator
-                        const nextZone = sortedZones[i + 1];
-                        const showPriceLine = nextZone && lastPrice <= zone.upper_price && lastPrice > nextZone.upper_price;
-                        const isTopPrice = i === 0 && lastPrice > zone.upper_price;
-                        const isBottomPrice = i === sortedZones.length - 1 && lastPrice < zone.lower_price;
+                }}>
+                    <div style={{
+                        padding: '0.5rem 1rem',
+                        background: 'rgba(255, 0, 85, 0.05)',
+                        borderBottom: '1px solid var(--border-light)',
+                        fontSize: '0.65rem',
+                        color: 'var(--color-sell)',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        display: 'flex',
+                        justifyContent: 'space-between'
+                    }}>
+                        <span>Price</span>
+                        <span>Size</span>
+                        <span>Action</span>
+                    </div>
+                    <div style={{ flex: 1, overflowY: 'auto', maxHeight: '280px' }}>
+                        {asks.map(zone => (
+                            <ZoneRow key={zone.index} zone={zone} side="ask" />
+                        ))}
+                        {asks.length === 0 && (
+                            <div style={{ padding: '1rem', color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.8rem' }}>
+                                No asks
+                            </div>
+                        )}
+                    </div>
+                </div>
 
-                        return (
-                            <React.Fragment key={zone.index}>
-                                {isTopPrice && <PriceIndicator price={lastPrice} id="active-price-indicator" />}
-                                
-                                <ZoneRow zone={zone} displayPrice={displayPrice} isPerp={isPerp} />
-                                
-                                {showPriceLine && <PriceIndicator price={lastPrice} id="active-price-indicator" />}
-                                {isBottomPrice && <PriceIndicator price={lastPrice} id="active-price-indicator" />}
-                            </React.Fragment>
-                        );
-                    })}
+                {/* Current Price - Center */}
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '1rem 2rem',
+                    background: 'linear-gradient(180deg, rgba(0, 240, 255, 0.05) 0%, transparent 50%, rgba(0, 255, 157, 0.05) 100%)',
+                    minWidth: '180px'
+                }}>
+                    <div style={{ 
+                        fontSize: '0.65rem', 
+                        color: 'var(--text-muted)', 
+                        marginBottom: '0.5rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em'
+                    }}>
+                        Current Price
+                    </div>
+                    <div style={{
+                        fontSize: '1.5rem',
+                        fontWeight: 700,
+                        color: 'var(--accent-primary)',
+                        fontFamily: 'var(--font-mono)'
+                    }}>
+                        ${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div style={{
+                        marginTop: '1rem',
+                        display: 'flex',
+                        gap: '1.5rem',
+                        fontSize: '0.75rem'
+                    }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ color: 'var(--color-sell)', fontWeight: 600 }}>{asks.length}</div>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.6rem' }}>ASKS</div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ color: 'var(--color-buy)', fontWeight: 600 }}>{bids.length}</div>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.6rem' }}>BIDS</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Bids (Buy side) - Right */}
+                <div style={{ 
+                    borderLeft: '1px solid var(--border-light)',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}>
+                    <div style={{
+                        padding: '0.5rem 1rem',
+                        background: 'rgba(0, 255, 157, 0.05)',
+                        borderBottom: '1px solid var(--border-light)',
+                        fontSize: '0.65rem',
+                        color: 'var(--color-buy)',
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        display: 'flex',
+                        justifyContent: 'space-between'
+                    }}>
+                        <span>Action</span>
+                        <span>Size</span>
+                        <span>Price</span>
+                    </div>
+                    <div style={{ flex: 1, overflowY: 'auto', maxHeight: '280px' }}>
+                        {bids.map(zone => (
+                            <ZoneRow key={zone.index} zone={zone} side="bid" />
+                        ))}
+                        {bids.length === 0 && (
+                            <div style={{ padding: '1rem', color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.8rem' }}>
+                                No bids
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
     );
 };
 
-// Individual zone row component
-const ZoneRow: React.FC<{ zone: ZoneInfo; displayPrice: number; isPerp: boolean }> = ({ zone, displayPrice }) => {
-    // Determine colors based on action type
-    const isBuy = zone.pending_side === 'Buy';
+// Zone row component
+const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid' }> = ({ zone, side }) => {
+    const isAsk = side === 'ask';
+    const displayPrice = isAsk ? zone.upper_price : zone.lower_price;
     
-    // Color logic:
-    // - Open orders: green for buy, red for sell
-    // - Close orders (reduce_only): yellow/orange
-    let rowColor: string;
-    let bgColor: string;
-    
+    // Color based on action type
+    let actionColor: string;
     if (zone.is_reduce_only || zone.action_type === 'close') {
-        rowColor = '#ffaa00'; // Yellow for closing orders
-        bgColor = 'rgba(255, 170, 0, 0.05)';
-    } else if (isBuy) {
-        rowColor = 'var(--color-buy)';
-        bgColor = 'rgba(0, 255, 157, 0.05)';
+        actionColor = '#ffaa00'; // Yellow for closing
+    } else if (zone.pending_side === 'Buy') {
+        actionColor = 'var(--color-buy)';
     } else {
-        rowColor = 'var(--color-sell)';
-        bgColor = 'rgba(255, 0, 85, 0.05)';
+        actionColor = 'var(--color-sell)';
     }
+
+    const content = isAsk ? (
+        <>
+            <span style={{ 
+                flex: 1, 
+                color: 'var(--color-sell)',
+                fontFamily: 'var(--font-mono)'
+            }}>
+                {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+            <span style={{ 
+                flex: 1, 
+                textAlign: 'center',
+                fontFamily: 'var(--font-mono)'
+            }}>
+                {zone.size.toFixed(4)}
+            </span>
+            <span style={{ flex: 1, textAlign: 'right' }}>
+                <span style={{
+                    background: actionColor,
+                    color: '#000',
+                    padding: '2px 6px',
+                    borderRadius: '3px',
+                    fontSize: '0.6rem',
+                    fontWeight: 700
+                }}>
+                    {zone.action_label}
+                </span>
+            </span>
+        </>
+    ) : (
+        <>
+            <span style={{ flex: 1 }}>
+                <span style={{
+                    background: actionColor,
+                    color: '#000',
+                    padding: '2px 6px',
+                    borderRadius: '3px',
+                    fontSize: '0.6rem',
+                    fontWeight: 700
+                }}>
+                    {zone.action_label}
+                </span>
+            </span>
+            <span style={{ 
+                flex: 1, 
+                textAlign: 'center',
+                fontFamily: 'var(--font-mono)'
+            }}>
+                {zone.size.toFixed(4)}
+            </span>
+            <span style={{ 
+                flex: 1, 
+                textAlign: 'right',
+                color: 'var(--color-buy)',
+                fontFamily: 'var(--font-mono)'
+            }}>
+                {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+        </>
+    );
 
     return (
         <div style={{
             display: 'flex',
-            padding: '6px 1rem',
-            fontSize: '0.9rem',
-            backgroundColor: bgColor,
-            borderLeft: `3px solid ${rowColor}`,
-            marginBottom: '1px',
+            alignItems: 'center',
+            padding: '0.4rem 1rem',
+            fontSize: '0.75rem',
             opacity: zone.has_order ? 1 : 0.4,
-            transition: 'opacity 0.2s ease'
+            background: zone.has_order 
+                ? (isAsk ? 'rgba(255, 0, 85, 0.03)' : 'rgba(0, 255, 157, 0.03)')
+                : 'transparent',
+            borderBottom: '1px solid rgba(255,255,255,0.03)'
         }}>
-            {/* Price */}
-            <div style={{ width: '25%', color: rowColor, fontFamily: 'var(--font-mono)' }}>
-                {displayPrice.toFixed(4)}
-            </div>
-            
-            {/* Size */}
-            <div style={{ width: '20%', textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
-                {zone.size.toFixed(4)}
-            </div>
-            
-            {/* Action Label */}
-            <div style={{ 
-                width: '30%', 
-                textAlign: 'center',
-                fontSize: '0.75rem',
-                fontWeight: 600
-            }}>
-                <span style={{
-                    background: rowColor,
-                    color: '#000',
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    display: 'inline-block'
-                }}>
-                    {zone.action_label}
-                </span>
-            </div>
-            
-            {/* Status */}
-            <div style={{ 
-                width: '25%', 
-                textAlign: 'right', 
-                fontSize: '0.75rem', 
-                color: 'var(--text-muted)',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                gap: '2px'
-            }}>
-                <span style={{ color: zone.has_order ? 'var(--color-active)' : 'var(--color-idle)' }}>
-                    {zone.has_order ? '● OPEN' : '○ IDLE'}
-                </span>
-                {zone.roundtrip_count > 0 && (
-                    <span style={{ fontSize: '0.65rem' }}>
-                        🔄 {zone.roundtrip_count}
-                    </span>
-                )}
-            </div>
+            {content}
         </div>
     );
 };
-
-// Current price indicator
-const PriceIndicator: React.FC<{ price: number; id?: string }> = ({ price, id }) => (
-    <div id={id} style={{
-        padding: '10px 1rem',
-        background: 'linear-gradient(90deg, rgba(0, 240, 255, 0.1) 0%, rgba(0, 240, 255, 0.02) 100%)',
-        borderTop: '2px solid var(--accent-primary)',
-        borderBottom: '2px solid var(--accent-primary)',
-        color: 'var(--accent-primary)',
-        fontWeight: 'bold',
-        textAlign: 'center',
-        margin: '4px 0',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: '0.75rem',
-        fontFamily: 'var(--font-mono)',
-        fontSize: '1rem'
-    }}>
-        <span style={{ fontSize: '0.8rem' }}>▶</span>
-        <span>CURRENT: ${price.toFixed(4)}</span>
-        <span style={{ fontSize: '0.8rem' }}>◀</span>
-    </div>
-);
 
 export default OrderBook;

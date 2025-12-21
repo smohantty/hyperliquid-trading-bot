@@ -1,28 +1,30 @@
 import React from 'react';
 import { WebSocketProvider } from './context/WebSocketContext';
 import Layout from './components/Layout';
-import HeaderMetrics from './components/HeaderMetrics';
-import OrderBook from './components/OrderBook';
+import SummaryCard from './components/SummaryCard';
 import ConfigPanel from './components/ConfigPanel';
+import OrderBook from './components/OrderBook';
 import ActivityLog from './components/ActivityLog';
 
 const DashboardContent: React.FC = () => {
   return (
     <Layout>
-      <HeaderMetrics />
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) 400px', gap: '2rem' }}>
-        {/* Left Column: Config & Activity Log */}
-        <div className="flex-col gap-4">
+      {/* Top Section: Summary & Config side by side */}
+      <div style={{ 
+        display: 'grid', 
+        gridTemplateColumns: '1fr 1fr', 
+        gap: '1.5rem',
+        marginBottom: '1.5rem'
+      }}>
+        <SummaryCard />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <ConfigPanel />
           <ActivityLog />
         </div>
-
-        {/* Right Column: Order Book */}
-        <div>
-          <OrderBook />
-        </div>
       </div>
+
+      {/* Bottom Section: Order Book full width */}
+      <OrderBook />
     </Layout>
   );
 };

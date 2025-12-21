@@ -36,8 +36,9 @@ You must strictly follow this process for every user request involving code chan
 
 ### Phase 4: Verification
 1.  **Compiles?**: Always run `cargo check`.
-2.  **Tests?**: Run `cargo test` if applicable.
-3.  **Verify**: Confirm the change meets the Requirements.
+2.  **Format?**: Run `cargo fmt` to ensure code style compliance.
+3.  **Tests?**: Run `cargo test` if applicable.
+4.  **Verify**: Confirm the change meets the Requirements.
 
 ## 3. System Architecture Constraints
 *   **Engine vs Strategy**: The `Engine` (`src/engine/`) manages connections and state. The `Strategy` (`src/strategy/`) is pure logic.

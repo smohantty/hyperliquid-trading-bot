@@ -1,5 +1,5 @@
 use super::common;
-use super::types::{GridType, ZoneState};
+use super::types::GridType;
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{MarketInfo, StrategyContext, MIN_NOTIONAL_VALUE};
 use crate::model::{Cloid, OrderFill, OrderRequest, OrderSide};
@@ -24,7 +24,8 @@ struct GridZone {
     lower_price: f64,
     upper_price: f64,
     size: f64,
-    state: ZoneState,
+    /// The side of the pending order for this zone (Buy at lower, Sell at upper)
+    pending_side: OrderSide,
     entry_price: f64,
     order_id: Option<Cloid>,
 
@@ -194,13 +195,15 @@ impl SpotGridStrategy {
             let raw_size = quote_per_zone / lower;
             let size = market_info.round_size(raw_size);
 
-            let initial_state = if initial_price < upper {
-                ZoneState::WaitingSell
+            // If price is below upper bound, we already have base asset -> wait to sell
+            // Otherwise, we need to buy first
+            let pending_side = if initial_price < upper {
+                OrderSide::Sell
             } else {
-                ZoneState::WaitingBuy
+                OrderSide::Buy
             };
 
-            if initial_state == ZoneState::WaitingSell {
+            if pending_side.is_sell() {
                 total_base_required += size;
             } else {
                 total_quote_required += size * lower;
@@ -211,8 +214,8 @@ impl SpotGridStrategy {
                 lower_price: lower,
                 upper_price: upper,
                 size,
-                state: initial_state,
-                entry_price: if initial_state == ZoneState::WaitingSell {
+                pending_side,
+                entry_price: if pending_side.is_sell() {
                     initial_price
                 } else {
                     0.0
@@ -391,13 +394,14 @@ impl SpotGridStrategy {
         for i in 0..self.zones.len() {
             if self.zones[i].order_id.is_none() {
                 let zone = &self.zones[i];
-                let (price, side) = match zone.state {
-                    ZoneState::WaitingBuy => (zone.lower_price, OrderSide::Buy),
-                    ZoneState::WaitingSell => (zone.upper_price, OrderSide::Sell),
+                let price = if zone.pending_side.is_buy() {
+                    zone.lower_price
+                } else {
+                    zone.upper_price
                 };
 
                 let cloid = ctx.generate_cloid();
-                orders_to_place.push((i, side, price, zone.size, cloid));
+                orders_to_place.push((i, zone.pending_side, price, zone.size, cloid));
             }
         }
 
@@ -449,10 +453,10 @@ impl SpotGridStrategy {
             // Avg entry price remains same on sell
         }
 
-        // Update entry_price for all waiting SELL zones to the actual market price if we just bought
-        // or keep as is if we sold (selling usually means we are at the top of the grid anyway)
+        // Update entry_price for all zones waiting to sell to the actual fill price
+        // (they now have inventory at this cost basis)
         for zone in &mut self.zones {
-            if zone.state == ZoneState::WaitingSell {
+            if zone.pending_side.is_sell() {
                 zone.entry_price = fill.price;
             }
         }
@@ -487,8 +491,8 @@ impl SpotGridStrategy {
         }
         self.inventory = new_inventory;
 
-        // Update zone state
-        self.zones[zone_idx].state = ZoneState::WaitingSell;
+        // Update zone: now waiting to sell
+        self.zones[zone_idx].pending_side = OrderSide::Sell;
         self.zones[zone_idx].entry_price = fill.price;
 
         // Place counter order (Sell at upper price)
@@ -521,8 +525,8 @@ impl SpotGridStrategy {
         self.inventory = (self.inventory - fill.size).max(0.0);
         // Avg Entry Price remains unchanged on partial reduction (FIFO/WAC standard)
 
-        // Update zone state
-        self.zones[zone_idx].state = ZoneState::WaitingBuy;
+        // Update zone: now waiting to buy
+        self.zones[zone_idx].pending_side = OrderSide::Buy;
         self.zones[zone_idx].entry_price = 0.0;
 
         // Place counter order (Buy at lower price)
@@ -626,13 +630,9 @@ impl Strategy for SpotGridStrategy {
                 // FILL VALIDATION ASSERTIONS
                 // Verify exchange fill data matches our internal expectations
                 // ============================================================
-                let zone_state = self.zones[zone_idx].state;
+                let expected_side = self.zones[zone_idx].pending_side;
 
-                // 1. Validate fill.side matches zone state expectation
-                let expected_side = match zone_state {
-                    ZoneState::WaitingBuy => OrderSide::Buy,
-                    ZoneState::WaitingSell => OrderSide::Sell,
-                };
+                // 1. Validate fill.side matches zone's pending order side
                 if fill.side != expected_side {
                     error!(
                         "[SPOT_GRID] ASSERTION FAILED: Zone {} expected side {:?} but got {:?}",
@@ -663,13 +663,11 @@ impl Strategy for SpotGridStrategy {
                 self.zones[zone_idx].order_id = None;
                 self.trade_count += 1;
 
-                match zone_state {
-                    ZoneState::WaitingBuy => {
-                        self.handle_buy_fill(zone_idx, fill, ctx)?;
-                    }
-                    ZoneState::WaitingSell => {
-                        self.handle_sell_fill(zone_idx, fill, ctx)?;
-                    }
+                // Route to appropriate fill handler
+                if expected_side.is_buy() {
+                    self.handle_buy_fill(zone_idx, fill, ctx)?;
+                } else {
+                    self.handle_sell_fill(zone_idx, fill, ctx)?;
                 }
             } else {
                 debug!(
@@ -889,9 +887,9 @@ mod tests {
             )
             .unwrap();
 
-        // Verify that WaitingSell zones now have entry_price = fill_price
+        // Verify that zones waiting to sell now have entry_price = fill_price
         for zone in &strategy.zones {
-            if zone.state == ZoneState::WaitingSell {
+            if zone.pending_side.is_sell() {
                 assert_eq!(
                     zone.entry_price, fill_price,
                     "Zone {} entry price mismatch",
@@ -946,11 +944,11 @@ mod tests {
         // Zone 2 (100-105): 100 < 105 -> WaitingSell (Entry 100)
         // Zone 3 (105-110): 100 < 110 -> WaitingSell (Entry 100)
 
-        // Let's pick Zone 1 (95-100). It should be WaitingBuy.
+        // Let's pick Zone 1 (95-100). It should be waiting to buy.
         // Find the active order for Zone 1.
         let zone_idx = 1;
         let zone = &strategy.zones[zone_idx];
-        assert_eq!(zone.state, ZoneState::WaitingBuy);
+        assert_eq!(zone.pending_side, OrderSide::Buy);
         let order_id = zone.order_id.expect("Zone 1 should have an order");
 
         // 2. Fill Buy Order
@@ -977,7 +975,7 @@ mod tests {
         // Verify Buy Metrics
         assert_eq!(strategy.total_fees, buy_fee);
         let zone = &strategy.zones[zone_idx];
-        assert_eq!(zone.state, ZoneState::WaitingSell);
+        assert_eq!(zone.pending_side, OrderSide::Sell);
         assert_eq!(zone.entry_price, fill_price);
 
         // Get new Sell Order ID
@@ -1013,7 +1011,7 @@ mod tests {
         assert_eq!(strategy.total_fees, expected_total_fees);
 
         let zone = &strategy.zones[zone_idx];
-        assert_eq!(zone.state, ZoneState::WaitingBuy); // Reset
+        assert_eq!(zone.pending_side, OrderSide::Buy); // Reset to buy
         assert_eq!(zone.roundtrip_count, 1);
     }
 
@@ -1063,7 +1061,7 @@ mod tests {
         // 2. Buy 10 @ 100
         let zone_idx = 0;
         let zone = &mut strategy.zones[zone_idx];
-        zone.state = ZoneState::WaitingBuy;
+        zone.pending_side = OrderSide::Buy;
         let order_id = Cloid::new();
         zone.order_id = Some(order_id);
         strategy.active_orders.insert(order_id, zone_idx);
@@ -1087,9 +1085,9 @@ mod tests {
         assert_eq!(strategy.avg_entry_price, 100.0);
 
         // 3. Buy 10 @ 110 (Artificial fill to test logic)
-        // Reset zone to WaitingBuy for test
+        // Reset zone to Buy for test
         let zone = &mut strategy.zones[zone_idx];
-        zone.state = ZoneState::WaitingBuy;
+        zone.pending_side = OrderSide::Buy;
         let order_id_2 = Cloid::new();
         zone.order_id = Some(order_id_2);
         strategy.active_orders.insert(order_id_2, zone_idx);
@@ -1114,7 +1112,7 @@ mod tests {
 
         // 4. Sell 5 @ 120
         let zone = &mut strategy.zones[zone_idx];
-        zone.state = ZoneState::WaitingSell; // Force state
+        zone.pending_side = OrderSide::Sell; // Force to sell
         let order_id_3 = Cloid::new();
         zone.order_id = Some(order_id_3);
         strategy.active_orders.insert(order_id_3, zone_idx);

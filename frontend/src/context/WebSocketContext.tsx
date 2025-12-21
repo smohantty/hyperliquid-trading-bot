@@ -1,15 +1,23 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import {
     type StrategyConfig,
-    type StatusSummary,
+    type SpotGridSummary,
+    type PerpGridSummary,
+    type GridState,
     type WebSocketEvent,
     type OrderEvent
 } from '../types/schema';
 
+// Union type for summaries
+type Summary = 
+    | { type: 'spot_grid'; data: SpotGridSummary }
+    | { type: 'perp_grid'; data: PerpGridSummary };
+
 interface WebSocketContextType {
     isConnected: boolean;
     config: StrategyConfig | null;
-    summary: StatusSummary | null;
+    summary: Summary | null;
+    gridState: GridState | null;
     lastPrice: number | null;
     lastTickTime: number | null;
     orderHistory: OrderEvent[];
@@ -22,7 +30,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [isConnected, setIsConnected] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
     const [config, setConfig] = useState<StrategyConfig | null>(null);
-    const [summary, setSummary] = useState<StatusSummary | null>(null);
+    const [summary, setSummary] = useState<Summary | null>(null);
+    const [gridState, setGridState] = useState<GridState | null>(null);
     const [lastPrice, setLastPrice] = useState<number | null>(null);
     const [lastTickTime, setLastTickTime] = useState<number | null>(null);
     const [orderHistory, setOrderHistory] = useState<OrderEvent[]>([]);
@@ -70,17 +79,27 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                         case 'config':
                             setConfig(message.data);
                             break;
-                        case 'summary':
-                            setSummary(message.data);
+                        case 'spot_grid_summary':
+                            setSummary({ type: 'spot_grid', data: message.data });
                             setLastPrice(message.data.price);
+                            break;
+                        case 'perp_grid_summary':
+                            setSummary({ type: 'perp_grid', data: message.data });
+                            setLastPrice(message.data.price);
+                            break;
+                        case 'grid_state':
+                            setGridState(message.data);
+                            setLastPrice(message.data.current_price);
                             break;
                         case 'market_update':
                             setLastPrice(message.data.price);
                             setLastTickTime(Date.now());
-                            console.log('Tick:', message.data.price);
                             break;
                         case 'order_update':
                             setOrderHistory(prev => [message.data, ...prev].slice(0, 50)); // Keep last 50
+                            break;
+                        case 'error':
+                            console.error('Bot error:', message.data);
                             break;
                     }
                 } catch (e) {
@@ -112,6 +131,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             connectionStatus,
             config,
             summary,
+            gridState,
             lastPrice,
             lastTickTime,
             orderHistory

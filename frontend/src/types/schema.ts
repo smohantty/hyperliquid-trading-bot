@@ -1,3 +1,7 @@
+// ============================================================
+// Strategy Configuration
+// ============================================================
+
 export interface StrategyConfig {
     type: 'spot_grid' | 'perp_grid';
     symbol: string;
@@ -13,53 +17,80 @@ export interface StrategyConfig {
     grid_bias?: 'long' | 'short' | 'neutral';
 }
 
-export interface InventoryStats {
-    base_size: number;
-    avg_entry_price: number;
-}
+// ============================================================
+// Strategy Summaries (High-level metrics)
+// ============================================================
 
-export interface WalletStats {
-    base_balance: number;
-    quote_balance: number;
-}
-
-export type ZoneSide = 'Buy' | 'Sell';
-export type ZoneStatusType = 'Open' | 'Idle';
-
-export interface ZoneStatus {
+export interface SpotGridSummary {
+    symbol: string;
     price: number;
-    side: ZoneSide;
-    status: ZoneStatusType;
-    size: number;
-}
-
-export interface SpotGridCustomData {
+    state: string;
+    position_size: number;
+    avg_entry_price: number;
+    realized_pnl: number;
+    unrealized_pnl: number;
+    total_fees: number;
     grid_count: number;
     range_low: number;
     range_high: number;
     roundtrips: number;
+    base_balance: number;
+    quote_balance: number;
 }
 
-export interface PerpGridCustomData {
-    leverage: number;
-    grid_bias: string;
-    long_inventory: number;
-    short_inventory: number;
-    state: string;
-}
-
-export interface StatusSummary {
-    strategy_name: string;
+export interface PerpGridSummary {
     symbol: string;
+    price: number;
+    state: string;
+    position_size: number;
+    position_side: 'Long' | 'Short' | 'Flat';
+    avg_entry_price: number;
     realized_pnl: number;
     unrealized_pnl: number;
     total_fees: number;
-    inventory: InventoryStats;
-    wallet: WalletStats;
-    price: number;
-    zones: ZoneStatus[];
-    custom: SpotGridCustomData | PerpGridCustomData;
+    leverage: number;
+    grid_bias: 'Long' | 'Short' | 'Neutral';
+    grid_count: number;
+    range_low: number;
+    range_high: number;
+    roundtrips: number;
+    margin_balance: number;
 }
+
+// Union type for any strategy summary
+export type StrategySummary = 
+    | { type: 'spot_grid'; data: SpotGridSummary }
+    | { type: 'perp_grid'; data: PerpGridSummary };
+
+// ============================================================
+// Grid State (Zone data for CLOB visualization)
+// ============================================================
+
+export interface ZoneInfo {
+    index: number;
+    lower_price: number;
+    upper_price: number;
+    size: number;
+    pending_side: 'Buy' | 'Sell';
+    has_order: boolean;
+    is_reduce_only: boolean;
+    action_label: string;
+    action_type: 'open' | 'close';
+    entry_price: number;
+    roundtrip_count: number;
+}
+
+export interface GridState {
+    symbol: string;
+    strategy_type: 'spot_grid' | 'perp_grid';
+    current_price: number;
+    grid_bias: string | null;
+    zones: ZoneInfo[];
+}
+
+// ============================================================
+// Order and Market Events
+// ============================================================
 
 export interface OrderEvent {
     oid: number;
@@ -71,9 +102,19 @@ export interface OrderEvent {
     fee: number;
 }
 
+export interface MarketEvent {
+    price: number;
+}
+
+// ============================================================
+// WebSocket Event Types
+// ============================================================
+
 export type WebSocketEvent =
     | { event_type: 'config'; data: StrategyConfig }
-    | { event_type: 'summary'; data: StatusSummary }
+    | { event_type: 'spot_grid_summary'; data: SpotGridSummary }
+    | { event_type: 'perp_grid_summary'; data: PerpGridSummary }
+    | { event_type: 'grid_state'; data: GridState }
     | { event_type: 'order_update'; data: OrderEvent }
-    | { event_type: 'market_update'; data: { price: number } }
+    | { event_type: 'market_update'; data: MarketEvent }
     | { event_type: 'error'; data: string };

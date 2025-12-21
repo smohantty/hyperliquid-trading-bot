@@ -223,13 +223,20 @@ const SummaryCard: React.FC = () => {
     );
 };
 
-// Format grid spacing: "2.5%" for geometric, "1.8% - 3.2%" for arithmetic
+// Format grid spacing: "2.50%" for geometric, "0.167% - 0.172%" for arithmetic
 const formatSpacing = (spacing: [number, number]): string => {
     const [min, max] = spacing;
-    if (Math.abs(min - max) < 0.01) {
-        return `${min.toFixed(2)}%`;
+    
+    // Determine precision based on value magnitude
+    // Small values need more precision to show meaningful differences
+    const decimals = min < 1 ? 3 : 2;
+    
+    // Use relative difference check: if difference is < 1% of the value, treat as same
+    const relativeDiff = Math.abs(max - min) / Math.max(min, max);
+    if (relativeDiff < 0.01) {
+        return `${min.toFixed(decimals)}%`;
     }
-    return `${min.toFixed(2)}% - ${max.toFixed(2)}%`;
+    return `${min.toFixed(decimals)}% - ${max.toFixed(decimals)}%`;
 };
 
 const StatItem: React.FC<{

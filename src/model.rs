@@ -96,6 +96,9 @@ pub struct OrderFill {
     pub price: f64,
     pub fee: f64,
     pub cloid: Option<Cloid>,
+    /// Whether this was a reduce-only order (from cached order request).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reduce_only: Option<bool>,
     /// Raw direction from exchange for debugging.
     /// Perps: "Open Long", "Close Long", "Open Short", "Close Short"
     /// Spot: "Buy", "Sell"

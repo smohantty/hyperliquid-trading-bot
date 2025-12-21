@@ -640,6 +640,7 @@ impl Engine {
                                 price: px,
                                 fee: 0.0,
                                 cloid: Some(c),
+                                reduce_only: Some(reduce_only),
                                 raw_dir: None, // Immediate fill from order response, no dir available
                             },
                             &mut runtime.ctx,
@@ -819,6 +820,7 @@ impl Engine {
                             let final_px = pending.weighted_avg_px;
                             let final_sz = pending.filled_size;
                             let final_fee = pending.accumulated_fees;
+                            let pending_reduce_only = pending.reduce_only;
                             runtime.pending_orders.remove(&c);
 
                             if let Err(e) = strategy.on_order_filled(
@@ -828,6 +830,7 @@ impl Engine {
                                     price: final_px,
                                     fee: final_fee,
                                     cloid: Some(c),
+                                    reduce_only: Some(pending_reduce_only),
                                     raw_dir: Some(fill.dir.clone()),
                                 },
                                 &mut runtime.ctx,
@@ -844,6 +847,7 @@ impl Engine {
                                 price: px,
                                 fee,
                                 cloid: Some(c),
+                                reduce_only: None, // Unknown for untracked orders
                                 raw_dir: Some(fill.dir.clone()),
                             },
                             &mut runtime.ctx,
@@ -859,6 +863,7 @@ impl Engine {
                             price: px,
                             fee,
                             cloid: None,
+                            reduce_only: None, // Unknown without cloid
                             raw_dir: Some(fill.dir.clone()),
                         },
                         &mut runtime.ctx,

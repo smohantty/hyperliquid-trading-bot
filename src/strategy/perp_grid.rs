@@ -275,11 +275,10 @@ impl PerpGridStrategy {
             if target_size > 0.0 {
                 self.state = StrategyState::AcquiringAssets { cloid, target_size };
                 info!(
-                    "[ORDER_REQUEST] [PERP_GRID] REBALANCING ({}). Acquiring {} {}. Cost: ~{:.2} USDC @ {}.",
+                    "[ORDER_REQUEST] [PERP_GRID] REBALANCING: LIMIT {} {} {} @ {}",
                     if is_buy { "BUY" } else { "SELL" },
                     target_size,
                     self.symbol,
-                    target_size * activation_price,
                     activation_price
                 );
                 ctx.place_order(OrderRequest::Limit {
@@ -333,11 +332,13 @@ impl PerpGridStrategy {
                 self.active_orders.insert(cloid, idx);
 
                 info!(
-                    "[ORDER_REQUEST] [PERP_GRID] Placing {:?} order @ {} (cloid: {}, reduce_only: {})",
+                    "[ORDER_REQUEST] [PERP_GRID] GRID_LVL_{}: LIMIT {} {} {} @ {}{}",
+                    idx,
                     if is_buy { "BUY" } else { "SELL" },
+                    size,
+                    self.symbol,
                     price,
-                    cloid,
-                    reduce_only
+                    if reduce_only { " (RO)" } else { "" }
                 );
 
                 ctx.place_order(OrderRequest::Limit {
@@ -376,24 +377,12 @@ impl PerpGridStrategy {
             market_info.round_size(zone.size),
         );
 
-        info!(
-            "[ORDER_REQUEST] [PERP_GRID] Zone {} | Placing {:?} order @ {} (cloid: {})",
-            zone_idx,
-            if is_buy { "BUY" } else { "SELL" },
-            rounded_price,
-            next_cloid
-        );
-
-        self.active_orders.insert(next_cloid, zone_idx);
-        zone.order_id = Some(next_cloid);
-
         // Determine Reduce-Only for Counter Order
         // Counter order is the "closing" or "next step" order.
         // If we just filled Opening (WaitingBuy, LongBias), next is Closing (WaitingSell).
         // So reduce_only logic should be standard:
         // Long Bias: Sell = Close (Reduce), Buy = Open.
         // Short Bias: Buy = Close (Reduce), Sell = Open.
-
         let reduce_only = if zone.is_short_oriented {
             // Short Bias
             is_buy // Buying to close short
@@ -401,6 +390,18 @@ impl PerpGridStrategy {
             // Long Bias
             !is_buy // Selling to close long
         };
+
+        info!(
+            "[ORDER_REQUEST] [PERP_GRID] COUNTER_ORDER: LIMIT {} {} {} @ {}{}",
+            if is_buy { "BUY" } else { "SELL" },
+            rounded_size,
+            self.symbol,
+            rounded_price,
+            if reduce_only { " (RO)" } else { "" }
+        );
+
+        self.active_orders.insert(next_cloid, zone_idx);
+        zone.order_id = Some(next_cloid);
 
         ctx.place_order(OrderRequest::Limit {
             symbol: self.symbol.clone(),

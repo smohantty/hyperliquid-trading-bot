@@ -291,12 +291,8 @@ impl SpotGridStrategy {
                 }
 
                 info!(
-                    "[ORDER_REQUEST] [SPOT_GRID] REBALANCING (BUY). Acquiring {} {}. Cost: ~{:.2} {} @ {}.",
-                    rounded_deficit,
-                    self.base_asset,
-                    estimated_cost,
-                    self.quote_asset,
-                    acquisition_price
+                    "[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT BUY {} {} @ {}",
+                    rounded_deficit, self.base_asset, acquisition_price
                 );
                 let cloid = ctx.generate_cloid();
                 self.state = StrategyState::AcquiringAssets { cloid };
@@ -360,12 +356,8 @@ impl SpotGridStrategy {
                 }
 
                 info!(
-                    "[ORDER_REQUEST] [SPOT_GRID] REBALANCING (SELL). Selling {} {}. Proceeds: ~{:.2} {} @ {}.",
-                    rounded_sell_sz,
-                    self.base_asset,
-                    estimated_proceeds,
-                    self.quote_asset,
-                    acquisition_price
+                    "[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT SELL {} {} @ {}",
+                    rounded_sell_sz, self.base_asset, acquisition_price
                 );
                 let cloid = ctx.generate_cloid();
                 self.state = StrategyState::AcquiringAssets { cloid };
@@ -421,11 +413,12 @@ impl SpotGridStrategy {
             self.active_orders.insert(cloid, index);
 
             info!(
-                "[ORDER_REQUEST] [SPOT_GRID] Zone {}: Placing {} order at {} (cloid: {})",
+                "[ORDER_REQUEST] [SPOT_GRID] GRID_LVL_{}: LIMIT {} {} {} @ {}",
                 index,
                 if is_buy { "BUY" } else { "SELL" },
-                price,
-                cloid
+                size,
+                self.symbol,
+                price
             );
             ctx.place_order(OrderRequest::Limit {
                 symbol: self.symbol.clone(),
@@ -517,8 +510,8 @@ impl SpotGridStrategy {
         let price = zone.upper_price;
 
         info!(
-            "[ORDER_REQUEST] [SPOT_GRID] Zone {} | Placing SELL Order @ {} (cloid: {})",
-            zone_idx, price, next_cloid
+            "[ORDER_REQUEST] [SPOT_GRID] COUNTER_ORDER: LIMIT SELL {} {} @ {}",
+            zone.size, self.symbol, price
         );
 
         self.active_orders.insert(next_cloid, zone_idx);
@@ -570,8 +563,8 @@ impl SpotGridStrategy {
         let price = zone.lower_price;
 
         info!(
-            "[ORDER_REQUEST] [SPOT_GRID] Zone {} | Placing BUY Order @ {} (cloid: {})",
-            zone_idx, price, next_cloid
+            "[ORDER_REQUEST] [SPOT_GRID] COUNTER_ORDER: LIMIT BUY {} {} @ {}",
+            zone.size, self.symbol, price
         );
 
         self.active_orders.insert(next_cloid, zone_idx);

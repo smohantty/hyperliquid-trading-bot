@@ -386,38 +386,34 @@ impl SpotGridStrategy {
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) {
         // Collect orders to place to avoid borrowing issues
-        let mut orders_to_place = Vec::new();
+        let mut orders_to_place: Vec<(usize, OrderSide, f64, f64, Cloid)> = Vec::new();
 
         for i in 0..self.zones.len() {
             if self.zones[i].order_id.is_none() {
                 let zone = &self.zones[i];
-                let (price, is_buy) = match zone.state {
-                    ZoneState::WaitingBuy => (zone.lower_price, true),
-                    ZoneState::WaitingSell => (zone.upper_price, false),
+                let (price, side) = match zone.state {
+                    ZoneState::WaitingBuy => (zone.lower_price, OrderSide::Buy),
+                    ZoneState::WaitingSell => (zone.upper_price, OrderSide::Sell),
                 };
 
                 let cloid = ctx.generate_cloid();
-                orders_to_place.push((i, is_buy, price, zone.size, cloid));
+                orders_to_place.push((i, side, price, zone.size, cloid));
             }
         }
 
         // Execute placement
-        for (index, is_buy, price, size, cloid) in orders_to_place {
+        for (index, side, price, size, cloid) in orders_to_place {
             let zone = &mut self.zones[index];
             zone.order_id = Some(cloid);
             self.active_orders.insert(cloid, index);
 
             info!(
                 "[ORDER_REQUEST] [SPOT_GRID] GRID_LVL_{}: LIMIT {} {} {} @ {}",
-                index,
-                if is_buy { "BUY" } else { "SELL" },
-                size,
-                self.symbol,
-                price
+                index, side, size, self.symbol, price
             );
             ctx.place_order(OrderRequest::Limit {
                 symbol: self.symbol.clone(),
-                side: if is_buy { OrderSide::Buy } else { OrderSide::Sell },
+                side,
                 price,
                 sz: size,
                 reduce_only: false,
@@ -472,11 +468,11 @@ impl SpotGridStrategy {
         fill: &OrderFill,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
-        let zone = &mut self.zones[zone_idx];
+        let next_price = self.zones[zone_idx].upper_price;
 
         info!(
             "[SPOT_GRID] Zone {} | BUY Filled @ {} | Size: {} | Fee: {:.4} | Next: SELL @ {}",
-            zone_idx, fill.price, fill.size, fill.fee, zone.upper_price
+            zone_idx, fill.price, fill.size, fill.fee, next_price
         );
 
         // Update Strategy Fees
@@ -491,30 +487,12 @@ impl SpotGridStrategy {
         }
         self.inventory = new_inventory;
 
-        zone.state = ZoneState::WaitingSell;
-        zone.entry_price = fill.price;
+        // Update zone state
+        self.zones[zone_idx].state = ZoneState::WaitingSell;
+        self.zones[zone_idx].entry_price = fill.price;
 
-        let next_cloid = ctx.generate_cloid();
-        let price = zone.upper_price;
-
-        info!(
-            "[ORDER_REQUEST] [SPOT_GRID] COUNTER_ORDER: LIMIT SELL {} {} @ {}",
-            zone.size, self.symbol, price
-        );
-
-        self.active_orders.insert(next_cloid, zone_idx);
-        zone.order_id = Some(next_cloid);
-
-        ctx.place_order(OrderRequest::Limit {
-            symbol: self.symbol.clone(),
-            side: OrderSide::Sell,
-            price,
-            sz: zone.size,
-            reduce_only: false,
-            cloid: Some(next_cloid),
-        });
-
-        Ok(())
+        // Place counter order (Sell at upper price)
+        self.place_counter_order(zone_idx, next_price, OrderSide::Sell, ctx)
     }
 
     fn handle_sell_fill(
@@ -523,11 +501,17 @@ impl SpotGridStrategy {
         fill: &OrderFill,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
-        let zone = &mut self.zones[zone_idx];
+        let zone = &self.zones[zone_idx];
         let pnl = (fill.price - zone.entry_price) * fill.size;
+        let next_price = zone.lower_price;
+
+        info!(
+            "[SPOT_GRID] Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Fee: {:.4} | Next: BUY @ {}",
+            zone_idx, fill.price, fill.size, pnl, fill.fee, next_price
+        );
 
         // Update Zone Metrics
-        zone.roundtrip_count += 1;
+        self.zones[zone_idx].roundtrip_count += 1;
 
         // Update Strategy Metrics
         self.realized_pnl += pnl;
@@ -537,20 +521,27 @@ impl SpotGridStrategy {
         self.inventory = (self.inventory - fill.size).max(0.0);
         // Avg Entry Price remains unchanged on partial reduction (FIFO/WAC standard)
 
-        info!(
-            "[SPOT_GRID] Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Fee: {:.4} | Next: BUY @ {}",
-            zone_idx, fill.price, fill.size, pnl, fill.fee, zone.lower_price
-        );
+        // Update zone state
+        self.zones[zone_idx].state = ZoneState::WaitingBuy;
+        self.zones[zone_idx].entry_price = 0.0;
 
-        zone.state = ZoneState::WaitingBuy;
-        zone.entry_price = 0.0;
+        // Place counter order (Buy at lower price)
+        self.place_counter_order(zone_idx, next_price, OrderSide::Buy, ctx)
+    }
 
+    fn place_counter_order(
+        &mut self,
+        zone_idx: usize,
+        price: f64,
+        side: OrderSide,
+        ctx: &mut StrategyContext,
+    ) -> Result<()> {
+        let zone = &mut self.zones[zone_idx];
         let next_cloid = ctx.generate_cloid();
-        let price = zone.lower_price;
 
         info!(
-            "[ORDER_REQUEST] [SPOT_GRID] COUNTER_ORDER: LIMIT BUY {} {} @ {}",
-            zone.size, self.symbol, price
+            "[ORDER_REQUEST] [SPOT_GRID] COUNTER_ORDER: LIMIT {} {} {} @ {}",
+            side, zone.size, self.symbol, price
         );
 
         self.active_orders.insert(next_cloid, zone_idx);
@@ -558,7 +549,7 @@ impl SpotGridStrategy {
 
         ctx.place_order(OrderRequest::Limit {
             symbol: self.symbol.clone(),
-            side: OrderSide::Buy,
+            side,
             price,
             sz: zone.size,
             reduce_only: false,
@@ -631,14 +622,48 @@ impl Strategy for SpotGridStrategy {
                     }
                 }
 
+                // ============================================================
+                // FILL VALIDATION ASSERTIONS
+                // Verify exchange fill data matches our internal expectations
+                // ============================================================
+                let zone_state = self.zones[zone_idx].state;
+
+                // 1. Validate fill.side matches zone state expectation
+                let expected_side = match zone_state {
+                    ZoneState::WaitingBuy => OrderSide::Buy,
+                    ZoneState::WaitingSell => OrderSide::Sell,
+                };
+                if fill.side != expected_side {
+                    error!(
+                        "[SPOT_GRID] ASSERTION FAILED: Zone {} expected side {:?} but got {:?}",
+                        zone_idx, expected_side, fill.side
+                    );
+                }
+                debug_assert_eq!(
+                    fill.side, expected_side,
+                    "Zone {} fill side mismatch: expected {:?}, got {:?}",
+                    zone_idx, expected_side, fill.side
+                );
+
+                // 2. Validate raw_dir if present (spot should be "Buy" or "Sell")
+                if let Some(ref raw_dir) = fill.raw_dir {
+                    let expected_dir = if expected_side.is_buy() { "Buy" } else { "Sell" };
+                    if raw_dir != expected_dir {
+                        error!(
+                            "[SPOT_GRID] ASSERTION FAILED: Zone {} expected raw_dir '{}' but got '{}'",
+                            zone_idx, expected_dir, raw_dir
+                        );
+                    }
+                }
+                // ============================================================
+                // END FILL VALIDATION
+                // ============================================================
+
                 // Update Zone State
                 self.zones[zone_idx].order_id = None;
                 self.trade_count += 1;
 
-                // Clone state to avoid borrow issues while calling helpers
-                let state = self.zones[zone_idx].state;
-
-                match state {
+                match zone_state {
                     ZoneState::WaitingBuy => {
                         self.handle_buy_fill(zone_idx, fill, ctx)?;
                     }

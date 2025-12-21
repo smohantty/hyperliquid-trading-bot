@@ -1,6 +1,7 @@
 use crate::config::strategy::StrategyConfig;
 // use crate::error::BotError;
 
+pub mod common;
 pub mod perp_grid;
 pub mod spot_grid;
 

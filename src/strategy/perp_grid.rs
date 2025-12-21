@@ -11,7 +11,7 @@ enum ZoneState {
     WaitingBuy,
     WaitingSell,
 }
-
+use super::common;
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum StrategyState {
     Initializing,
@@ -423,49 +423,18 @@ impl Strategy for PerpGridStrategy {
             }
             StrategyState::WaitingForTrigger => {
                 if let Some(trigger) = self.trigger_price {
-                    let mut triggered = false;
                     // Need start_price to know direction??
                     // initialize_zones sets self.start_price
-                    if let Some(start) = self.start_price {
-                        if start < trigger {
-                            // Bullish Trigger
-                            if price >= trigger {
-                                info!(
-                                    "[PERP_GRID] Price {} crossed trigger {} (UP). Starting.",
-                                    price, trigger
-                                );
-                                triggered = true;
-                            }
-                        } else {
-                            // Bearish Trigger
-                            if price <= trigger {
-                                info!(
-                                    "[PERP_GRID] Price {} crossed trigger {} (DOWN). Starting.",
-                                    price, trigger
-                                );
-                                triggered = true;
-                            }
-                        }
-                    } else {
-                        // Fallback if start_price missing? Should not happen.
-                        if price >= trigger {
-                            triggered = true;
-                        }
-                    }
+                    let start = self
+                        .start_price
+                        .expect("Start price must be set when in WaitingForTrigger state");
 
-                    if triggered {
-                        // Re-run initialization to calculate acquisition needs based on NEW price level?
-                        // Or just use the original plan?
-                        // Actually, if price moved, the required position calculation might change!
-                        // But initialize_zones uses current config.
-                        // Let's re-run initialize_zones to be safe and accurate with current price?
-                        // NO, initialize_zones regenerates the grid based on config. Config hasn't changed.
-                        // But the zones' "state" calculation (WaitingBuy vs WaitingSell) depends on price.
-                        // So yes, we should probably re-init zones with the trigger price context.
-                        // However, initialize_zones handles allocation.
-                        // Let's just re-call verify_assets logic?
+                    if common::check_trigger(price, trigger, start) {
+                        info!(
+                            "[PERP_GRID] Price {} crossed trigger {}. Starting.",
+                            price, trigger
+                        );
 
-                        // Simplest: Just call initialize_zones again. It enters Running or Acquiring.
                         info!("[PERP_GRID] Triggered! Re-initializing zones for accurate state.");
                         self.zones.clear();
                         self.initialize_zones(ctx)?;

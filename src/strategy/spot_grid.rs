@@ -1,3 +1,4 @@
+use super::common;
 use crate::config::strategy::{GridType, StrategyConfig};
 use crate::engine::context::StrategyContext;
 use crate::strategy::Strategy;
@@ -333,34 +334,15 @@ impl Strategy for SpotGridStrategy {
                     // Directional Trigger Logic
                     // Requires start_price to be set during initialization
 
-                    let mut triggered = false;
-
                     let start = self
                         .start_price
                         .expect("Start price must be set when in WaitingForTrigger state");
 
-                    if start < trigger {
-                        // Bullish Trigger: Wait for price >= trigger
-                        if price >= trigger {
-                            info!(
-                                "[SPOT_GRID] Price {} crossed trigger {} (UP). Starting.",
-                                price, trigger
-                            );
-                            triggered = true;
-                        }
-                    } else {
-                        // Bearish Trigger: Wait for price <= trigger
-                        // (Or if start == trigger, we trigger immediately/next tick)
-                        if price <= trigger {
-                            info!(
-                                "[SPOT_GRID] Price {} crossed trigger {} (DOWN). Starting.",
-                                price, trigger
-                            );
-                            triggered = true;
-                        }
-                    }
-
-                    if triggered {
+                    if common::check_trigger(price, trigger, start) {
+                        info!(
+                            "[SPOT_GRID] Price {} crossed trigger {}. Starting.",
+                            price, trigger
+                        );
                         self.state = StrategyState::Running;
                         self.refresh_orders(ctx);
                     }

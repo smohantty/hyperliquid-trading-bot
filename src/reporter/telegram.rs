@@ -20,56 +20,103 @@ impl CachedSummary {
         match self {
             CachedSummary::SpotGrid(s) => {
                 let spacing = format_spacing(s.grid_spacing_pct);
+                let total_pnl = s.realized_pnl + s.unrealized_pnl;
+                let pnl_emoji = if total_pnl >= 0.0 { "🟢" } else { "🔴" };
+                let pnl_sign = if total_pnl >= 0.0 { "+" } else { "" };
+
                 format!(
-                    "🟢 <b>SpotGrid</b>\n\
-                     Symbol: <code>{}</code>\n\
-                     💰 PnL: <code>{:.2}</code> (Unrl: <code>{:.2}</code>)\n\
-                     📉 Price: <code>{:.4}</code>\n\
-                     📦 Position: <code>{:.4}</code> @ <code>{:.4}</code>\n\
-                     🔄 Roundtrips: <code>{}</code>\n\
-                     📊 Grid: {} zones [{:.2} - {:.2}] · {}",
+                    "┌─────────────────────────────┐\n\
+                     │  <b>📊 SPOT GRID</b>                │\n\
+                     │  <code>{:<6}</code>                      │\n\
+                     ├─────────────────────────────┤\n\
+                     │  💵 <b>Price</b>     <code>${:>12}</code>  │\n\
+                     │  {} <b>PnL</b>       <code>{}{:>11.2}</code>  │\n\
+                     │     ├ Real    <code>{:>12.2}</code>  │\n\
+                     │     └ Unreal  <code>{:>12.2}</code>  │\n\
+                     ├─────────────────────────────┤\n\
+                     │  📦 <b>Position</b>  <code>{:>12.4}</code>  │\n\
+                     │  📍 <b>Entry</b>     <code>${:>11.2}</code>  │\n\
+                     │  💰 <b>Fees</b>      <code>${:>11.2}</code>  │\n\
+                     ├─────────────────────────────┤\n\
+                     │  🔄 <b>Roundtrips</b>         <code>{:>5}</code>  │\n\
+                     │  📐 <b>Grid</b>       <code>{:>3}</code> zones     │\n\
+                     │     <code>${} - ${}</code>\n\
+                     │     <code>{}</code> spacing\n\
+                     └─────────────────────────────┘",
                     s.symbol,
+                    format_price(s.price),
+                    pnl_emoji,
+                    pnl_sign,
+                    total_pnl,
                     s.realized_pnl,
                     s.unrealized_pnl,
-                    s.price,
                     s.position_size,
                     s.avg_entry_price,
+                    s.total_fees,
                     s.roundtrips,
                     s.grid_count,
-                    s.range_low,
-                    s.range_high,
+                    format_price(s.range_low),
+                    format_price(s.range_high),
                     spacing
                 )
             }
             CachedSummary::PerpGrid(s) => {
-                let position_icon = match s.position_side.as_str() {
+                let spacing = format_spacing(s.grid_spacing_pct);
+                let total_pnl = s.realized_pnl + s.unrealized_pnl;
+                let pnl_emoji = if total_pnl >= 0.0 { "🟢" } else { "🔴" };
+                let pnl_sign = if total_pnl >= 0.0 { "+" } else { "" };
+                let bias_emoji = match s.grid_bias.as_str() {
+                    "Long" => "🟢",
+                    "Short" => "🔴",
+                    _ => "⚪",
+                };
+                let pos_emoji = match s.position_side.as_str() {
                     "Long" => "📈",
                     "Short" => "📉",
                     _ => "➖",
                 };
-                let spacing = format_spacing(s.grid_spacing_pct);
+
                 format!(
-                    "🟢 <b>PerpGrid ({} {}x)</b>\n\
-                     Symbol: <code>{}</code>\n\
-                     💰 PnL: <code>{:.2}</code> (Unrl: <code>{:.2}</code>)\n\
-                     📉 Price: <code>{:.4}</code>\n\
-                     {} Position: <code>{:.4}</code> {} @ <code>{:.4}</code>\n\
-                     🔄 Roundtrips: <code>{}</code>\n\
-                     📊 Grid: {} zones [{:.2} - {:.2}] · {}",
+                    "┌─────────────────────────────┐\n\
+                     │  <b>📊 PERP GRID</b>                │\n\
+                     │  <code>{:<6}</code>  {} <b>{}</b> <code>{}x</code>        │\n\
+                     ├─────────────────────────────┤\n\
+                     │  💵 <b>Price</b>     <code>${:>12}</code>  │\n\
+                     │  {} <b>PnL</b>       <code>{}{:>11.2}</code>  │\n\
+                     │     ├ Real    <code>{:>12.2}</code>  │\n\
+                     │     └ Unreal  <code>{:>12.2}</code>  │\n\
+                     ├─────────────────────────────┤\n\
+                     │  {} <b>Position</b>  <code>{:>12.4}</code>  │\n\
+                     │     <code>{}</code>\n\
+                     │  📍 <b>Entry</b>     <code>${:>11.2}</code>  │\n\
+                     │  💰 <b>Fees</b>      <code>${:>11.2}</code>  │\n\
+                     │  💳 <b>Margin</b>    <code>${:>11.2}</code>  │\n\
+                     ├─────────────────────────────┤\n\
+                     │  🔄 <b>Roundtrips</b>         <code>{:>5}</code>  │\n\
+                     │  📐 <b>Grid</b>       <code>{:>3}</code> zones     │\n\
+                     │     <code>${} - ${}</code>\n\
+                     │     <code>{}</code> spacing\n\
+                     └─────────────────────────────┘",
+                    s.symbol,
+                    bias_emoji,
                     s.grid_bias,
                     s.leverage,
-                    s.symbol,
+                    format_price(s.price),
+                    pnl_emoji,
+                    pnl_sign,
+                    total_pnl,
                     s.realized_pnl,
                     s.unrealized_pnl,
-                    s.price,
-                    position_icon,
+                    pos_emoji,
                     s.position_size.abs(),
                     s.position_side,
                     s.avg_entry_price,
+                    s.total_fees,
+                    s.margin_balance,
                     s.roundtrips,
                     s.grid_count,
-                    s.range_low,
-                    s.range_high,
+                    format_price(s.range_low),
+                    format_price(s.range_high),
                     spacing
                 )
             }
@@ -77,13 +124,43 @@ impl CachedSummary {
     }
 }
 
+/// Format price with thousands separator
+fn format_price(price: f64) -> String {
+    if price >= 1000.0 {
+        let whole = price as u64;
+        let frac = ((price - whole as f64) * 100.0).round() as u64;
+        let formatted = whole
+            .to_string()
+            .as_bytes()
+            .rchunks(3)
+            .rev()
+            .map(|chunk| std::str::from_utf8(chunk).unwrap())
+            .collect::<Vec<_>>()
+            .join(",");
+        if frac > 0 {
+            format!("{}.{:02}", formatted, frac)
+        } else {
+            formatted
+        }
+    } else {
+        format!("{:.2}", price)
+    }
+}
+
 /// Format grid spacing: "2.50%" for geometric, "1.80% - 3.20%" for arithmetic
 fn format_spacing(spacing: (f64, f64)) -> String {
     let (min, max) = spacing;
-    if (min - max).abs() < 0.01 {
-        format!("{:.2}%", min)
+    let decimals = if min < 1.0 { 3 } else { 2 };
+    let relative_diff = (max - min).abs() / max.max(min);
+    if relative_diff < 0.01 {
+        format!("{:.decimals$}%", min, decimals = decimals)
     } else {
-        format!("{:.2}% - {:.2}%", min, max)
+        format!(
+            "{:.decimals$}% - {:.decimals$}%",
+            min,
+            max,
+            decimals = decimals
+        )
     }
 }
 

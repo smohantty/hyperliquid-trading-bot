@@ -3,52 +3,64 @@ import { useBotStore } from '../context/WebSocketContext';
 
 interface LayoutProps {
     children: ReactNode;
-    title?: string;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, title = 'Hyperliquid Bot' }) => {
+const Layout: React.FC<LayoutProps> = ({ children }) => {
     const { connectionStatus } = useBotStore();
 
     const getStatusColor = () => {
         switch (connectionStatus) {
-            case 'connected': return '#00ff9d';
-            case 'connecting': return '#ffaa00';
-            case 'disconnected': return '#ff0055';
+            case 'connected': return 'var(--color-buy)';
+            case 'connecting': return 'var(--accent-yellow)';
+            case 'disconnected': return 'var(--color-sell)';
         }
     };
 
     return (
-        <div className="layout">
-            {/* Top Bar */}
+        <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
+            {/* Header */}
             <header style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                padding: '1rem 2rem',
-                borderBottom: '1px solid var(--border-light)',
-                background: 'var(--bg-card)'
+                padding: '0 24px',
+                height: '56px',
+                background: 'var(--bg-secondary)',
+                borderBottom: '1px solid var(--border-color)'
             }}>
-                <div className="flex-row items-center gap-2">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{
-                        width: '12px',
-                        height: '12px',
+                        width: '8px',
+                        height: '8px',
                         borderRadius: '50%',
-                        backgroundColor: getStatusColor(),
-                        boxShadow: `0 0 8px ${getStatusColor()}`
+                        backgroundColor: getStatusColor()
                     }} />
-                    <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600 }}>{title}</h1>
+                    <span style={{ 
+                        fontSize: '16px', 
+                        fontWeight: 600,
+                        color: 'var(--text-primary)'
+                    }}>
+                        Hyperliquid Bot
+                    </span>
                 </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    STATUS: <span style={{ color: getStatusColor() }}>{connectionStatus.toUpperCase()}</span>
+                <div style={{ 
+                    fontSize: '12px', 
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                }}>
+                    <span style={{ color: getStatusColor(), fontWeight: 500 }}>
+                        {connectionStatus.toUpperCase()}
+                    </span>
                 </div>
             </header>
 
             {/* Main Content */}
             <main style={{
-                padding: '2rem',
-                maxWidth: '1600px',
-                margin: '0 auto',
-                minHeight: 'calc(100vh - 70px)'
+                padding: '20px 24px',
+                maxWidth: '1400px',
+                margin: '0 auto'
             }}>
                 {children}
             </main>

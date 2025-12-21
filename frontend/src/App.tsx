@@ -10,9 +10,9 @@ const DashboardContent: React.FC = () => {
   return (
     <Layout>
       {/* Top Section: Summary & Config side by side */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: '1fr 1fr', 
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
         gap: '1.5rem',
         marginBottom: '1.5rem'
       }}>

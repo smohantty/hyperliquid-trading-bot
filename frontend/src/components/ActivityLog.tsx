@@ -7,57 +7,49 @@ const ActivityLog: React.FC = () => {
 
     return (
         <div style={{
-            background: 'var(--bg-card)',
+            background: 'var(--bg-secondary)',
             borderRadius: '8px',
-            border: '1px solid var(--border-light)',
-            padding: '1rem',
+            border: '1px solid var(--border-color)',
             flex: 1,
-            minHeight: '300px',
-            maxHeight: '400px',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            minHeight: '200px'
         }}>
+            {/* Header */}
             <div style={{
+                padding: '12px 16px',
+                borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
                 justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '0.75rem'
+                alignItems: 'center'
             }}>
-                <h3 style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '1rem' }}>
-                    ACTIVITY LOG
-                </h3>
+                <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                    Activity
+                </span>
                 {orderHistory.length > 0 && (
                     <span style={{
-                        fontSize: '0.7rem',
-                        color: 'var(--text-muted)',
-                        background: 'rgba(255,255,255,0.05)',
-                        padding: '2px 8px',
-                        borderRadius: '4px'
+                        fontSize: '10px',
+                        color: 'var(--text-tertiary)',
+                        background: 'var(--bg-tertiary)',
+                        padding: '2px 6px',
+                        borderRadius: '3px'
                     }}>
                         {orderHistory.length} events
                     </span>
                 )}
             </div>
 
-            <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '4px'
-            }}>
+            {/* Activity List */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
                 {orderHistory.length === 0 ? (
                     <div style={{
-                        color: 'var(--text-muted)',
-                        fontSize: '0.85rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '100%',
-                        opacity: 0.6
+                        padding: '40px 20px',
+                        textAlign: 'center',
+                        color: 'var(--text-tertiary)',
+                        fontSize: '12px'
                     }}>
-                        <span>Waiting for order updates...</span>
+                        Waiting for orders...
                     </div>
                 ) : (
                     orderHistory.map((order, idx) => (
@@ -72,47 +64,31 @@ const ActivityLog: React.FC = () => {
 const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
     const isBuy = order.side === 'Buy';
     const isFilled = order.status === 'FILLED';
-
-    // Determine colors
+    
     const sideColor = isBuy ? 'var(--color-buy)' : 'var(--color-sell)';
-    const statusColor = isFilled ? 'var(--color-buy)' :
-                        order.status === 'OPEN' ? 'var(--accent-primary)' :
-                        order.status === 'CANCELLED' ? 'var(--text-muted)' :
+    const statusColor = isFilled ? 'var(--color-buy)' : 
+                        order.status === 'OPEN' ? 'var(--text-primary)' : 
+                        order.status === 'OPENING' ? 'var(--accent-yellow)' :
+                        order.status === 'CANCELLED' ? 'var(--text-tertiary)' : 
                         'var(--color-sell)';
-
-    const icon = isFilled ? '✓' :
-                 order.status === 'OPEN' ? '○' :
-                 order.status === 'CANCELLED' ? '✗' : '•';
 
     return (
         <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '0.5rem',
-            padding: '6px 8px',
-            background: 'rgba(255,255,255,0.02)',
-            borderRadius: '4px',
-            borderLeft: `3px solid ${sideColor}`,
-            fontSize: '0.8rem'
+            gap: '8px',
+            padding: '8px 16px',
+            fontSize: '11px',
+            borderBottom: '1px solid var(--border-color)'
         }}>
-            {/* Status Icon */}
-            <span style={{
-                color: statusColor,
-                fontWeight: 'bold',
-                width: '16px',
-                textAlign: 'center'
-            }}>
-                {icon}
-            </span>
-
             {/* Side Badge */}
             <span style={{
-                background: sideColor,
-                color: '#000',
-                padding: '1px 6px',
+                background: `${sideColor}15`,
+                color: sideColor,
+                padding: '2px 6px',
                 borderRadius: '3px',
-                fontSize: '0.65rem',
-                fontWeight: 700,
+                fontSize: '9px',
+                fontWeight: 600,
                 minWidth: '32px',
                 textAlign: 'center'
             }}>
@@ -120,28 +96,29 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
             </span>
 
             {/* Size @ Price */}
-            <span style={{
-                flex: 1,
+            <span style={{ 
+                flex: 1, 
                 fontFamily: 'var(--font-mono)',
                 color: 'var(--text-primary)'
             }}>
-                {order.size.toFixed(4)} @ ${order.price.toFixed(2)}
+                {order.size.toFixed(4)} <span style={{ color: 'var(--text-tertiary)' }}>@</span> ${order.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </span>
 
             {/* Status */}
-            <span style={{
+            <span style={{ 
                 color: statusColor,
-                fontSize: '0.7rem',
-                fontWeight: 600
+                fontSize: '10px',
+                fontWeight: 500
             }}>
                 {order.status}
             </span>
 
-            {/* Fee (if filled) */}
+            {/* Fee */}
             {isFilled && order.fee > 0 && (
-                <span style={{
-                    color: 'var(--text-muted)',
-                    fontSize: '0.65rem'
+                <span style={{ 
+                    color: 'var(--text-tertiary)',
+                    fontSize: '10px',
+                    fontFamily: 'var(--font-mono)'
                 }}>
                     -${order.fee.toFixed(4)}
                 </span>
@@ -151,4 +128,3 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
 };
 
 export default ActivityLog;
-

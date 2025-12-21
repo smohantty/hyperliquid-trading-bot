@@ -10,56 +10,48 @@ const ConfigPanel: React.FC = () => {
 
     return (
         <div style={{
-            background: 'var(--bg-card)',
-            borderRadius: '12px',
-            border: '1px solid var(--border-light)',
+            background: 'var(--bg-secondary)',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
             overflow: 'hidden'
         }}>
             {/* Header */}
             <div style={{
-                padding: '0.75rem 1.25rem',
-                borderBottom: '1px solid var(--border-light)',
+                padding: '12px 16px',
+                borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
                 justifyContent: 'space-between',
-                alignItems: 'center',
-                background: 'rgba(255, 255, 255, 0.02)'
+                alignItems: 'center'
             }}>
-                <span style={{ 
-                    fontSize: '0.75rem', 
-                    fontWeight: 600,
-                    color: 'var(--text-secondary)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                }}>
-                    ⚙️ Configuration
+                <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                    Configuration
                 </span>
                 <span style={{
-                    fontSize: '0.65rem',
-                    color: 'var(--text-muted)',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    padding: '2px 8px',
-                    borderRadius: '4px'
+                    fontSize: '10px',
+                    color: 'var(--text-tertiary)',
+                    background: 'var(--bg-tertiary)',
+                    padding: '2px 6px',
+                    borderRadius: '3px'
                 }}>
                     {config.type.replace('_', ' ').toUpperCase()}
                 </span>
             </div>
 
             {/* Config Grid */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                gap: '1px',
-                background: 'var(--border-light)'
-            }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap' }}>
                 <ConfigCell label="Symbol" value={config.symbol} />
-                <ConfigCell label="Range" value={`${config.lower_price} - ${config.upper_price}`} />
+                <ConfigCell label="Range" value={`$${config.lower_price.toLocaleString()} - $${config.upper_price.toLocaleString()}`} />
                 <ConfigCell label="Zones" value={config.grid_count.toString()} />
-                <ConfigCell label="Investment" value={`$${config.total_investment}`} />
-                <ConfigCell label="Spacing" value={config.grid_type} />
+                <ConfigCell label="Investment" value={`$${config.total_investment.toLocaleString()}`} />
+                <ConfigCell label="Spacing" value={config.grid_type.charAt(0).toUpperCase() + config.grid_type.slice(1)} />
                 
                 {isPerp && (
                     <>
-                        <ConfigCell label="Leverage" value={`${config.leverage}x`} highlight />
+                        <ConfigCell 
+                            label="Leverage" 
+                            value={`${config.leverage}x`} 
+                            highlight
+                        />
                         <ConfigCell 
                             label="Bias" 
                             value={config.grid_bias?.toUpperCase() || 'NEUTRAL'} 
@@ -67,7 +59,7 @@ const ConfigPanel: React.FC = () => {
                             highlightColor={
                                 config.grid_bias === 'long' ? 'var(--color-buy)' : 
                                 config.grid_bias === 'short' ? 'var(--color-sell)' : 
-                                'var(--accent-primary)'
+                                'var(--accent-yellow)'
                             }
                         />
                         <ConfigCell 
@@ -88,22 +80,19 @@ const ConfigCell: React.FC<{
     highlightColor?: string;
 }> = ({ label, value, highlight, highlightColor }) => (
     <div style={{ 
-        padding: '0.75rem 1rem',
-        background: 'var(--bg-card)'
+        flex: '1 1 auto',
+        minWidth: '100px',
+        padding: '12px 16px',
+        borderRight: '1px solid var(--border-color)',
+        borderBottom: '1px solid var(--border-color)'
     }}>
-        <div style={{ 
-            fontSize: '0.6rem', 
-            color: 'var(--text-muted)', 
-            marginBottom: '0.25rem',
-            textTransform: 'uppercase',
-            letterSpacing: '0.03em'
-        }}>
+        <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '4px', textTransform: 'uppercase' }}>
             {label}
         </div>
         <div style={{ 
-            fontSize: '0.85rem', 
-            fontWeight: highlight ? 600 : 500, 
-            color: highlight ? (highlightColor || 'var(--accent-primary)') : 'var(--text-primary)',
+            fontSize: '12px', 
+            fontWeight: highlight ? 600 : 400, 
+            color: highlight ? (highlightColor || 'var(--accent-yellow)') : 'var(--text-primary)',
             fontFamily: 'var(--font-mono)'
         }}>
             {value}

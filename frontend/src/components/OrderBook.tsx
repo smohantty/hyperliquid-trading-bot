@@ -5,7 +5,6 @@ import type { ZoneInfo } from '../types/schema';
 const OrderBook: React.FC = () => {
     const { gridState, lastPrice } = useBotStore();
 
-    // Split zones into asks (above price) and bids (below price)
     const { asks, bids } = useMemo(() => {
         if (!gridState || !lastPrice) return { asks: [], bids: [] };
         
@@ -15,7 +14,6 @@ const OrderBook: React.FC = () => {
         const bids: ZoneInfo[] = [];
         
         sortedZones.forEach(zone => {
-            // Use midpoint of zone for classification
             const midPrice = (zone.lower_price + zone.upper_price) / 2;
             if (midPrice > lastPrice) {
                 asks.push(zone);
@@ -24,21 +22,19 @@ const OrderBook: React.FC = () => {
             }
         });
         
-        // Asks: lowest first (closest to current price at bottom)
         asks.reverse();
-        
         return { asks, bids };
     }, [gridState, lastPrice]);
 
     if (!gridState || !lastPrice) {
         return (
             <div style={{
-                background: 'var(--bg-card)',
-                borderRadius: '12px',
-                border: '1px solid var(--border-light)',
-                padding: '3rem',
+                background: 'var(--bg-secondary)',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color)',
+                padding: '40px',
                 textAlign: 'center',
-                color: 'var(--text-muted)'
+                color: 'var(--text-tertiary)'
             }}>
                 Loading Grid State...
             </div>
@@ -46,158 +42,124 @@ const OrderBook: React.FC = () => {
     }
 
     const isPerp = gridState.strategy_type === 'perp_grid';
-    const biasLabel = gridState.grid_bias ? ` (${gridState.grid_bias})` : '';
 
     return (
         <div style={{
-            background: 'var(--bg-card)',
-            borderRadius: '12px',
-            border: '1px solid var(--border-light)',
+            background: 'var(--bg-secondary)',
+            borderRadius: '8px',
+            border: '1px solid var(--border-color)',
             overflow: 'hidden'
         }}>
             {/* Header */}
             <div style={{ 
-                padding: '0.75rem 1.25rem', 
-                borderBottom: '1px solid var(--border-light)',
+                padding: '12px 16px', 
+                borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
                 justifyContent: 'space-between',
-                alignItems: 'center',
-                background: 'rgba(255, 255, 255, 0.02)'
+                alignItems: 'center'
             }}>
-                <span style={{ 
-                    fontSize: '0.75rem', 
-                    fontWeight: 600,
-                    color: 'var(--text-secondary)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em'
-                }}>
-                    📊 Live Grid Structure
+                <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+                    Order Book
                 </span>
-                <span style={{ 
-                    fontSize: '0.65rem', 
-                    color: isPerp ? 'var(--accent-secondary)' : 'var(--accent-primary)',
-                    background: 'rgba(255,255,255,0.05)',
-                    padding: '2px 8px',
-                    borderRadius: '4px'
+                <span style={{
+                    fontSize: '10px',
+                    color: 'var(--text-tertiary)',
+                    background: 'var(--bg-tertiary)',
+                    padding: '2px 6px',
+                    borderRadius: '3px'
                 }}>
-                    {isPerp ? `PERP${biasLabel}` : 'SPOT'}
+                    {isPerp ? `PERP · ${gridState.grid_bias}` : 'SPOT'}
                 </span>
             </div>
 
-            {/* CLOB Style Layout */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr auto 1fr',
-                minHeight: '300px'
-            }}>
-                {/* Asks (Sell side) - Left */}
-                <div style={{ 
-                    borderRight: '1px solid var(--border-light)',
-                    display: 'flex',
-                    flexDirection: 'column'
-                }}>
+            {/* CLOB Layout */}
+            <div style={{ display: 'flex' }}>
+                {/* Asks */}
+                <div style={{ flex: 1, borderRight: '1px solid var(--border-color)' }}>
                     <div style={{
-                        padding: '0.5rem 1rem',
-                        background: 'rgba(255, 0, 85, 0.05)',
-                        borderBottom: '1px solid var(--border-light)',
-                        fontSize: '0.65rem',
-                        color: 'var(--color-sell)',
-                        fontWeight: 600,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
                         display: 'flex',
-                        justifyContent: 'space-between'
+                        padding: '8px 12px',
+                        fontSize: '10px',
+                        color: 'var(--text-tertiary)',
+                        textTransform: 'uppercase',
+                        borderBottom: '1px solid var(--border-color)',
+                        background: 'rgba(246, 70, 93, 0.03)'
                     }}>
-                        <span>Price</span>
-                        <span>Size</span>
-                        <span>Action</span>
+                        <span style={{ flex: 1 }}>Price</span>
+                        <span style={{ flex: 1, textAlign: 'center' }}>Size</span>
+                        <span style={{ flex: 1, textAlign: 'right' }}>Action</span>
                     </div>
-                    <div style={{ flex: 1, overflowY: 'auto', maxHeight: '280px' }}>
-                        {asks.map(zone => (
-                            <ZoneRow key={zone.index} zone={zone} side="ask" />
-                        ))}
-                        {asks.length === 0 && (
-                            <div style={{ padding: '1rem', color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.8rem' }}>
+                    <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                        {asks.length === 0 ? (
+                            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '11px' }}>
                                 No asks
                             </div>
+                        ) : (
+                            asks.map(zone => <ZoneRow key={zone.index} zone={zone} side="ask" />)
                         )}
                     </div>
                 </div>
 
-                {/* Current Price - Center */}
+                {/* Center Price */}
                 <div style={{
+                    width: '140px',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '1rem 2rem',
-                    background: 'linear-gradient(180deg, rgba(0, 240, 255, 0.05) 0%, transparent 50%, rgba(0, 255, 157, 0.05) 100%)',
-                    minWidth: '180px'
+                    padding: '20px 16px',
+                    background: 'var(--bg-primary)'
                 }}>
-                    <div style={{ 
-                        fontSize: '0.65rem', 
-                        color: 'var(--text-muted)', 
-                        marginBottom: '0.5rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em'
-                    }}>
-                        Current Price
+                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                        Current
                     </div>
                     <div style={{
-                        fontSize: '1.5rem',
-                        fontWeight: 700,
-                        color: 'var(--accent-primary)',
-                        fontFamily: 'var(--font-mono)'
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-primary)'
                     }}>
                         ${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
                     <div style={{
-                        marginTop: '1rem',
+                        marginTop: '16px',
                         display: 'flex',
-                        gap: '1.5rem',
-                        fontSize: '0.75rem'
+                        gap: '20px',
+                        fontSize: '11px'
                     }}>
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ color: 'var(--color-sell)', fontWeight: 600 }}>{asks.length}</div>
-                            <div style={{ color: 'var(--text-muted)', fontSize: '0.6rem' }}>ASKS</div>
+                            <div style={{ color: 'var(--text-tertiary)', fontSize: '9px' }}>Asks</div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
                             <div style={{ color: 'var(--color-buy)', fontWeight: 600 }}>{bids.length}</div>
-                            <div style={{ color: 'var(--text-muted)', fontSize: '0.6rem' }}>BIDS</div>
+                            <div style={{ color: 'var(--text-tertiary)', fontSize: '9px' }}>Bids</div>
                         </div>
                     </div>
                 </div>
 
-                {/* Bids (Buy side) - Right */}
-                <div style={{ 
-                    borderLeft: '1px solid var(--border-light)',
-                    display: 'flex',
-                    flexDirection: 'column'
-                }}>
+                {/* Bids */}
+                <div style={{ flex: 1, borderLeft: '1px solid var(--border-color)' }}>
                     <div style={{
-                        padding: '0.5rem 1rem',
-                        background: 'rgba(0, 255, 157, 0.05)',
-                        borderBottom: '1px solid var(--border-light)',
-                        fontSize: '0.65rem',
-                        color: 'var(--color-buy)',
-                        fontWeight: 600,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
                         display: 'flex',
-                        justifyContent: 'space-between'
+                        padding: '8px 12px',
+                        fontSize: '10px',
+                        color: 'var(--text-tertiary)',
+                        textTransform: 'uppercase',
+                        borderBottom: '1px solid var(--border-color)',
+                        background: 'rgba(14, 203, 129, 0.03)'
                     }}>
-                        <span>Action</span>
-                        <span>Size</span>
-                        <span>Price</span>
+                        <span style={{ flex: 1 }}>Action</span>
+                        <span style={{ flex: 1, textAlign: 'center' }}>Size</span>
+                        <span style={{ flex: 1, textAlign: 'right' }}>Price</span>
                     </div>
-                    <div style={{ flex: 1, overflowY: 'auto', maxHeight: '280px' }}>
-                        {bids.map(zone => (
-                            <ZoneRow key={zone.index} zone={zone} side="bid" />
-                        ))}
-                        {bids.length === 0 && (
-                            <div style={{ padding: '1rem', color: 'var(--text-muted)', textAlign: 'center', fontSize: '0.8rem' }}>
+                    <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                        {bids.length === 0 ? (
+                            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '11px' }}>
                                 No bids
                             </div>
+                        ) : (
+                            bids.map(zone => <ZoneRow key={zone.index} zone={zone} side="bid" />)
                         )}
                     </div>
                 </div>
@@ -206,95 +168,57 @@ const OrderBook: React.FC = () => {
     );
 };
 
-// Zone row component
 const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid' }> = ({ zone, side }) => {
     const isAsk = side === 'ask';
     const displayPrice = isAsk ? zone.upper_price : zone.lower_price;
     
-    // Color based on action type
-    let actionColor: string;
-    if (zone.is_reduce_only || zone.action_type === 'close') {
-        actionColor = '#ffaa00'; // Yellow for closing
-    } else if (zone.pending_side === 'Buy') {
-        actionColor = 'var(--color-buy)';
-    } else {
-        actionColor = 'var(--color-sell)';
-    }
+    const isClose = zone.is_reduce_only || zone.action_type === 'close';
+    const actionColor = isClose ? 'var(--accent-yellow)' : 
+                        zone.pending_side === 'Buy' ? 'var(--color-buy)' : 'var(--color-sell)';
 
-    const content = isAsk ? (
-        <>
-            <span style={{ 
-                flex: 1, 
-                color: 'var(--color-sell)',
-                fontFamily: 'var(--font-mono)'
-            }}>
-                {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
-            <span style={{ 
-                flex: 1, 
-                textAlign: 'center',
-                fontFamily: 'var(--font-mono)'
-            }}>
-                {zone.size.toFixed(4)}
-            </span>
-            <span style={{ flex: 1, textAlign: 'right' }}>
-                <span style={{
-                    background: actionColor,
-                    color: '#000',
-                    padding: '2px 6px',
-                    borderRadius: '3px',
-                    fontSize: '0.6rem',
-                    fontWeight: 700
-                }}>
-                    {zone.action_label}
-                </span>
-            </span>
-        </>
-    ) : (
-        <>
-            <span style={{ flex: 1 }}>
-                <span style={{
-                    background: actionColor,
-                    color: '#000',
-                    padding: '2px 6px',
-                    borderRadius: '3px',
-                    fontSize: '0.6rem',
-                    fontWeight: 700
-                }}>
-                    {zone.action_label}
-                </span>
-            </span>
-            <span style={{ 
-                flex: 1, 
-                textAlign: 'center',
-                fontFamily: 'var(--font-mono)'
-            }}>
-                {zone.size.toFixed(4)}
-            </span>
-            <span style={{ 
-                flex: 1, 
-                textAlign: 'right',
-                color: 'var(--color-buy)',
-                fontFamily: 'var(--font-mono)'
-            }}>
-                {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
-        </>
+    const actionBadge = (
+        <span style={{
+            background: `${actionColor}20`,
+            color: actionColor,
+            padding: '2px 6px',
+            borderRadius: '3px',
+            fontSize: '9px',
+            fontWeight: 600
+        }}>
+            {zone.action_label}
+        </span>
     );
 
     return (
         <div style={{
             display: 'flex',
             alignItems: 'center',
-            padding: '0.4rem 1rem',
-            fontSize: '0.75rem',
+            padding: '6px 12px',
+            fontSize: '12px',
             opacity: zone.has_order ? 1 : 0.4,
-            background: zone.has_order 
-                ? (isAsk ? 'rgba(255, 0, 85, 0.03)' : 'rgba(0, 255, 157, 0.03)')
-                : 'transparent',
-            borderBottom: '1px solid rgba(255,255,255,0.03)'
+            borderBottom: '1px solid var(--border-color)'
         }}>
-            {content}
+            {isAsk ? (
+                <>
+                    <span style={{ flex: 1, color: 'var(--color-sell)', fontFamily: 'var(--font-mono)' }}>
+                        {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                    <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                        {zone.size.toFixed(4)}
+                    </span>
+                    <span style={{ flex: 1, textAlign: 'right' }}>{actionBadge}</span>
+                </>
+            ) : (
+                <>
+                    <span style={{ flex: 1 }}>{actionBadge}</span>
+                    <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                        {zone.size.toFixed(4)}
+                    </span>
+                    <span style={{ flex: 1, textAlign: 'right', color: 'var(--color-buy)', fontFamily: 'var(--font-mono)' }}>
+                        {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                </>
+            )}
         </div>
     );
 };

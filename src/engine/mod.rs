@@ -442,14 +442,16 @@ impl Engine {
                 sz,
                 reduce_only,
                 ..
-            } => format!(
-                "LIMIT {} {} {} @ {}{}",
-                if *is_buy { "BUY" } else { "SELL" },
-                sz,
-                symbol,
-                price,
-                if *reduce_only { " (RO)" } else { "" }
-            ),
+            } => {
+                format!(
+                    "LIMIT {} {} {} @ {}{}",
+                    if *is_buy { "BUY" } else { "SELL" },
+                    sz,
+                    symbol,
+                    price,
+                    if *reduce_only { " (RO)" } else { "" }
+                )
+            }
             crate::model::OrderRequest::Market {
                 symbol, is_buy, sz, ..
             } => {
@@ -462,7 +464,7 @@ impl Engine {
             }
             crate::model::OrderRequest::Cancel { cloid } => format!("CANCEL {}", cloid),
         };
-        info!("Processing Order: {}", req_summary);
+        info!("[ORDER_PROCESSING] {}", req_summary);
 
         match order_req {
             crate::model::OrderRequest::Cancel { cloid } => {

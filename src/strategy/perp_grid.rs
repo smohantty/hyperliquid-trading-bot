@@ -274,6 +274,14 @@ impl PerpGridStrategy {
 
             if target_size > 0.0 {
                 self.state = StrategyState::AcquiringAssets { cloid, target_size };
+                info!(
+                    "[ORDER_REQUEST] [PERP_GRID] REBALANCING ({}). Acquiring {} {}. Cost: ~{:.2} USDC @ {}.",
+                    if is_buy { "BUY" } else { "SELL" },
+                    target_size,
+                    self.symbol,
+                    target_size * activation_price,
+                    activation_price
+                );
                 ctx.place_order(OrderRequest::Limit {
                     symbol: self.symbol.clone(),
                     is_buy,
@@ -325,7 +333,7 @@ impl PerpGridStrategy {
                 self.active_orders.insert(cloid, idx);
 
                 info!(
-                    "[PERP_GRID] Placing {:?} order @ {} (cloid: {}, reduce_only: {})",
+                    "[ORDER_REQUEST] [PERP_GRID] Placing {:?} order @ {} (cloid: {}, reduce_only: {})",
                     if is_buy { "BUY" } else { "SELL" },
                     price,
                     cloid,
@@ -369,7 +377,7 @@ impl PerpGridStrategy {
         );
 
         info!(
-            "[PERP_GRID] Zone {} | Placing {:?} order @ {} (cloid: {})",
+            "[ORDER_REQUEST] [PERP_GRID] Zone {} | Placing {:?} order @ {} (cloid: {})",
             zone_idx,
             if is_buy { "BUY" } else { "SELL" },
             rounded_price,

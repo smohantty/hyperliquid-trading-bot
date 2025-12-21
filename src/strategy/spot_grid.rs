@@ -1,7 +1,7 @@
 use super::common;
 use super::types::{GridType, ZoneState};
 use crate::config::strategy::StrategyConfig;
-use crate::engine::context::{MarketInfo, StrategyContext};
+use crate::engine::context::{MarketInfo, StrategyContext, MIN_NOTIONAL_VALUE};
 use crate::model::OrderRequest;
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
@@ -146,10 +146,10 @@ impl SpotGridStrategy {
         let num_zones = self.grid_count as usize - 1;
         let quote_per_zone = self.total_investment / num_zones as f64;
 
-        if quote_per_zone < 10.0 {
+        if quote_per_zone < MIN_NOTIONAL_VALUE {
             let msg = format!(
-                "Quote per zone ({:.2}) is less than minimum order value (10.0). Increase total_investment or decrease grid_count.",
-                quote_per_zone
+                "Quote per zone ({:.2}) is less than minimum order value ({}). Increase total_investment or decrease grid_count.",
+                quote_per_zone, MIN_NOTIONAL_VALUE
             );
             error!("[SPOT_GRID] {}", msg);
             return Err(anyhow!(msg));
@@ -211,9 +211,9 @@ impl SpotGridStrategy {
         // Use trigger_price if available, otherwise last_price
         let initial_price = self.trigger_price.unwrap_or(market_info.last_price);
 
-        if deficit > market_info.round_size(0.0) {
+        if deficit > 0.0 {
             // Acquisition Mode
-            let mut acquisition_price = initial_price * 0.99; // Fallback default
+            let mut acquisition_price = initial_price; // Fallback default
 
             if let Some(trigger) = self.trigger_price {
                 // If triggered, use trigger price for acquisition
@@ -235,14 +235,22 @@ impl SpotGridStrategy {
             }
 
             // Apply 0.2% safety buffer to cover exchange fees
-            let deficit_with_buffer = deficit * 1.002;
-            let min_acq_sz = market_info.ensure_min_sz(acquisition_price, 10.1);
-            let rounded_deficit = min_acq_sz.max(market_info.round_size(deficit_with_buffer));
+            let raw_deficit = deficit;
+            let rounded_deficit = market_info.clamp_to_min_notional(
+                raw_deficit,
+                acquisition_price,
+                MIN_NOTIONAL_VALUE,
+            );
 
             if rounded_deficit > 0.0 {
                 // Check if we have enough QUOTE (USDC) to buy this deficit
                 let estimated_cost = rounded_deficit * acquisition_price;
                 let available_quote = ctx.get_spot_available(&self.quote_asset);
+
+                info!(
+                    "[SPOT_GRID] Acquisition required: deficit={} {}, rounded to {} {} (~${:.2}) at price {}",
+                    deficit, self.base_asset, rounded_deficit, self.base_asset, estimated_cost, acquisition_price
+                );
 
                 if available_quote < estimated_cost {
                     let msg = format!(

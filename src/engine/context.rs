@@ -1,6 +1,8 @@
 use crate::model::OrderRequest;
 use std::collections::HashMap;
 
+pub const MIN_NOTIONAL_VALUE: f64 = 11.0;
+
 #[derive(Debug, Clone)]
 pub struct MarketInfo {
     pub symbol: String,
@@ -54,14 +56,15 @@ impl MarketInfo {
         round_to_decimals(sz, self.sz_decimals)
     }
 
-    /// Calculates the minimum size required to achieve a certain USDC value at a given price.
-    /// Result is rounded according to asset precision.
-    pub fn ensure_min_sz(&self, price: f64, min_value: f64) -> f64 {
-        if price <= 0.0 {
-            return 0.0;
+    /// Clamps the given size to the minimum required to meet the notional USD value.
+    /// Returns the provided size rounded to asset precision, or the minimum required size if the notional is too low.
+    pub fn clamp_to_min_notional(&self, size: f64, price: f64, min_notional: f64) -> f64 {
+        let rounded_size = self.round_size(size);
+        if price > 0.0 && (rounded_size * price < min_notional) {
+            self.round_size(min_notional / price)
+        } else {
+            rounded_size
         }
-        let min_sz = min_value / price;
-        self.round_size(min_sz)
     }
 }
 

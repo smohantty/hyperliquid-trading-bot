@@ -734,33 +734,19 @@ impl Engine {
                     fill.coin, fill.side, fill.dir, fill.start_position, amount, px, cloid
                 );
 
-                // Determine OrderSide from dir field:
-                // - Perps: "Open Long" / "Close Short" = Buy, "Open Short" / "Close Long" = Sell
-                // - Spot: "Buy" / "Sell"
-                let dir_lower = fill.dir.to_lowercase();
-                let side = if dir_lower.contains("long") {
-                    // "Open Long" = Buy, "Close Long" = Sell
-                    if dir_lower.starts_with("open") {
-                        OrderSide::Buy
-                    } else {
-                        OrderSide::Sell
-                    }
-                } else if dir_lower.contains("short") {
-                    // "Open Short" = Sell, "Close Short" = Buy
-                    if dir_lower.starts_with("open") {
-                        OrderSide::Sell
-                    } else {
-                        OrderSide::Buy
-                    }
+                // Determine OrderSide from side field:
+                // - 'A' (Ask) = Sell order filled
+                // - 'B' (Bid) = Buy order filled
+                // The raw_dir is passed through for strategies that need perp-specific context
+                let side = if fill.side.to_uppercase().starts_with('B') {
+                    OrderSide::Buy
                 } else {
-                    // Spot: "Buy" or "Sell"
-                    if dir_lower.starts_with('b') {
-                        OrderSide::Buy
-                    } else {
-                        OrderSide::Sell
-                    }
+                    OrderSide::Sell
                 };
-                debug!("[FILL_DEBUG] Parsed dir='{}' -> OrderSide::{}", fill.dir, side);
+                debug!(
+                    "[FILL_DEBUG] Parsed side='{}' -> OrderSide::{}, raw_dir='{}'",
+                    fill.side, side, fill.dir
+                );
                 let fee: f64 = fill.fee.parse().unwrap_or(0.0);
 
                 // Audit Log: FILL

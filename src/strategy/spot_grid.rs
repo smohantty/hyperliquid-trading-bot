@@ -108,8 +108,8 @@ impl SpotGridStrategy {
         let market_info = match ctx.market_info(&self.symbol) {
             Some(info) => info,
             None => {
-                warn!("[SPOT_GRID] No market info for {}", self.symbol);
-                return Ok(()); // Retry later? Or error? Standard was return, so keeping Ok logic for now but ideally should be error if strictly init.
+                error!("[SPOT_GRID] No market info for {}", self.symbol);
+                return Err(anyhow!("No market info for {}", self.symbol));
             }
         };
 

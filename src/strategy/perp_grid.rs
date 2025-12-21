@@ -107,7 +107,7 @@ impl PerpGridStrategy {
 
     fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         if self.grid_count < 2 {
-            warn!("Grid count must be at least 2");
+            warn!("[PERP_GRID] Grid count must be at least 2");
             return Err(anyhow!("Grid count must be at least 2"));
         }
 
@@ -116,8 +116,8 @@ impl PerpGridStrategy {
             let info = match ctx.market_info(&self.symbol) {
                 Some(i) => i,
                 None => {
-                    warn!("No market info");
-                    return Ok(());
+                    error!("[PERP_GRID] No market info for {}", self.symbol);
+                    return Err(anyhow!("No market info for {}", self.symbol));
                 }
             };
             info.last_price
@@ -156,7 +156,7 @@ impl PerpGridStrategy {
                 "Insufficient Margin! Balance: {:.2}, Lev: {}, Max Notional: {:.2}, Required: {:.2}. Bailing out.",
                 wallet_balance, self.leverage, max_notional, self.total_investment
             );
-            error!("{}", msg);
+            error!("[PERP_GRID] {}", msg);
             return Err(anyhow!(msg));
         }
 
@@ -229,7 +229,7 @@ impl PerpGridStrategy {
 
             if let Some(trigger) = self.trigger_price {
                 info!(
-                    "Assets required ({}), but waiting for trigger price {}",
+                    "[PERP_GRID] Assets required ({}), but waiting for trigger price {}",
                     total_position_required, trigger
                 );
                 self.state = StrategyState::WaitingForTrigger;
@@ -237,7 +237,10 @@ impl PerpGridStrategy {
             }
 
             // Acquire Immediately
-            info!("Acquiring initial position: {}", total_position_required);
+            info!(
+                "[PERP_GRID] Acquiring initial position: {}",
+                total_position_required
+            );
             let cloid = ctx.generate_cloid();
 
             let (activation_price, target_size, is_buy) = {
@@ -285,7 +288,7 @@ impl PerpGridStrategy {
 
         self.state = StrategyState::Running;
         if let Err(e) = self.refresh_orders(ctx) {
-            warn!("Failed to refresh orders: {}", e);
+            warn!("[PERP_GRID] Failed to refresh orders: {}", e);
         }
         Ok(())
     }
@@ -331,7 +334,7 @@ impl PerpGridStrategy {
 
         for (cloid, is_buy, price, size, reduce_only) in orders_to_place {
             info!(
-                "Placing {:?} order @ {} (cloid: {}, reduce_only: {})",
+                "[PERP_GRID] Placing {:?} order @ {} (cloid: {}, reduce_only: {})",
                 if is_buy { "BUY" } else { "SELL" },
                 price,
                 cloid,
@@ -370,7 +373,7 @@ impl PerpGridStrategy {
         };
 
         info!(
-            "Zone {} | Placing {:?} order @ {} (cloid: {})",
+            "[PERP_GRID] Zone {} | Placing {:?} order @ {} (cloid: {})",
             zone_idx,
             if is_buy { "BUY" } else { "SELL" },
             rounded_price,
@@ -428,7 +431,7 @@ impl Strategy for PerpGridStrategy {
                             // Bullish Trigger
                             if price >= trigger {
                                 info!(
-                                    "Price {} crossed trigger {} (UP). Starting.",
+                                    "[PERP_GRID] Price {} crossed trigger {} (UP). Starting.",
                                     price, trigger
                                 );
                                 triggered = true;
@@ -437,7 +440,7 @@ impl Strategy for PerpGridStrategy {
                             // Bearish Trigger
                             if price <= trigger {
                                 info!(
-                                    "Price {} crossed trigger {} (DOWN). Starting.",
+                                    "[PERP_GRID] Price {} crossed trigger {} (DOWN). Starting.",
                                     price, trigger
                                 );
                                 triggered = true;
@@ -463,7 +466,7 @@ impl Strategy for PerpGridStrategy {
                         // Let's just re-call verify_assets logic?
 
                         // Simplest: Just call initialize_zones again. It enters Running or Acquiring.
-                        info!("Triggered! Re-initializing zones for accurate state.");
+                        info!("[PERP_GRID] Triggered! Re-initializing zones for accurate state.");
                         self.zones.clear();
                         self.initialize_zones(ctx)?;
                     }
@@ -478,7 +481,7 @@ impl Strategy for PerpGridStrategy {
             }
             StrategyState::Running => {
                 self.refresh_orders(ctx)
-                    .unwrap_or_else(|e| warn!("Failed refresh: {}", e));
+                    .unwrap_or_else(|e| warn!("[PERP_GRID] Failed refresh: {}", e));
             }
         }
         Ok(())
@@ -500,7 +503,7 @@ impl Strategy for PerpGridStrategy {
             } = self.state
             {
                 if cloid_val == acq_cloid {
-                    info!("Acquisition filled @ {}", px);
+                    info!("[PERP_GRID] Acquisition filled @ {}", px);
 
                     // Update Position Size
                     if side.eq_ignore_ascii_case("buy") {
@@ -552,7 +555,7 @@ impl Strategy for PerpGridStrategy {
                     ) {
                         (ZoneState::WaitingBuy, false) => {
                             info!(
-                                "Zone {} | BUY (Open Long) Filled @ {} | Size: {} | Next: SELL (Close) @ {}",
+                                "[PERP_GRID] Zone {} | BUY (Open Long) Filled @ {} | Size: {} | Next: SELL (Close) @ {}",
                                 zone_idx, px, size, zone.upper_price
                             );
                             (ZoneState::WaitingSell, px, None, zone.upper_price, false)
@@ -561,7 +564,7 @@ impl Strategy for PerpGridStrategy {
                             let pnl = (px - zone.entry_price) * size;
                             zone.roundtrip_count += 1;
                             info!(
-                                "Zone {} | SELL (Close Long) Filled @ {} | PnL: {:.4} | Next: BUY (Open) @ {}",
+                                "[PERP_GRID] Zone {} | SELL (Close Long) Filled @ {} | PnL: {:.4} | Next: BUY (Open) @ {}",
                                 zone_idx, px, pnl, zone.lower_price
                             );
                             (
@@ -574,7 +577,7 @@ impl Strategy for PerpGridStrategy {
                         }
                         (ZoneState::WaitingSell, true) => {
                             info!(
-                                "Zone {} | SELL (Open Short) Filled @ {} | Size: {} | Next: BUY (Close) @ {}",
+                                "[PERP_GRID] Zone {} | SELL (Open Short) Filled @ {} | Size: {} | Next: BUY (Close) @ {}",
                                 zone_idx, px, size, zone.lower_price
                             );
                             (ZoneState::WaitingBuy, px, None, zone.lower_price, true)
@@ -583,7 +586,7 @@ impl Strategy for PerpGridStrategy {
                             let pnl = (zone.entry_price - px) * size;
                             zone.roundtrip_count += 1;
                             info!(
-                                "Zone {} | BUY (Close Short) Filled @ {} | PnL: {:.4} | Next: SELL (Open) @ {}",
+                                "[PERP_GRID] Zone {} | BUY (Close Short) Filled @ {} | PnL: {:.4} | Next: SELL (Open) @ {}",
                                 zone_idx, px, pnl, zone.upper_price
                             );
                             (
@@ -604,13 +607,13 @@ impl Strategy for PerpGridStrategy {
                 self.place_counter_order(zone_idx, next_px, is_next_buy, ctx)?;
             } else {
                 debug!(
-                    "Fill received for unknown/inactive Perp CLOID: {}",
+                    "[PERP_GRID] Fill received for unknown/inactive Perp CLOID: {}",
                     cloid_val
                 );
             }
         } else {
             debug!(
-                "Fill received without CLOID in PerpStrategy at price {}",
+                "[PERP_GRID] Fill received without CLOID in PerpStrategy at price {}",
                 px
             );
         }

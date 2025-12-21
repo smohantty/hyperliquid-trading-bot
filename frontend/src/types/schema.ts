@@ -60,7 +60,7 @@ export interface PerpGridSummary {
 }
 
 // Union type for any strategy summary
-export type StrategySummary = 
+export type StrategySummary =
     | { type: 'spot_grid'; data: SpotGridSummary }
     | { type: 'perp_grid'; data: PerpGridSummary };
 

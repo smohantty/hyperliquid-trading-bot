@@ -105,7 +105,32 @@ impl SpotGridStrategy {
         }
     }
 
-    // Removed on_tick from here
+    /// Calculate grid spacing as percentage (min, max)
+    /// For geometric: both values are the same
+    /// For arithmetic: min is at highest price, max is at lowest price
+    fn calculate_grid_spacing_pct(&self) -> (f64, f64) {
+        let n = self.grid_count as f64;
+
+        match self.grid_type {
+            GridType::Geometric => {
+                // Geometric: constant ratio between levels
+                // ratio = (upper/lower)^(1/n)
+                // spacing_pct = (ratio - 1) * 100
+                let ratio = (self.upper_price / self.lower_price).powf(1.0 / n);
+                let spacing_pct = (ratio - 1.0) * 100.0;
+                (spacing_pct, spacing_pct)
+            }
+            GridType::Arithmetic => {
+                // Arithmetic: constant dollar spacing
+                // spacing = (upper - lower) / n
+                // At lower prices, the % is higher; at higher prices, the % is lower
+                let spacing = (self.upper_price - self.lower_price) / n;
+                let min_pct = (spacing / self.upper_price) * 100.0; // Smallest % at highest price
+                let max_pct = (spacing / self.lower_price) * 100.0; // Largest % at lowest price
+                (min_pct, max_pct)
+            }
+        }
+    }
 
     fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         if self.grid_count < 2 {
@@ -709,6 +734,9 @@ impl Strategy for SpotGridStrategy {
         // Calculate total roundtrips from zones
         let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
 
+        // Calculate grid spacing percentage
+        let grid_spacing_pct = self.calculate_grid_spacing_pct();
+
         StrategySummary::SpotGrid(SpotGridSummary {
             symbol: self.symbol.clone(),
             price: current_price,
@@ -721,6 +749,7 @@ impl Strategy for SpotGridStrategy {
             grid_count: self.zones.len() as u32,
             range_low: self.lower_price,
             range_high: self.upper_price,
+            grid_spacing_pct,
             roundtrips: total_roundtrips,
             base_balance: ctx.get_spot_total(&self.base_asset),
             quote_balance: ctx.get_spot_total(&self.quote_asset),

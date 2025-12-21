@@ -19,6 +19,7 @@ impl CachedSummary {
     fn format_status(&self) -> String {
         match self {
             CachedSummary::SpotGrid(s) => {
+                let spacing = format_spacing(s.grid_spacing_pct);
                 format!(
                     "🟢 <b>SpotGrid</b>\n\
                      Symbol: <code>{}</code>\n\
@@ -26,7 +27,7 @@ impl CachedSummary {
                      📉 Price: <code>{:.4}</code>\n\
                      📦 Position: <code>{:.4}</code> @ <code>{:.4}</code>\n\
                      🔄 Roundtrips: <code>{}</code>\n\
-                     📊 Grid: {} zones [{:.2} - {:.2}]",
+                     📊 Grid: {} zones [{:.2} - {:.2}] · {}",
                     s.symbol,
                     s.realized_pnl,
                     s.unrealized_pnl,
@@ -36,7 +37,8 @@ impl CachedSummary {
                     s.roundtrips,
                     s.grid_count,
                     s.range_low,
-                    s.range_high
+                    s.range_high,
+                    spacing
                 )
             }
             CachedSummary::PerpGrid(s) => {
@@ -45,6 +47,7 @@ impl CachedSummary {
                     "Short" => "📉",
                     _ => "➖",
                 };
+                let spacing = format_spacing(s.grid_spacing_pct);
                 format!(
                     "🟢 <b>PerpGrid ({} {}x)</b>\n\
                      Symbol: <code>{}</code>\n\
@@ -52,7 +55,7 @@ impl CachedSummary {
                      📉 Price: <code>{:.4}</code>\n\
                      {} Position: <code>{:.4}</code> {} @ <code>{:.4}</code>\n\
                      🔄 Roundtrips: <code>{}</code>\n\
-                     📊 Grid: {} zones [{:.2} - {:.2}]",
+                     📊 Grid: {} zones [{:.2} - {:.2}] · {}",
                     s.grid_bias,
                     s.leverage,
                     s.symbol,
@@ -66,10 +69,21 @@ impl CachedSummary {
                     s.roundtrips,
                     s.grid_count,
                     s.range_low,
-                    s.range_high
+                    s.range_high,
+                    spacing
                 )
             }
         }
+    }
+}
+
+/// Format grid spacing: "2.50%" for geometric, "1.80% - 3.20%" for arithmetic
+fn format_spacing(spacing: (f64, f64)) -> String {
+    let (min, max) = spacing;
+    if (min - max).abs() < 0.01 {
+        format!("{:.2}%", min)
+    } else {
+        format!("{:.2}% - {:.2}%", min, max)
     }
 }
 

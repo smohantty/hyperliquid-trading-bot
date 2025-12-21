@@ -118,6 +118,10 @@ const SummaryCard: React.FC = () => {
                 }}>
                     <span>
                         Grid: {s.grid_count} zones · ${s.range_low.toLocaleString()} - ${s.range_high.toLocaleString()}
+                        {' · '}
+                        <span style={{ color: 'var(--accent-yellow)' }}>
+                            {formatSpacing(s.grid_spacing_pct)}
+                        </span>
                     </span>
                     <span style={{ color: 'var(--accent-yellow)', fontWeight: 500 }}>
                         {s.roundtrips} roundtrips
@@ -206,6 +210,10 @@ const SummaryCard: React.FC = () => {
             }}>
                 <span>
                     Grid: {s.grid_count} zones · ${s.range_low.toFixed(2)} - ${s.range_high.toFixed(2)}
+                    {' · '}
+                    <span style={{ color: 'var(--accent-yellow)' }}>
+                        {formatSpacing(s.grid_spacing_pct)}
+                    </span>
                 </span>
                 <span style={{ color: 'var(--accent-yellow)', fontWeight: 500 }}>
                     {s.roundtrips} roundtrips
@@ -213,6 +221,15 @@ const SummaryCard: React.FC = () => {
             </div>
         </div>
     );
+};
+
+// Format grid spacing: "2.5%" for geometric, "1.8% - 3.2%" for arithmetic
+const formatSpacing = (spacing: [number, number]): string => {
+    const [min, max] = spacing;
+    if (Math.abs(min - max) < 0.01) {
+        return `${min.toFixed(2)}%`;
+    }
+    return `${min.toFixed(2)}% - ${max.toFixed(2)}%`;
 };
 
 const StatItem: React.FC<{

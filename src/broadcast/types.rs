@@ -60,7 +60,8 @@ pub struct SpotGridSummary {
     pub grid_count: u32,
     pub range_low: f64,
     pub range_high: f64,
-    pub roundtrips: u32, // Completed buy→sell cycles
+    pub grid_spacing_pct: (f64, f64), // (min%, max%) - same for geometric, different for arithmetic
+    pub roundtrips: u32,              // Completed buy→sell cycles
 
     // Wallet balances
     pub base_balance: f64,
@@ -90,6 +91,7 @@ pub struct PerpGridSummary {
     pub grid_count: u32,
     pub range_low: f64,
     pub range_high: f64,
+    pub grid_spacing_pct: (f64, f64), // (min%, max%) - same for geometric, different for arithmetic
     pub roundtrips: u32,
 
     // Wallet

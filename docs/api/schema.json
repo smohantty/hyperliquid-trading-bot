@@ -222,6 +222,7 @@
         "grid_count",
         "range_low",
         "range_high",
+        "grid_spacing_pct",
         "roundtrips",
         "base_balance",
         "quote_balance"
@@ -262,6 +263,15 @@
         "range_high": {
           "type": "number"
         },
+        "grid_spacing_pct": {
+          "type": "array",
+          "description": "Grid spacing as percentage (min%, max%). Same values for geometric, different for arithmetic",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
         "roundtrips": {
           "type": "integer",
           "description": "Completed buy→sell cycles"
@@ -291,6 +301,7 @@
         "grid_count",
         "range_low",
         "range_high",
+        "grid_spacing_pct",
         "roundtrips",
         "margin_balance"
       ],
@@ -339,6 +350,15 @@
         },
         "range_high": {
           "type": "number"
+        },
+        "grid_spacing_pct": {
+          "type": "array",
+          "description": "Grid spacing as percentage (min%, max%). Same values for geometric, different for arithmetic",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
         },
         "roundtrips": {
           "type": "integer"

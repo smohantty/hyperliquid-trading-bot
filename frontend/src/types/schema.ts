@@ -33,6 +33,7 @@ export interface SpotGridSummary {
     grid_count: number;
     range_low: number;
     range_high: number;
+    grid_spacing_pct: [number, number]; // (min%, max%) - same for geometric, different for arithmetic
     roundtrips: number;
     base_balance: number;
     quote_balance: number;
@@ -53,6 +54,7 @@ export interface PerpGridSummary {
     grid_count: number;
     range_low: number;
     range_high: number;
+    grid_spacing_pct: [number, number]; // (min%, max%) - same for geometric, different for arithmetic
     roundtrips: number;
     margin_balance: number;
 }

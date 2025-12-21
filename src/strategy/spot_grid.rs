@@ -120,18 +120,23 @@ impl SpotGridStrategy {
         };
 
         // 1. Generate Zones
-        let total_base_required = self.generate_grid_levels(&market_info)?;
+        let (total_base_required, total_quote_required) =
+            self.generate_grid_levels(&market_info)?;
 
         info!(
-            "[SPOT_GRID] Zones initialized. Total {} Required: {}",
-            self.base_asset, total_base_required
+            "[SPOT_GRID] Zones initialized. {} Required: {}, {} Required: {}",
+            self.base_asset, total_base_required, self.quote_asset, total_quote_required
         );
 
-        // 2. Check Assets & Acquire if necessary
-        self.check_initial_acquisition(ctx, &market_info, total_base_required)
+        // Seed inventory with what we actually have right now
+        // This is critical for accurate tracking once the grid starts
+        self.inventory = ctx.get_spot_available(&self.base_asset);
+
+        // 2. Check Assets & Rebalance if necessary
+        self.check_initial_acquisition(ctx, &market_info, total_base_required, total_quote_required)
     }
 
-    fn generate_grid_levels(&mut self, market_info: &MarketInfo) -> Result<f64> {
+    fn generate_grid_levels(&mut self, market_info: &MarketInfo) -> Result<(f64, f64)> {
         // Generate Levels
         let prices: Vec<f64> = common::calculate_grid_prices(
             self.grid_type.clone(),
@@ -160,6 +165,7 @@ impl SpotGridStrategy {
 
         self.zones.clear();
         let mut total_base_required = 0.0;
+        let mut total_quote_required = 0.0;
 
         for i in 0..num_zones {
             let lower = prices[i];
@@ -177,6 +183,8 @@ impl SpotGridStrategy {
 
             if initial_state == ZoneState::WaitingSell {
                 total_base_required += size;
+            } else {
+                total_quote_required += size * lower;
             }
 
             self.zones.push(GridZone {
@@ -196,7 +204,10 @@ impl SpotGridStrategy {
         }
 
         // Normalize total requirement to exchange precision
-        Ok(market_info.round_size(total_base_required))
+        Ok((
+            market_info.round_size(total_base_required),
+            total_quote_required,
+        ))
     }
 
     fn check_initial_acquisition(
@@ -204,22 +215,25 @@ impl SpotGridStrategy {
         ctx: &mut StrategyContext,
         market_info: &MarketInfo,
         total_base_required: f64,
+        total_quote_required: f64,
     ) -> Result<()> {
         let available_base = ctx.get_spot_available(&self.base_asset);
-        let deficit = total_base_required - available_base;
+        let available_quote = ctx.get_spot_available(&self.quote_asset);
+
+        let base_deficit = total_base_required - available_base;
+        let quote_deficit = total_quote_required - available_quote;
 
         // Use trigger_price if available, otherwise last_price
         let initial_price = self.trigger_price.unwrap_or(market_info.last_price);
 
-        if deficit > 0.0 {
-            // Acquisition Mode
-            let mut acquisition_price = initial_price; // Fallback default
+        if base_deficit > 0.0 {
+            // Case 1: Not enough base asset (e.g. BTC) to cover the SELL levels.
+            // Need to BUY base asset.
+            let mut acquisition_price = initial_price;
 
             if let Some(trigger) = self.trigger_price {
-                // If triggered, use trigger price for acquisition
                 acquisition_price = market_info.round_price(trigger);
             } else {
-                // Standard logic: try to buy at a grid level
                 let nearest_level = self
                     .zones
                     .iter()
@@ -234,27 +248,23 @@ impl SpotGridStrategy {
                 }
             }
 
-            // Apply 0.2% safety buffer to cover exchange fees
-            let raw_deficit = deficit;
             let rounded_deficit = market_info.clamp_to_min_notional(
-                raw_deficit,
+                base_deficit,
                 acquisition_price,
                 MIN_NOTIONAL_VALUE,
             );
 
             if rounded_deficit > 0.0 {
-                // Check if we have enough QUOTE (USDC) to buy this deficit
                 let estimated_cost = rounded_deficit * acquisition_price;
-                let available_quote = ctx.get_spot_available(&self.quote_asset);
 
                 info!(
-                    "[SPOT_GRID] Acquisition required: deficit={} {}, rounded to {} {} (~${:.2}) at price {}",
-                    deficit, self.base_asset, rounded_deficit, self.base_asset, estimated_cost, acquisition_price
+                    "[SPOT_GRID] Base deficit detected: deficit={} {}, rounded to {} {} (~${:.2}) @ price {}",
+                    base_deficit, self.base_asset, rounded_deficit, self.base_asset, estimated_cost, acquisition_price
                 );
 
                 if available_quote < estimated_cost {
                     let msg = format!(
-                        "Insufficient Quote Balance for acquisition! Need ~{:.2} {}, Have {:.2} {}. Deficit: {} {}", 
+                        "Insufficient Quote Balance for acquisition! Need ~{:.2} {}, Have {:.2} {}. Base Deficit: {} {}", 
                         estimated_cost, self.quote_asset, available_quote, self.quote_asset, rounded_deficit, self.base_asset
                     );
                     error!("[SPOT_GRID] {}", msg);
@@ -262,7 +272,7 @@ impl SpotGridStrategy {
                 }
 
                 info!(
-                    "[SPOT_GRID] ACQUISITION_NEEDED. Acquiring {} {}. Cost: ~{:.2} {} @ {}.",
+                    "[SPOT_GRID] REBALANCING (BUY). Acquiring {} {}. Cost: ~{:.2} {} @ {}.",
                     rounded_deficit,
                     self.base_asset,
                     estimated_cost,
@@ -277,6 +287,75 @@ impl SpotGridStrategy {
                     is_buy: true,
                     price: acquisition_price,
                     sz: rounded_deficit,
+                    reduce_only: false,
+                    cloid: Some(cloid),
+                });
+                return Ok(());
+            }
+        } else if quote_deficit > 0.0 {
+            // Case 2: Enough base asset, but NOT enough quote asset (e.g. USDC) for BUY levels.
+            // Need to SELL some base asset to get quote.
+            let mut acquisition_price = initial_price;
+
+            if let Some(trigger) = self.trigger_price {
+                acquisition_price = market_info.round_price(trigger);
+            } else {
+                // Find nearest level ABOVE market to sell at
+                let nearest_sell_level = self
+                    .zones
+                    .iter()
+                    .filter(|z| z.upper_price > market_info.last_price)
+                    .map(|z| z.upper_price)
+                    .fold(f64::INFINITY, f64::min);
+
+                if nearest_sell_level.is_finite() {
+                    acquisition_price = market_info.round_price(nearest_sell_level);
+                } else if !self.zones.is_empty() {
+                    acquisition_price =
+                        market_info.round_price(self.zones.last().unwrap().upper_price);
+                }
+            }
+
+            let base_to_sell = quote_deficit / acquisition_price;
+            let rounded_sell_sz = market_info.clamp_to_min_notional(
+                base_to_sell,
+                acquisition_price,
+                MIN_NOTIONAL_VALUE,
+            );
+
+            if rounded_sell_sz > 0.0 {
+                let estimated_proceeds = rounded_sell_sz * acquisition_price;
+
+                info!(
+                    "[SPOT_GRID] Quote deficit detected: deficit={} {}, need to sell ~{} {} (~${:.2}) @ price {}",
+                    quote_deficit, self.quote_asset, rounded_sell_sz, self.base_asset, estimated_proceeds, acquisition_price
+                );
+
+                if available_base < rounded_sell_sz {
+                    let msg = format!(
+                        "Insufficient Base Balance for rebalancing! Need to sell {} {}, Have {} {}. Quote Deficit: {} {}",
+                        rounded_sell_sz, self.base_asset, available_base, self.base_asset, quote_deficit, self.quote_asset
+                    );
+                    error!("[SPOT_GRID] {}", msg);
+                    return Err(anyhow!(msg));
+                }
+
+                info!(
+                    "[SPOT_GRID] REBALANCING (SELL). Selling {} {}. Proceeds: ~{:.2} {} @ {}.",
+                    rounded_sell_sz,
+                    self.base_asset,
+                    estimated_proceeds,
+                    self.quote_asset,
+                    acquisition_price
+                );
+                let cloid = ctx.generate_cloid();
+                self.state = StrategyState::AcquiringAssets { cloid };
+
+                ctx.place_order(OrderRequest::Limit {
+                    symbol: self.symbol.clone(),
+                    is_buy: false,
+                    price: acquisition_price,
+                    sz: rounded_sell_sz,
                     reduce_only: false,
                     cloid: Some(cloid),
                 });
@@ -342,27 +421,38 @@ impl SpotGridStrategy {
 
     fn handle_acquisition_fill(
         &mut self,
+        side: &str,
         size: f64,
         px: f64,
         fee: f64,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
+        let is_buy = side.eq_ignore_ascii_case("buy") || side.eq_ignore_ascii_case("b");
+
         info!(
-            "[SPOT_GRID] Acquisition order filled! Size: {} @ {}. Fee: {}. Starting grid.",
-            size, px, fee
+            "[SPOT_GRID] Rebalancing fill received! {} {} @ {}. Fee: {}. Starting grid.",
+            if is_buy { "Purchased" } else { "Sold" },
+            size,
+            px,
+            fee
         );
         self.total_fees += fee;
 
-        // Acquisition Fill: Initialize/Update Inventory
-        // Weighted Average incase we already had some (unlikely but safe)
-        let new_inventory = self.inventory + size;
-        if new_inventory > 0.0 {
-            self.avg_entry_price =
-                (self.avg_entry_price * self.inventory + px * size) / new_inventory;
+        // Update Inventory
+        if is_buy {
+            let new_inventory = self.inventory + size;
+            if new_inventory > 0.0 {
+                self.avg_entry_price =
+                    (self.avg_entry_price * self.inventory + px * size) / new_inventory;
+            }
+            self.inventory = new_inventory;
+        } else {
+            self.inventory = (self.inventory - size).max(0.0);
+            // Avg entry price remains same on sell
         }
-        self.inventory = new_inventory;
 
-        // Update entry_price for all waiting SELL zones to the actual acquisition price
+        // Update entry_price for all waiting SELL zones to the actual market price if we just bought
+        // or keep as is if we sold (selling usually means we are at the top of the grid anyway)
         for zone in &mut self.zones {
             if zone.state == ZoneState::WaitingSell {
                 zone.entry_price = px;
@@ -535,7 +625,7 @@ impl Strategy for SpotGridStrategy {
             // Check for Acquisition Fill
             if let StrategyState::AcquiringAssets { cloid: acq_cloid } = self.state {
                 if cloid_val == acq_cloid {
-                    return self.handle_acquisition_fill(size, px, fee, ctx);
+                    return self.handle_acquisition_fill(_side, size, px, fee, ctx);
                 }
             }
 
@@ -677,7 +767,8 @@ mod tests {
             MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
         );
         let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0); // Sufficient assets (Available = 100)
+        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0); // Sufficient base
+        ctx.update_spot_balance("USDC".to_string(), 1000.0, 1000.0); // Sufficient quote
 
         if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
             info.last_price = 100.0;
@@ -804,7 +895,8 @@ mod tests {
             MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
         );
         let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0); // Sufficient
+        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0); // Sufficient base
+        ctx.update_spot_balance("USDC".to_string(), 1000.0, 1000.0); // Sufficient quote
 
         if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
             info.last_price = 100.0;
@@ -913,7 +1005,8 @@ mod tests {
             MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
         );
         let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0);
+        ctx.update_spot_balance("HYPE".to_string(), 0.0, 0.0); // Start with 0 for tracking test consistency
+        ctx.update_spot_balance("USDC".to_string(), 2000.0, 2000.0); // Sufficient quote
 
         if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
             info.last_price = 100.0;
@@ -973,5 +1066,73 @@ mod tests {
 
         assert_eq!(strategy.inventory, 15.0);
         assert_eq!(strategy.avg_entry_price, 105.0); // Stays same on sell
+    }
+
+    #[test]
+    fn test_spot_grid_acquisition_sell() {
+        // Scenario: High Base, Low Quote.
+        // Expect: Sell excess base to cover quote requirements.
+
+        let config = StrategyConfig::SpotGrid {
+            symbol: "HYPE/USDC".to_string(),
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 5,
+            total_investment: 1000.0,
+            trigger_price: None,
+        };
+
+        let mut strategy = SpotGridStrategy::new(config);
+        let mut markets = HashMap::new();
+        markets.insert(
+            "HYPE/USDC".to_string(),
+            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
+        );
+        let mut ctx = StrategyContext::new(markets);
+
+        // Initial state: 100 HYPE (val: $10k), but 0 USDC.
+        // Grid requires USDC for buy levels.
+        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0);
+        ctx.update_spot_balance("USDC".to_string(), 0.0, 0.0);
+
+        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
+            info.last_price = 100.0;
+        }
+
+        // Tick 1: Init -> Should detect quote deficit and place SELL order
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        match strategy.state {
+            StrategyState::AcquiringAssets { .. } => (),
+            _ => panic!("Expected AcquiringAssets (Sell), got {:?}", strategy.state),
+        }
+
+        // Check placed order
+        assert_eq!(ctx.order_queue.len(), 1);
+        match &ctx.order_queue[0] {
+            crate::model::OrderRequest::Limit { is_buy, sz, .. } => {
+                assert_eq!(*is_buy, false, "Expected a SELL order for rebalancing");
+                assert!(*sz > 0.0);
+            }
+            _ => panic!("Expected Limit order"),
+        }
+
+        // Simulate Fill
+        let acq_cloid = match strategy.state {
+            StrategyState::AcquiringAssets { cloid } => cloid,
+            _ => panic!("Lost state"),
+        };
+
+        // Before fill, inventory was 100
+        assert_eq!(strategy.inventory, 100.0);
+
+        strategy
+            .on_order_filled("S", 5.0, 105.0, 0.1, Some(acq_cloid), &mut ctx)
+            .unwrap();
+
+        // After sell fill, inventory should be 95
+        assert_eq!(strategy.inventory, 95.0);
+        assert_eq!(strategy.state, StrategyState::Running);
     }
 }

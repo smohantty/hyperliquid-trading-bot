@@ -753,6 +753,7 @@ mod tests {
                     price: 100.0,
                     fee: 0.0,
                     cloid: Some(cloid),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )
@@ -856,6 +857,7 @@ mod tests {
                         price: 100.0,
                         fee: 0.0,
                         cloid: Some(cloid),
+                        raw_dir: None,
                     },
                     &mut ctx,
                 )
@@ -889,6 +891,7 @@ mod tests {
                     price: 80.0,
                     fee: 0.0,
                     cloid: Some(order_id),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )
@@ -917,6 +920,7 @@ mod tests {
                     price: 100.0,
                     fee: 0.0,
                     cloid: Some(sell_oid),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )

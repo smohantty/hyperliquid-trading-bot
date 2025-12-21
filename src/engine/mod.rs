@@ -640,6 +640,7 @@ impl Engine {
                                 price: px,
                                 fee: 0.0,
                                 cloid: Some(c),
+                                raw_dir: None, // Immediate fill from order response, no dir available
                             },
                             &mut runtime.ctx,
                         ) {
@@ -724,11 +725,42 @@ impl Engine {
                 // Parse cloid from fill using Cloid::from_hex_str
                 let cloid: Option<Cloid> = fill.cloid.as_ref().and_then(|s| Cloid::from_hex_str(s));
 
-                let side = if fill.dir.to_lowercase().starts_with('b') {
-                    OrderSide::Buy
+                // Debug: Log raw fill fields to understand side vs dir semantics
+                // - side: Order book side the order was on ("A" = Ask/Sell, "B" = Bid/Buy)
+                // - dir: Trade direction / position impact ("Open Long", "Close Long", "Open Short", "Close Short", or "Buy"/"Sell" for spot)
+                // - start_position: Position size before this fill
+                debug!(
+                    "[FILL_DEBUG] coin={} | side='{}' | dir='{}' | start_position='{}' | sz={} | px={} | cloid={:?}",
+                    fill.coin, fill.side, fill.dir, fill.start_position, amount, px, cloid
+                );
+
+                // Determine OrderSide from dir field:
+                // - Perps: "Open Long" / "Close Short" = Buy, "Open Short" / "Close Long" = Sell
+                // - Spot: "Buy" / "Sell"
+                let dir_lower = fill.dir.to_lowercase();
+                let side = if dir_lower.contains("long") {
+                    // "Open Long" = Buy, "Close Long" = Sell
+                    if dir_lower.starts_with("open") {
+                        OrderSide::Buy
+                    } else {
+                        OrderSide::Sell
+                    }
+                } else if dir_lower.contains("short") {
+                    // "Open Short" = Sell, "Close Short" = Buy
+                    if dir_lower.starts_with("open") {
+                        OrderSide::Sell
+                    } else {
+                        OrderSide::Buy
+                    }
                 } else {
-                    OrderSide::Sell
+                    // Spot: "Buy" or "Sell"
+                    if dir_lower.starts_with('b') {
+                        OrderSide::Buy
+                    } else {
+                        OrderSide::Sell
+                    }
                 };
+                debug!("[FILL_DEBUG] Parsed dir='{}' -> OrderSide::{}", fill.dir, side);
                 let fee: f64 = fill.fee.parse().unwrap_or(0.0);
 
                 // Audit Log: FILL
@@ -810,6 +842,7 @@ impl Engine {
                                     price: final_px,
                                     fee: final_fee,
                                     cloid: Some(c),
+                                    raw_dir: Some(fill.dir.clone()),
                                 },
                                 &mut runtime.ctx,
                             ) {
@@ -825,6 +858,7 @@ impl Engine {
                                 price: px,
                                 fee,
                                 cloid: Some(c),
+                                raw_dir: Some(fill.dir.clone()),
                             },
                             &mut runtime.ctx,
                         ) {
@@ -839,6 +873,7 @@ impl Engine {
                             price: px,
                             fee,
                             cloid: None,
+                            raw_dir: Some(fill.dir.clone()),
                         },
                         &mut runtime.ctx,
                     ) {

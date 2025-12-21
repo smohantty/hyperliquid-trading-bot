@@ -96,6 +96,11 @@ pub struct OrderFill {
     pub price: f64,
     pub fee: f64,
     pub cloid: Option<Cloid>,
+    /// Raw direction from exchange for debugging.
+    /// Perps: "Open Long", "Close Long", "Open Short", "Close Short"
+    /// Spot: "Buy", "Sell"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

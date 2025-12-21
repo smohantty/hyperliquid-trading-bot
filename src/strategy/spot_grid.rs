@@ -857,6 +857,7 @@ mod tests {
                     price: fill_price,
                     fee,
                     cloid: Some(acq_cloid),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )
@@ -940,6 +941,7 @@ mod tests {
                     price: fill_price,
                     fee: buy_fee,
                     cloid: Some(order_id),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )
@@ -968,6 +970,7 @@ mod tests {
                     price: sell_price,
                     fee: sell_fee,
                     cloid: Some(sell_order_id),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )
@@ -1045,6 +1048,7 @@ mod tests {
                     price: 100.0,
                     fee: 0.1,
                     cloid: Some(order_id),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )
@@ -1069,6 +1073,7 @@ mod tests {
                     price: 110.0,
                     fee: 0.1,
                     cloid: Some(order_id_2),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )
@@ -1092,6 +1097,7 @@ mod tests {
                     price: 120.0,
                     fee: 0.1,
                     cloid: Some(order_id_3),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )
@@ -1168,6 +1174,7 @@ mod tests {
                     price: 105.0,
                     fee: 0.1,
                     cloid: Some(acq_cloid),
+                    raw_dir: None,
                 },
                 &mut ctx,
             )

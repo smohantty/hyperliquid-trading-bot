@@ -14,7 +14,8 @@ const ActivityLog: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-            minHeight: '200px'
+            minHeight: '150px',
+            maxHeight: '300px'  // Fixed max height to prevent infinite expansion
         }}>
             {/* Header */}
             <div style={{

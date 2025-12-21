@@ -1,0 +1,114 @@
+use anyhow::{Context, Result};
+use chrono::Local;
+use csv::Writer;
+use serde::Serialize;
+use std::fs::{create_dir_all, OpenOptions};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+
+#[derive(Debug, Serialize, Clone)]
+pub struct OrderRecord {
+    pub timestamp: String,
+    pub symbol: String,
+    pub order_type: String, // REQ, SENT, FILL, ERROR
+    pub side: String,
+    pub price: f64,
+    pub size: f64,
+    pub cloid: Option<String>,
+    pub order_id: Option<u64>,
+    pub fee: Option<f64>,
+    pub notes: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct OrderAuditLogger {
+    writer: Arc<Mutex<Writer<std::fs::File>>>,
+}
+
+impl OrderAuditLogger {
+    pub fn new(log_dir: &str) -> Result<Self> {
+        let dir = Path::new(log_dir);
+        create_dir_all(dir).context("Failed to create log directory")?;
+
+        let file_path = dir.join("trades.csv");
+        let file_exists = file_path.exists();
+
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file_path)
+            .context("Failed to open trades.csv")?;
+
+        let mut writer = csv::WriterBuilder::new()
+            .has_headers(!file_exists)
+            .from_writer(file);
+
+        if !file_exists {
+            writer.write_record(&[
+                "timestamp",
+                "symbol",
+                "order_type",
+                "side",
+                "price",
+                "size",
+                "cloid",
+                "order_id",
+                "fee",
+                "notes",
+            ])?;
+            writer.flush()?;
+        }
+
+        Ok(Self {
+            writer: Arc::new(Mutex::new(writer)),
+        })
+    }
+
+    pub fn log(&self, record: OrderRecord) {
+        if let Ok(mut w) = self.writer.lock() {
+            if let Err(e) = w.serialize(record) {
+                eprintln!("Failed to write order audit log: {}", e);
+            } else {
+                let _ = w.flush();
+            }
+        }
+    }
+
+    pub fn log_req(&self, symbol: &str, side: &str, price: f64, size: f64, cloid: Option<String>) {
+        self.log(OrderRecord {
+            timestamp: Local::now().to_rfc3339(),
+            symbol: symbol.to_string(),
+            order_type: "REQ".to_string(),
+            side: side.to_string(),
+            price,
+            size,
+            cloid,
+            order_id: None,
+            fee: None,
+            notes: None,
+        });
+    }
+
+    pub fn log_fill(
+        &self,
+        symbol: &str,
+        side: &str,
+        price: f64,
+        size: f64,
+        cloid: Option<String>,
+        fee: f64,
+    ) {
+        self.log(OrderRecord {
+            timestamp: Local::now().to_rfc3339(),
+            symbol: symbol.to_string(),
+            order_type: "FILL".to_string(),
+            side: side.to_string(),
+            price,
+            size,
+            cloid,
+            order_id: None,
+            fee: Some(fee),
+            notes: None,
+        });
+    }
+}

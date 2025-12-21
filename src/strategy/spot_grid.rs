@@ -101,14 +101,14 @@ impl SpotGridStrategy {
 
     fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         if self.grid_count < 2 {
-            warn!("Grid count must be at least 2");
+            warn!("[SPOT_GRID] Grid count must be at least 2");
             return Err(anyhow!("Grid count must be at least 2"));
         }
 
         let market_info = match ctx.market_info(&self.symbol) {
             Some(info) => info,
             None => {
-                warn!("No market info for {}", self.symbol);
+                warn!("[SPOT_GRID] No market info for {}", self.symbol);
                 return Ok(()); // Retry later? Or error? Standard was return, so keeping Ok logic for now but ideally should be error if strictly init.
             }
         };
@@ -181,18 +181,19 @@ impl SpotGridStrategy {
             });
         }
 
-        info!(
-            "Setup completed. Total Base required for SELL zones: {}",
-            total_base_required
-        );
+        // Normalize total requirement to exchange precision
+        total_base_required = market_info.round_size(total_base_required);
 
         // Pre-flight check: Assets acquisition
         let base_coin = self.symbol.split('/').next().unwrap_or(&self.symbol);
+
+        info!(
+            "[SPOT_GRID] Zones initialized. Total {} Required: {}",
+            base_coin, total_base_required
+        );
+
         let available_base = ctx.get_spot_available(base_coin); // Use available for trading logic
         let deficit = total_base_required - available_base;
-
-        // Logic Split:
-        // ... (lines 192-258 unchanged usually, but I'm rewriting this block so its fine)
 
         if deficit > market_info.round_size(0.0) {
             // Acquisition Mode
@@ -217,8 +218,8 @@ impl SpotGridStrategy {
                 }
             }
 
-            // Apply 0.5% safety buffer to cover exchange fees, ensuring we have enough for SELL orders
-            let deficit_with_buffer = deficit * 1.005;
+            // Apply 0.2% safety buffer to cover exchange fees, ensuring we have enough for SELL orders
+            let deficit_with_buffer = deficit * 1.002;
             let min_acq_sz = market_info.ensure_min_sz(acquisition_price, 10.1);
             let rounded_deficit = min_acq_sz.max(market_info.round_size(deficit_with_buffer));
 
@@ -232,12 +233,12 @@ impl SpotGridStrategy {
                         "Insufficient Quote Balance for acquisition! Need ~{:.2} USDC, Have {:.2} USDC. Deficit: {} {}", 
                         estimated_cost, available_quote, rounded_deficit, base_coin
                     );
-                    error!("{}", msg);
+                    error!("[SPOT_GRID] {}", msg);
                     return Err(anyhow!(msg));
                 }
 
                 info!(
-                    "Acquisition Needed: Deficit of {} {}. Cost: ~{:.2} USDC. Placing BUY order @ {}.",
+                    "[SPOT_GRID] ACQUISITION_NEEDED. Acquiring {} {}. Cost: ~{:.2} USDC @ {}.",
                     rounded_deficit, base_coin, estimated_cost, acquisition_price
                 );
                 let cloid = ctx.generate_cloid();
@@ -258,12 +259,12 @@ impl SpotGridStrategy {
         // No Deficit (or negligible)
         if let Some(_trigger) = self.trigger_price {
             // Passive Wait Mode
-            info!("Assets sufficient. Entering WaitingForTrigger state.");
+            info!("[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state.");
             self.start_price = Some(market_info.last_price);
             self.state = StrategyState::WaitingForTrigger;
         } else {
             // No Trigger, Assets OK -> Running
-            info!("Assets verified. Starting Grid.");
+            info!("[SPOT_GRID] Assets verified. Starting Grid.");
             self.state = StrategyState::Running;
         }
 
@@ -299,7 +300,7 @@ impl SpotGridStrategy {
             self.active_orders.insert(cloid, index);
 
             info!(
-                "Zone {}: Placing {} order at {} (cloid: {})",
+                "[SPOT_GRID] Zone {}: Placing {} order at {} (cloid: {})",
                 index,
                 if is_buy { "BUY" } else { "SELL" },
                 price,
@@ -342,7 +343,7 @@ impl Strategy for SpotGridStrategy {
                         // Bullish Trigger: Wait for price >= trigger
                         if price >= trigger {
                             info!(
-                                "Price {} crossed trigger {} (UP). Starting.",
+                                "[SPOT_GRID] Price {} crossed trigger {} (UP). Starting.",
                                 price, trigger
                             );
                             triggered = true;
@@ -352,7 +353,7 @@ impl Strategy for SpotGridStrategy {
                         // (Or if start == trigger, we trigger immediately/next tick)
                         if price <= trigger {
                             info!(
-                                "Price {} crossed trigger {} (DOWN). Starting.",
+                                "[SPOT_GRID] Price {} crossed trigger {} (DOWN). Starting.",
                                 price, trigger
                             );
                             triggered = true;
@@ -391,7 +392,7 @@ impl Strategy for SpotGridStrategy {
             if let StrategyState::AcquiringAssets { cloid: acq_cloid } = self.state {
                 if cloid_val == acq_cloid {
                     info!(
-                        "Acquisition order filled! Size: {} @ {}. Fee: {}. Starting grid.",
+                        "[SPOT_GRID] Acquisition order filled! Size: {} @ {}. Fee: {}. Starting grid.",
                         size, px, fee
                     );
                     self.total_fees += fee;
@@ -423,7 +424,7 @@ impl Strategy for SpotGridStrategy {
 
                 if zone.order_id != Some(cloid_val) {
                     warn!(
-                        "Zone {} order_id mismatch! Expected {:?}, got {:?}",
+                        "[SPOT_GRID] Zone {} order_id mismatch! Expected {:?}, got {:?}",
                         zone_idx, zone.order_id, cloid_val
                     );
                 }
@@ -433,7 +434,7 @@ impl Strategy for SpotGridStrategy {
                 match zone.state {
                     ZoneState::WaitingBuy => {
                         info!(
-                            "Zone {} | BUY Filled @ {} | Size: {} | Fee: {:.4} | Next: SELL @ {}",
+                            "[SPOT_GRID] Zone {} | BUY Filled @ {} | Size: {} | Fee: {:.4} | Next: SELL @ {}",
                             zone_idx, px, size, fee, zone.upper_price
                         );
 
@@ -457,7 +458,7 @@ impl Strategy for SpotGridStrategy {
                         let price = market_info.round_price(zone.upper_price);
 
                         info!(
-                            "Zone {} | Placing SELL Order @ {} (cloid: {})",
+                            "[SPOT_GRID] Zone {} | Placing SELL Order @ {} (cloid: {})",
                             zone_idx, price, next_cloid
                         );
 
@@ -488,7 +489,7 @@ impl Strategy for SpotGridStrategy {
                         // Avg Entry Price remains unchanged on partial reduction (FIFO/WAC standard)
 
                         info!(
-                            "Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Fee: {:.4} | Next: BUY @ {}",
+                            "[SPOT_GRID] Zone {} | SELL Filled @ {} | Size: {} | PnL: {:.4} | Fee: {:.4} | Next: BUY @ {}",
                             zone_idx, px, size, pnl, fee, zone.lower_price
                         );
 
@@ -500,7 +501,7 @@ impl Strategy for SpotGridStrategy {
                         let price = market_info.round_price(zone.lower_price);
 
                         info!(
-                            "Zone {} | Placing BUY Order @ {} (cloid: {})",
+                            "[SPOT_GRID] Zone {} | Placing BUY Order @ {} (cloid: {})",
                             zone_idx, price, next_cloid
                         );
 
@@ -518,17 +519,20 @@ impl Strategy for SpotGridStrategy {
                     }
                 }
             } else {
-                debug!("Fill received for unknown/inactive CLOID: {}", cloid_val);
+                debug!(
+                    "[SPOT_GRID] Fill received for unknown/inactive CLOID: {}",
+                    cloid_val
+                );
             }
         } else {
-            debug!("Fill received without CLOID at price {}", px);
+            debug!("[SPOT_GRID] Fill received without CLOID at price {}", px);
         }
 
         Ok(())
     }
 
     fn on_order_failed(&mut self, cloid: u128, _ctx: &mut StrategyContext) -> Result<()> {
-        log::warn!("Order failed callback for cloid: {}", cloid);
+        log::warn!("[SPOT_GRID] Order failed callback for cloid: {}", cloid);
         Ok(())
     }
 

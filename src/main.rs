@@ -23,23 +23,54 @@ struct Args {
     ws_port: Option<u16>,
 }
 
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::Layer;
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info,hyperliquid_trading_bot=debug"),
-    )
-    .format(|buf, record| {
-        use std::io::Write;
-        writeln!(
-            buf,
-            "[{} {} {}] {}",
-            chrono::Local::now().format("%Y-%m-%dT%H:%M:%S"),
-            record.level(),
-            record.target(),
-            record.args()
-        )
-    })
-    .init();
+    // ---------------------------------------------------------
+    // 1. Setup Logging (Tracing)
+    // ---------------------------------------------------------
+    let file_appender = tracing_appender::rolling::daily("logs", "application.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    // Console Layer (Env Filter)
+    let console_layer = tracing_subscriber::fmt::layer()
+        .with_target(false)
+        .with_level(true)
+        .with_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(tracing::Level::INFO.into())
+                .add_directive("hyperliquid_trading_bot=debug".parse().unwrap()),
+        );
+
+    // File Layer (JSON)
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(non_blocking)
+        .json()
+        .with_filter(tracing_subscriber::EnvFilter::new(
+            "info,hyperliquid_trading_bot=debug",
+        ));
+
+    tracing_subscriber::registry()
+        .with(console_layer)
+        .with(file_layer)
+        .init();
+
+    // ---------------------------------------------------------
+    // 2. Setup Audit Logger
+    // ---------------------------------------------------------
+    let audit_logger =
+        match hyperliquid_trading_bot::logging::order_audit::OrderAuditLogger::new("logs") {
+            Ok(l) => Some(l),
+            Err(e) => {
+                error!("Failed to initialize Order Audit Logger: {}", e);
+                None
+            }
+        };
+
     let args = Args::parse();
 
     if args.list_strategies {
@@ -97,7 +128,6 @@ async fn main() -> Result<()> {
     }
 
     // Initialize Strategy
-    // Initialize Strategy
     let strategy = match init_strategy(config.clone()) {
         Ok(s) => s,
         Err(e) => {
@@ -118,7 +148,7 @@ async fn main() -> Result<()> {
     };
 
     // Initialize Engine
-    let engine = Engine::new(config, exchange_config, broadcaster.clone());
+    let engine = Engine::new(config, exchange_config, broadcaster.clone(), audit_logger);
 
     // Run Engine
     if let Err(e) = engine.run(strategy).await {

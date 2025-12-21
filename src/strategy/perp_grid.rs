@@ -220,7 +220,7 @@ impl PerpGridStrategy {
         }
 
         info!(
-            "Setup completed. Net position required: {}",
+            "[PERP_GRID] Setup completed. Net position required: {}",
             total_position_required
         );
 

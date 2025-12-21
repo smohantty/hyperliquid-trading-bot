@@ -6,8 +6,8 @@ use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
 use ethers::signers::{LocalWallet, Signer};
 use hyperliquid_rust_sdk::{BaseUrl, ExchangeClient, InfoClient};
-use log::{debug, error, info};
 use std::collections::{HashMap, HashSet};
+use tracing::{debug, error, info};
 
 // Updated imports based on documentation discovery
 use hyperliquid_rust_sdk::{ClientLimit, ClientOrder, ClientOrderRequest, UserData};
@@ -39,10 +39,13 @@ use crate::broadcast::{MarketEvent, OrderEvent, StatusBroadcaster, WSEvent};
 
 // ... existing imports ...
 
+use crate::logging::order_audit::OrderAuditLogger;
+
 pub struct Engine {
     config: StrategyConfig,
     exchange_config: crate::config::exchange::ExchangeConfig,
     broadcaster: StatusBroadcaster,
+    audit_logger: Option<OrderAuditLogger>, // Optional to allow running without it if needed, but we'll enforce it in main
 }
 
 impl Engine {
@@ -50,11 +53,13 @@ impl Engine {
         config: StrategyConfig,
         exchange_config: crate::config::exchange::ExchangeConfig,
         broadcaster: StatusBroadcaster,
+        audit_logger: Option<OrderAuditLogger>,
     ) -> Self {
         Self {
             config,
             exchange_config,
             broadcaster,
+            audit_logger,
         }
     }
 
@@ -91,7 +96,6 @@ impl Engine {
 
         // --- Fetch and cache Spot Metadata ---
         {
-            debug!("Loading Spot metadata...");
             match info_client.spot_meta().await {
                 Ok(spot_meta) => {
                     let index_to_token: HashMap<_, _> =
@@ -106,12 +110,7 @@ impl Engine {
                                 let coin = asset.name.clone();
                                 let asset_index = asset.index as u32;
 
-                                if symbol == self.config.symbol() {
-                                    debug!(
-                                        "Found Spot Market: {} (Coin: {}, Index: {})",
-                                        symbol, coin, asset_index
-                                    );
-                                }
+                                if symbol == self.config.symbol() {}
                                 let sz_decimals = base.sz_decimals as u32;
                                 let price_decimals = 8u32.saturating_sub(sz_decimals);
 
@@ -133,7 +132,6 @@ impl Engine {
 
         // --- Fetch and cache Perp Metadata ---
         {
-            debug!("Loading Perp metadata...");
             match info_client.meta().await {
                 Ok(meta) => {
                     for (i, asset) in meta.universe.iter().enumerate() {
@@ -268,7 +266,6 @@ impl Engine {
         loop {
             tokio::select! {
                  _ = balance_refresh_timer.tick() => {
-                    debug!("Refreshing balances...");
                     self.fetch_balances(&mut info_client, user_address, &mut runtime.ctx).await;
                  }
                  _ = status_summary_timer.tick() => {
@@ -558,11 +555,22 @@ impl Engine {
             }));
         }
 
+        // Audit Log: REQ
+        if let Some(logger) = &self.audit_logger {
+            logger.log_req(
+                coin,
+                if is_buy { "Buy" } else { "Sell" },
+                limit_px,
+                sz,
+                cloid.map(|c| format!("0x{:x}", c)),
+            );
+        }
+
         info!(
-            "(Live) Sending: {} {} {} @ {}",
+            "[ORDER_SENT] 0x{:x} -> Exchange ({} {} @ {})",
+            cloid.unwrap_or(0),
             if sdk_req.is_buy { "BUY" } else { "SELL" },
             sdk_req.sz,
-            coin,
             sdk_req.limit_px
         );
         match exchange_client.order(sdk_req, None).await {
@@ -726,6 +734,27 @@ impl Engine {
                     "S"
                 };
                 let fee: f64 = fill.fee.parse().unwrap_or(0.0);
+
+                // Audit Log: FILL
+                if let Some(logger) = &self.audit_logger {
+                    logger.log_fill(
+                        coin,
+                        if side == "B" { "Buy" } else { "Sell" },
+                        px,
+                        amount,
+                        cloid.map(|c| format!("0x{:x}", c)),
+                        fee,
+                    );
+                }
+
+                info!(
+                    "[ORDER_FILL] 0x{:x} {} {} @ {} (Fee: {})",
+                    cloid.unwrap_or(0),
+                    if side == "B" { "BUY" } else { "SELL" },
+                    amount,
+                    px,
+                    fee
+                );
 
                 // Broadcast Fill Event
                 self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {

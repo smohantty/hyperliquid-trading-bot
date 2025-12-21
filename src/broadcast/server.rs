@@ -47,7 +47,8 @@ impl StatusBroadcaster {
                 let mut lock = self.last_config.lock().unwrap();
                 *lock = Some(event.clone());
             }
-            WSEvent::Summary(_) => {
+            // Cache strategy summaries (either spot or perp)
+            WSEvent::SpotGridSummary(_) | WSEvent::PerpGridSummary(_) => {
                 let mut lock = self.last_summary.lock().unwrap();
                 *lock = Some(event.clone());
             }

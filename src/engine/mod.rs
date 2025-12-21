@@ -37,6 +37,7 @@ impl EngineRuntime {
     }
 }
 
+use crate::broadcast::types::StrategySummary;
 use crate::broadcast::{MarketEvent, OrderEvent, StatusBroadcaster, WSEvent};
 
 // ... existing imports ...
@@ -304,9 +305,16 @@ impl Engine {
                     self.fetch_balances(&mut info_client, user_address, &mut runtime.ctx).await;
                  }
                  _ = status_summary_timer.tick() => {
-                    // Periodic Status Broadcast
-                    let summary = strategy.get_status_snapshot(&runtime.ctx);
-                    self.broadcaster.send(WSEvent::Summary(summary));
+                    // Periodic Summary Broadcast
+                    let summary = strategy.get_summary(&runtime.ctx);
+                    match summary {
+                        StrategySummary::SpotGrid(s) => {
+                            self.broadcaster.send(WSEvent::SpotGridSummary(s));
+                        }
+                        StrategySummary::PerpGrid(s) => {
+                            self.broadcaster.send(WSEvent::PerpGridSummary(s));
+                        }
+                    }
                  }
                  _ = tokio::signal::ctrl_c() => {
                     info!("Shutdown signal received. Stopping Engine...");
@@ -679,6 +687,10 @@ impl Engine {
                             &mut runtime.ctx,
                         ) {
                             error!("Strategy on_order_filled error: {}", e);
+                        } else {
+                            // Broadcast grid state after fill
+                            let grid_state = strategy.get_grid_state(&runtime.ctx);
+                            self.broadcaster.send(WSEvent::GridState(grid_state));
                         }
                         runtime.completed_cloids.insert(c);
                     }
@@ -869,6 +881,10 @@ impl Engine {
                                 &mut runtime.ctx,
                             ) {
                                 error!("Strategy on_order_filled error: {}", e);
+                            } else {
+                                // Broadcast grid state after fill
+                                let grid_state = strategy.get_grid_state(&runtime.ctx);
+                                self.broadcaster.send(WSEvent::GridState(grid_state));
                             }
                         }
                     } else {
@@ -886,6 +902,10 @@ impl Engine {
                             &mut runtime.ctx,
                         ) {
                             error!("Strategy on_order_filled error: {}", e);
+                        } else {
+                            // Broadcast grid state after fill
+                            let grid_state = strategy.get_grid_state(&runtime.ctx);
+                            self.broadcaster.send(WSEvent::GridState(grid_state));
                         }
                     }
                 } else {
@@ -902,6 +922,10 @@ impl Engine {
                         &mut runtime.ctx,
                     ) {
                         error!("Strategy on_order_filled error: {}", e);
+                    } else {
+                        // Broadcast grid state after fill
+                        let grid_state = strategy.get_grid_state(&runtime.ctx);
+                        self.broadcaster.send(WSEvent::GridState(grid_state));
                     }
                 }
             }

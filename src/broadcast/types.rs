@@ -1,60 +1,140 @@
 use serde::{Deserialize, Serialize};
 
+// ============================================================
+// WebSocket Event Types
+// ============================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event_type", content = "data")]
 pub enum WSEvent {
+    /// Strategy configuration (sent on connect)
     #[serde(rename = "config")]
     Config(serde_json::Value),
-    #[serde(rename = "summary")]
-    Summary(StatusSummary),
+
+    /// Spot Grid strategy summary (high-level metrics)
+    #[serde(rename = "spot_grid_summary")]
+    SpotGridSummary(SpotGridSummary),
+
+    /// Perp Grid strategy summary (high-level metrics)
+    #[serde(rename = "perp_grid_summary")]
+    PerpGridSummary(PerpGridSummary),
+
+    /// Grid zone state for dashboard CLOB visualization
+    #[serde(rename = "grid_state")]
+    GridState(GridState),
+
+    /// Order update (placed, filled, cancelled, failed)
     #[serde(rename = "order_update")]
     OrderUpdate(OrderEvent),
+
+    /// Market price update
     #[serde(rename = "market_update")]
     MarketUpdate(MarketEvent),
+
+    /// Error notification
     #[serde(rename = "error")]
     Error(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WSEnvelope {
-    pub event_type: String,
-    pub timestamp: i64,
-    pub data: serde_json::Value,
-}
+// ============================================================
+// Strategy Summaries (High-level metrics)
+// ============================================================
 
+/// Spot Grid strategy summary
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StatusSummary {
-    pub strategy_name: String,
+pub struct SpotGridSummary {
     pub symbol: String,
+    pub price: f64,
+    pub state: String, // "Initializing", "Running", "AcquiringAssets", "WaitingForTrigger"
+
+    // Position
+    pub position_size: f64,    // Base asset inventory
+    pub avg_entry_price: f64,
+
+    // PnL
     pub realized_pnl: f64,
     pub unrealized_pnl: f64,
     pub total_fees: f64,
-    pub inventory: InventoryStats,
-    pub wallet: WalletStats,
-    pub price: f64,
-    pub zones: Vec<ZoneStatus>,    // For visual order book
-    pub custom: serde_json::Value, // Strategy-specific extras
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InventoryStats {
-    pub base_size: f64,
-    pub avg_entry_price: f64,
-}
+    // Grid metrics
+    pub grid_count: u32,
+    pub range_low: f64,
+    pub range_high: f64,
+    pub roundtrips: u32, // Completed buy→sell cycles
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WalletStats {
+    // Wallet balances
     pub base_balance: f64,
     pub quote_balance: f64,
 }
 
+/// Perp Grid strategy summary
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ZoneStatus {
+pub struct PerpGridSummary {
+    pub symbol: String,
     pub price: f64,
-    pub side: String,   // "Buy" or "Sell"
-    pub status: String, // "Active", "Filled"
-    pub size: f64,
+    pub state: String,
+
+    // Position
+    pub position_size: f64,  // Positive = Long, Negative = Short
+    pub position_side: String, // "Long", "Short", "Flat"
+    pub avg_entry_price: f64,
+
+    // PnL
+    pub realized_pnl: f64,
+    pub unrealized_pnl: f64,
+    pub total_fees: f64,
+
+    // Grid/Perp specific
+    pub leverage: u32,
+    pub grid_bias: String, // "Long", "Short", "Neutral"
+    pub grid_count: u32,
+    pub range_low: f64,
+    pub range_high: f64,
+    pub roundtrips: u32,
+
+    // Wallet
+    pub margin_balance: f64,
 }
+
+// ============================================================
+// Grid State (Zone data for dashboard CLOB visualization)
+// ============================================================
+
+/// Grid zone state for dashboard visualization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GridState {
+    pub symbol: String,
+    pub strategy_type: String,       // "spot_grid" or "perp_grid"
+    pub current_price: f64,
+    pub grid_bias: Option<String>,   // None for spot, "Long"/"Short"/"Neutral" for perp
+    pub zones: Vec<ZoneInfo>,
+}
+
+/// Individual zone information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZoneInfo {
+    pub index: usize,
+    pub lower_price: f64,
+    pub upper_price: f64,
+    pub size: f64,
+
+    // Raw order data
+    pub pending_side: String, // "Buy" or "Sell"
+    pub has_order: bool,
+    pub is_reduce_only: bool, // For perp: closing orders are reduce_only
+
+    // Semantic labels (for frontend rendering)
+    pub action_label: String, // "Buy", "Sell", "Open Long", "Close Long", etc.
+    pub action_type: String,  // "open" or "close"
+
+    // Metrics
+    pub entry_price: f64,
+    pub roundtrip_count: u32,
+}
+
+// ============================================================
+// Order and Market Events (existing)
+// ============================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderEvent {
@@ -70,4 +150,16 @@ pub struct OrderEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketEvent {
     pub price: f64,
+}
+
+// ============================================================
+// Strategy Summary Enum (for trait return type)
+// ============================================================
+
+/// Wrapper enum for strategy-specific summaries
+/// Used by the Strategy trait to return typed summaries
+#[derive(Debug, Clone)]
+pub enum StrategySummary {
+    SpotGrid(SpotGridSummary),
+    PerpGrid(PerpGridSummary),
 }

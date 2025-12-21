@@ -1,3 +1,4 @@
+use crate::broadcast::types::{GridState, StrategySummary};
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{StrategyContext, MIN_NOTIONAL_VALUE};
 use crate::model::{Cloid, OrderFill, OrderRequest, OrderSide};
@@ -695,61 +696,96 @@ impl Strategy for PerpGridStrategy {
         Ok(())
     }
 
-    fn get_status_snapshot(&self, ctx: &StrategyContext) -> crate::broadcast::types::StatusSummary {
-        use crate::broadcast::types::{InventoryStats, StatusSummary, WalletStats, ZoneStatus};
+    fn get_summary(&self, ctx: &StrategyContext) -> StrategySummary {
+        use crate::broadcast::types::PerpGridSummary;
 
-        let current_mid = ctx
+        let current_price = ctx
             .market_info(&self.symbol)
             .map(|m| m.last_price)
             .unwrap_or(0.0);
-        let grid_size = self.zones.first().map(|z| z.size).unwrap_or(0.0);
 
-        let refined_zones: Vec<ZoneStatus> = self
+        // Calculate total roundtrips from zones
+        let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
+
+        // Determine position side
+        let position_side = if self.position_size > 0.0 {
+            "Long"
+        } else if self.position_size < 0.0 {
+            "Short"
+        } else {
+            "Flat"
+        };
+
+        StrategySummary::PerpGrid(PerpGridSummary {
+            symbol: self.symbol.clone(),
+            price: current_price,
+            state: format!("{:?}", self.state),
+            position_size: self.position_size,
+            position_side: position_side.to_string(),
+            avg_entry_price: self.avg_entry_price,
+            realized_pnl: self.realized_pnl,
+            unrealized_pnl: self.unrealized_pnl,
+            total_fees: self.total_fees,
+            leverage: self.leverage,
+            grid_bias: format!("{:?}", self.grid_bias),
+            grid_count: self.zones.len() as u32,
+            range_low: self.lower_price,
+            range_high: self.upper_price,
+            roundtrips: total_roundtrips,
+            margin_balance: ctx.get_perp_available("USDC"),
+        })
+    }
+
+    fn get_grid_state(&self, ctx: &StrategyContext) -> GridState {
+        use crate::broadcast::types::ZoneInfo;
+
+        let current_price = ctx
+            .market_info(&self.symbol)
+            .map(|m| m.last_price)
+            .unwrap_or(0.0);
+
+        let zones = self
             .zones
             .iter()
             .map(|z| {
-                let side = if z.lower_price < current_mid {
-                    "Buy"
-                } else {
-                    "Sell"
+                // Determine action label and type based on pending_side and mode
+                let (action_label, action_type, is_reduce_only) = match (z.pending_side, z.mode) {
+                    (OrderSide::Buy, ZoneMode::Long) => {
+                        ("Open Long".to_string(), "open".to_string(), false)
+                    }
+                    (OrderSide::Sell, ZoneMode::Long) => {
+                        ("Close Long".to_string(), "close".to_string(), true)
+                    }
+                    (OrderSide::Sell, ZoneMode::Short) => {
+                        ("Open Short".to_string(), "open".to_string(), false)
+                    }
+                    (OrderSide::Buy, ZoneMode::Short) => {
+                        ("Close Short".to_string(), "close".to_string(), true)
+                    }
                 };
-                let status = if z.order_id.is_some() { "Open" } else { "Idle" };
-                ZoneStatus {
-                    price: z.lower_price,
-                    side: side.to_string(),
-                    status: status.to_string(),
-                    size: grid_size,
+
+                ZoneInfo {
+                    index: z.index,
+                    lower_price: z.lower_price,
+                    upper_price: z.upper_price,
+                    size: z.size,
+                    pending_side: z.pending_side.to_string(),
+                    has_order: z.order_id.is_some(),
+                    is_reduce_only,
+                    action_label,
+                    action_type,
+                    entry_price: z.entry_price,
+                    roundtrip_count: z.roundtrip_count,
                 }
             })
             .collect();
 
-        // Calculate actual total roundtrips from zones
-        let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
-
-        StatusSummary {
-            strategy_name: "PerpGrid".to_string(),
+        GridState {
             symbol: self.symbol.clone(),
-            realized_pnl: self.realized_pnl,
-            unrealized_pnl: self.unrealized_pnl,
-            total_fees: self.total_fees,
-            inventory: InventoryStats {
-                base_size: self.position_size,
-                avg_entry_price: self.avg_entry_price,
-            },
-            wallet: WalletStats {
-                base_balance: 0.0,
-                quote_balance: ctx.get_perp_available("USDC"),
-            },
-            price: current_mid,
-            zones: refined_zones,
-            custom: serde_json::json!({
-                "leverage": self.leverage,
-                "grid_bias": format!("{:?}", self.grid_bias),
-                "long_inventory": if self.position_size > 0.0 { self.position_size } else { 0.0 },
-                "short_inventory": if self.position_size < 0.0 { self.position_size.abs() } else { 0.0 },
-                "state": format!("{:?}", self.state),
-                "roundtrips": total_roundtrips,
-            }),
+            strategy_type: "perp_grid".to_string(),
+            current_price,
+            grid_bias: Some(format!("{:?}", self.grid_bias)),
+            zones,
         }
     }
 }

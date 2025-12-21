@@ -1,5 +1,6 @@
 use super::common;
 use super::types::GridType;
+use crate::broadcast::types::{GridState, StrategySummary};
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{MarketInfo, StrategyContext, MIN_NOTIONAL_VALUE};
 use crate::model::{Cloid, OrderFill, OrderRequest, OrderSide};
@@ -690,66 +691,82 @@ impl Strategy for SpotGridStrategy {
         Ok(())
     }
 
-    fn get_status_snapshot(&self, ctx: &StrategyContext) -> crate::broadcast::types::StatusSummary {
-        use crate::broadcast::types::{InventoryStats, StatusSummary, WalletStats, ZoneStatus};
+    fn get_summary(&self, ctx: &StrategyContext) -> StrategySummary {
+        use crate::broadcast::types::SpotGridSummary;
 
-        let current_mid = ctx
+        let current_price = ctx
             .market_info(&self.symbol)
             .map(|m| m.last_price)
             .unwrap_or(0.0);
-        let grid_size = self.zones.first().map(|z| z.size).unwrap_or(0.0);
-
-        let refined_zones: Vec<ZoneStatus> = self
-            .zones
-            .iter()
-            .map(|z| {
-                let side = if z.lower_price < current_mid {
-                    "Buy"
-                } else {
-                    "Sell"
-                };
-                let status = if z.order_id.is_some() { "Open" } else { "Idle" };
-                ZoneStatus {
-                    price: z.lower_price,
-                    side: side.to_string(),
-                    status: status.to_string(),
-                    size: grid_size,
-                }
-            })
-            .collect();
 
         // Calculate approx unrealized pnl for spot inventory
         let unrealized_pnl = if self.inventory > 0.0 && self.avg_entry_price > 0.0 {
-            (current_mid - self.avg_entry_price) * self.inventory
+            (current_price - self.avg_entry_price) * self.inventory
         } else {
             0.0
         };
 
-        // Calculate actual total roundtrips from zones
+        // Calculate total roundtrips from zones
         let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
 
-        StatusSummary {
-            strategy_name: "SpotGrid".to_string(),
+        StrategySummary::SpotGrid(SpotGridSummary {
             symbol: self.symbol.clone(),
+            price: current_price,
+            state: format!("{:?}", self.state),
+            position_size: self.inventory,
+            avg_entry_price: self.avg_entry_price,
             realized_pnl: self.realized_pnl,
             unrealized_pnl,
             total_fees: self.total_fees,
-            inventory: InventoryStats {
-                base_size: self.inventory,
-                avg_entry_price: self.avg_entry_price,
-            },
-            wallet: WalletStats {
-                base_balance: ctx.get_spot_total(&self.base_asset),
-                quote_balance: ctx.get_spot_total(&self.quote_asset),
-            },
-            price: current_mid,
-            zones: refined_zones,
-            custom: serde_json::json!({
-                "grid_count": self.zones.len(),
-                "range_low": self.lower_price,
-                "range_high": self.upper_price,
-                "roundtrips": total_roundtrips,
-            }),
+            grid_count: self.zones.len() as u32,
+            range_low: self.lower_price,
+            range_high: self.upper_price,
+            roundtrips: total_roundtrips,
+            base_balance: ctx.get_spot_total(&self.base_asset),
+            quote_balance: ctx.get_spot_total(&self.quote_asset),
+        })
+    }
+
+    fn get_grid_state(&self, ctx: &StrategyContext) -> GridState {
+        use crate::broadcast::types::ZoneInfo;
+
+        let current_price = ctx
+            .market_info(&self.symbol)
+            .map(|m| m.last_price)
+            .unwrap_or(0.0);
+
+        let zones = self
+            .zones
+            .iter()
+            .map(|z| {
+                // Spot grid: Buy = opening, Sell = closing
+                let (action_label, action_type) = match z.pending_side {
+                    OrderSide::Buy => ("Buy".to_string(), "open".to_string()),
+                    OrderSide::Sell => ("Sell".to_string(), "close".to_string()),
+                };
+
+                ZoneInfo {
+                    index: z.index,
+                    lower_price: z.lower_price,
+                    upper_price: z.upper_price,
+                    size: z.size,
+                    pending_side: z.pending_side.to_string(),
+                    has_order: z.order_id.is_some(),
+                    is_reduce_only: false, // Spot doesn't have reduce_only
+                    action_label,
+                    action_type,
+                    entry_price: z.entry_price,
+                    roundtrip_count: z.roundtrip_count,
+                }
+            })
+            .collect();
+
+        GridState {
+            symbol: self.symbol.clone(),
+            strategy_type: "spot_grid".to_string(),
+            current_price,
+            grid_bias: None, // Spot has no bias
+            zones,
         }
     }
 }

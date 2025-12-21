@@ -193,39 +193,22 @@ impl TelegramReporter {
         let bot = self.bot.clone();
         let chat_id = self.chat_id;
 
-        // Shared state for the Command Handler to access the latest Summary and Config
+        // Shared state for the Command Handler to access the latest Summary
         let last_summary: Arc<Mutex<Option<CachedSummary>>> = Arc::new(Mutex::new(None));
-        let last_config: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
-
         let last_summary_evt = last_summary.clone();
-        let last_config_evt = last_config.clone();
 
         // Spawn Command Handler (REPL)
         let bot_repl = bot.clone();
         tokio::spawn(async move {
             let handler = Update::filter_message().endpoint(move |bot: Bot, msg: Message| {
                 let summary_lock = last_summary.clone();
-                let config_lock = last_config.clone();
                 async move {
                     if let Some(text) = msg.text() {
                         if text == "/status" {
                             let summary = summary_lock.lock().await;
-                            let config = config_lock.lock().await;
 
                             if let Some(s) = &*summary {
-                                let mut resp = s.format_status();
-
-                                if let Some(c) = &*config {
-                                    // Format config as pretty JSON
-                                    if let Ok(config_str) = serde_json::to_string_pretty(c) {
-                                        resp.push_str(&format!(
-                                            "\n\n⚙️ <b>Config:</b>\n<pre>{}</pre>",
-                                            config_str
-                                        ));
-                                    }
-                                }
-
-                                bot.send_message(msg.chat.id, resp)
+                                bot.send_message(msg.chat.id, s.format_status())
                                     .parse_mode(teloxide::types::ParseMode::Html)
                                     .await?;
                             } else {
@@ -245,7 +228,7 @@ impl TelegramReporter {
                 .await;
         });
 
-        // Event Loop (Notifications)
+        // Event Loop - only cache summary updates, send error notifications
         let mut stream = BroadcastStream::new(self.receiver);
         while let Some(msg) = stream.next().await {
             match msg {
@@ -257,26 +240,6 @@ impl TelegramReporter {
                     WSEvent::PerpGridSummary(s) => {
                         let mut lock = last_summary_evt.lock().await;
                         *lock = Some(CachedSummary::PerpGrid(s));
-                    }
-                    WSEvent::Config(c) => {
-                        let mut lock = last_config_evt.lock().await;
-                        *lock = Some(c);
-                    }
-                    WSEvent::OrderUpdate(o) => {
-                        if o.status == "FILLED" {
-                            let icon = if o.side == "Buy" { "🟢" } else { "🔴" };
-                            let msg = format!(
-                                "{} <b>Order Filled</b>\nSide: {}\nSize: <code>{}</code>\nPrice: <code>{}</code>",
-                                icon, o.side, o.size, o.price
-                            );
-                            if let Err(e) = bot
-                                .send_message(chat_id, msg)
-                                .parse_mode(teloxide::types::ParseMode::Html)
-                                .await
-                            {
-                                error!("Failed to send Telegram notification: {}", e);
-                            }
-                        }
                     }
                     WSEvent::Error(e_msg) => {
                         let msg = format!("🔴 <b>Bot Stopped (Error)</b>\nREASON: {}", e_msg);

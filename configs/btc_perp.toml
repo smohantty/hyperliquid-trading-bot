@@ -6,4 +6,4 @@ lower_price = 87500.0
 grid_type = "arithmetic"
 grid_count = 20
 total_investment = 400.0
-grid_bias = "short"
+grid_bias = "neutral"

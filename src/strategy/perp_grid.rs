@@ -177,26 +177,39 @@ impl PerpGridStrategy {
                 market_info.clamp_to_min_notional(raw_size, mid_price, MIN_NOTIONAL_VALUE)
             };
 
+            // Zone classification based on price line:
+            // - Zone ABOVE price: lower > initial_price (both bounds > price)
+            // - Zone BELOW price: upper < initial_price (both bounds < price)
+            // - Zone CONTAINS price: lower <= initial_price <= upper
             let (pending_side, is_short_oriented) = match self.grid_bias {
                 GridBias::Long => {
-                    if initial_price < upper {
-                        (OrderSide::Sell, false)
+                    // Long bias: acquire long positions above price, wait to open below
+                    // Zone ABOVE price (lower > price): Have long → Sell to close
+                    // Zone AT/BELOW price (lower <= price): No position → Buy to open
+                    if initial_price < lower {
+                        (OrderSide::Sell, false)  // Zone above → close long
                     } else {
-                        (OrderSide::Buy, false)
+                        (OrderSide::Buy, false)   // Zone at/below → open long
                     }
                 }
                 GridBias::Short => {
-                    if initial_price > lower {
-                        (OrderSide::Buy, true)
+                    // Short bias: acquire short positions below price, wait to open above
+                    // Zone BELOW price (upper < price): Have short → Buy to close
+                    // Zone AT/ABOVE price (upper >= price): No position → Sell to open
+                    if initial_price > upper {
+                        (OrderSide::Buy, true)    // Zone below → close short
                     } else {
-                        (OrderSide::Sell, true)
+                        (OrderSide::Sell, true)   // Zone at/above → open short
                     }
                 }
                 GridBias::Neutral => {
+                    // Neutral bias: use zone midpoint for classification
+                    // Zone center above price → short-oriented
+                    // Zone center at/below price → long-oriented
                     if mid_price > initial_price {
-                        (OrderSide::Sell, true)
+                        (OrderSide::Sell, true)   // Zone above center → open short
                     } else {
-                        (OrderSide::Buy, false)
+                        (OrderSide::Buy, false)   // Zone at/below center → open long
                     }
                 }
             };
@@ -781,19 +794,25 @@ mod tests {
             upper_price: 110.0,
             lower_price: 90.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 3, // 90, 100, 110
+            grid_count: 3, // 90, 100, 110 -> zones: [90-100], [100-110]
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
         };
 
         let mut strategy = PerpGridStrategy::new(config);
-        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // Set last_price to 99 so zones are classified correctly
+        if let Some(info) = ctx.market_info_mut(&symbol) {
+            info.last_price = 99.0;
+        }
+        // Use price 99 (inside zone [90-100], below zone [100-110])
+        strategy.on_tick(99.0, &mut ctx).unwrap();
 
         assert_eq!(strategy.zones.len(), 2);
-        // Zone 0: 90-100. Price 100 -> WaitingBuy (Low)
+        // Zone 0 [90-100]: lower=90, 99 < 90 = false → Buy (zone at/below price)
         assert_eq!(strategy.zones[0].pending_side, OrderSide::Buy);
-        // Zone 1: 100-110. Price 100 < 110. -> WaitingSell (High)
+        // Zone 1 [100-110]: lower=100, 99 < 100 = true → Sell (zone above price)
         assert_eq!(strategy.zones[1].pending_side, OrderSide::Sell);
 
         match strategy.state {
@@ -817,14 +836,19 @@ mod tests {
             upper_price: 120.0,
             lower_price: 80.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 3, // 80, 100, 120
+            grid_count: 3, // 80, 100, 120 -> zones: [80-100], [100-120]
             total_investment: 100.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
         };
 
         let mut strategy = PerpGridStrategy::new(config);
-        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // Set last_price to 99 so zone [100-120] is above price (Sell)
+        if let Some(info) = ctx.market_info_mut(&symbol) {
+            info.last_price = 99.0;
+        }
+        strategy.on_tick(99.0, &mut ctx).unwrap();
 
         let cloid = match strategy.state {
             StrategyState::AcquiringAssets { cloid, .. } => cloid,
@@ -916,23 +940,27 @@ mod tests {
             upper_price: 120.0,
             lower_price: 80.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 3, // 80, 100, 120
+            grid_count: 3, // 80, 100, 120 -> zones: [80-100], [100-120]
             total_investment: 100.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
         };
 
         let mut strategy = PerpGridStrategy::new(config);
-        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // Set last_price to 99 so zone [100-120] is above price (Sell)
+        if let Some(info) = ctx.market_info_mut(&symbol) {
+            info.last_price = 99.0;
+        }
+        strategy.on_tick(99.0, &mut ctx).unwrap();
 
         // 1. Initial State: Empty position
         assert_eq!(strategy.position_size, 0.0);
 
         // 2. Acquisition Fill (if any)
-        // With current setup (Long Bias, Price 100, Range 80-120), zones are:
-        // 80-100 (WaitingBuy), 100-120 (WaitingSell).
-        // Bias Long + WaitingSell -> Buy to Open.
-        // So initialize_zones determines we need position for the upper zone.
+        // With current setup (Long Bias, Price 99, Range 80-120), zones are:
+        // Zone [80-100]: lower=80, 99 < 80 = false → Buy (open long)
+        // Zone [100-120]: lower=100, 99 < 100 = true → Sell (close long, need position first)
         // It enters AcquiringAssets.
 
         if let StrategyState::AcquiringAssets { cloid, target_size } = strategy.state {
@@ -1048,7 +1076,7 @@ mod tests {
             upper_price: 110.0,
             lower_price: 90.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 3, // Creates zones: 90-100, 100-110
+            grid_count: 3, // Creates zones: [90-100], [100-110]
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
@@ -1056,10 +1084,14 @@ mod tests {
 
         let mut strategy = PerpGridStrategy::new(config);
 
-        // Initialize at price 95 (below mid-point of 100)
-        // Zone 0 (90-100): contains price 95 -> WaitingSell (already have position)
-        // Zone 1 (100-110): above price 95 -> WaitingSell (already have position)
-        // For Long bias, both zones should start WaitingSell (need to acquire first)
+        // Set last_price to 95 so zones are classified correctly
+        if let Some(info) = ctx.market_info_mut(&symbol) {
+            info.last_price = 95.0;
+        }
+
+        // Initialize at price 95
+        // Zone 0 [90-100]: lower=90, 95 < 90 = false → Buy (open long, no position yet)
+        // Zone 1 [100-110]: lower=100, 95 < 100 = true → Sell (close long, need to acquire)
         strategy.on_tick(95.0, &mut ctx).unwrap();
 
         // Verify initial state
@@ -1248,14 +1280,21 @@ mod tests {
             upper_price: 110.0,
             lower_price: 90.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 3,
+            grid_count: 3, // Zones: [90-100], [100-110]
             total_investment: 1000.0,
             grid_bias: GridBias::Short, // Short bias!
             trigger_price: None,
         };
 
         let mut strategy = PerpGridStrategy::new(config);
-        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // Set last_price to 105 so Zone 0 is below price (Buy/close short)
+        // Zone 0 [90-100]: upper=100 < 105 → Buy (close short, acquired position)
+        // Zone 1 [100-110]: upper=110 < 105 → false → Sell (open short)
+        if let Some(info) = ctx.market_info_mut(&symbol) {
+            info.last_price = 105.0;
+        }
+        strategy.on_tick(105.0, &mut ctx).unwrap();
 
         // Handle acquisition for short bias
         if let StrategyState::AcquiringAssets { cloid, target_size } = strategy.state {
@@ -1264,7 +1303,7 @@ mod tests {
                     &OrderFill {
                         side: OrderSide::Sell,
                         size: target_size,
-                        price: 100.0,
+                        price: 105.0, // Acquisition at current price
                         fee: 0.5,
                         cloid: Some(cloid),
                         reduce_only: Some(false),
@@ -1339,6 +1378,169 @@ mod tests {
         println!(
             "✅ Short Bias Ping-Pong Complete! PnL: {:.4}",
             strategy.realized_pnl
+        );
+    }
+
+    /// Test to reproduce the Long bias zone classification bug.
+    ///
+    /// Grid: 90-110, 4 zones: [90-95], [95-100], [100-105], [105-110]
+    /// Price: 105 (exactly at zone boundary)
+    ///
+    /// Expected (zones truly ABOVE price line have lower > price):
+    /// - Zone [90-95]:   lower=90  < 105 → Buy (open long)
+    /// - Zone [95-100]:  lower=95  < 105 → Buy (open long)
+    /// - Zone [100-105]: lower=100 < 105 → Buy (open long) ← Contains price
+    /// - Zone [105-110]: lower=105 = 105 → Buy (at boundary, not above) ← EDGE CASE
+    ///
+    /// Current buggy behavior (uses upper):
+    /// - Zone [100-105]: 105 < 105? false → Buy ✓
+    /// - Zone [105-110]: 105 < 110? true → Sell ✗ (WRONG!)
+    #[test]
+    fn test_long_bias_zone_classification_at_boundary() {
+        let mut markets = HashMap::new();
+        markets.insert(
+            "BTC".to_string(),
+            crate::engine::context::MarketInfo::new("BTC".to_string(), "BTC".to_string(), 0, 5, 0),
+        );
+        let mut ctx = StrategyContext::new(markets);
+        ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
+
+        if let Some(info) = ctx.market_info_mut("BTC") {
+            info.last_price = 105.0;
+        }
+
+        let config = StrategyConfig::PerpGrid {
+            symbol: "BTC".to_string(),
+            leverage: 1,
+            is_isolated: false,
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 5, // 4 zones: [90-95], [95-100], [100-105], [105-110]
+            total_investment: 1000.0,
+            grid_bias: GridBias::Long,
+            trigger_price: None,
+        };
+
+        let mut strategy = PerpGridStrategy::new(config);
+
+        // Initialize at price 105 (exactly at zone [105-110] lower boundary)
+        strategy.on_tick(105.0, &mut ctx).unwrap();
+
+        // Print zone states for debugging
+        println!("Long Bias | Price: 105.0");
+        println!("Zone classification (current behavior):");
+        for zone in &strategy.zones {
+            println!(
+                "  Zone {} [{}-{}]: pending={:?}, is_short_oriented={}",
+                zone.index, zone.lower_price, zone.upper_price,
+                zone.pending_side, zone.is_short_oriented
+            );
+        }
+
+        // Zone [105-110]: lower=105, price=105
+        // This zone's lower boundary EQUALS the price
+        // Per user's logic: zone is NOT above (lower > price fails: 105 > 105 = false)
+        // So it should be Buy (waiting to open long), not Sell
+        let zone_at_boundary = &strategy.zones[3]; // [105-110]
+        assert_eq!(zone_at_boundary.lower_price, 105.0);
+        assert_eq!(zone_at_boundary.upper_price, 110.0);
+
+        // BUG: Current code classifies this as Sell because 105 < 110
+        // EXPECTED: Should be Buy because 105 is NOT < 105 (lower)
+        println!(
+            "\n🔍 Zone [105-110] at price boundary:"
+        );
+        println!("  Current: pending_side = {:?}", zone_at_boundary.pending_side);
+        println!("  Expected: pending_side = Buy (zone at boundary, not above)");
+
+        // This assertion will FAIL with current buggy code,
+        // demonstrating the bug:
+        assert_eq!(
+            zone_at_boundary.pending_side,
+            OrderSide::Buy,
+            "Zone [105-110] at price boundary should be Buy, not Sell"
+        );
+    }
+
+    /// Test to reproduce the Short bias zone classification bug.
+    ///
+    /// Grid: 90-110, 4 zones: [90-95], [95-100], [100-105], [105-110]
+    /// Price: 95 (exactly at zone boundary)
+    ///
+    /// Expected (zones truly BELOW price line have upper < price):
+    /// - Zone [90-95]:   upper=95  = 95 → Sell (at boundary, not below) ← EDGE CASE
+    /// - Zone [95-100]:  upper=100 > 95 → Sell (open short)
+    /// - Zone [100-105]: upper=105 > 95 → Sell (open short)
+    /// - Zone [105-110]: upper=110 > 95 → Sell (open short)
+    ///
+    /// Current buggy behavior (uses lower):
+    /// - Zone [90-95]: 95 > 90? true → Buy ✗ (WRONG!)
+    #[test]
+    fn test_short_bias_zone_classification_at_boundary() {
+        let mut markets = HashMap::new();
+        markets.insert(
+            "BTC".to_string(),
+            crate::engine::context::MarketInfo::new("BTC".to_string(), "BTC".to_string(), 0, 5, 0),
+        );
+        let mut ctx = StrategyContext::new(markets);
+        ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
+
+        if let Some(info) = ctx.market_info_mut("BTC") {
+            info.last_price = 95.0;
+        }
+
+        let config = StrategyConfig::PerpGrid {
+            symbol: "BTC".to_string(),
+            leverage: 1,
+            is_isolated: false,
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 5, // 4 zones: [90-95], [95-100], [100-105], [105-110]
+            total_investment: 1000.0,
+            grid_bias: GridBias::Short,
+            trigger_price: None,
+        };
+
+        let mut strategy = PerpGridStrategy::new(config);
+
+        // Initialize at price 95 (exactly at zone [90-95] upper boundary)
+        strategy.on_tick(95.0, &mut ctx).unwrap();
+
+        // Print zone states for debugging
+        println!("Short Bias | Price: 95.0");
+        println!("Zone classification (current behavior):");
+        for zone in &strategy.zones {
+            println!(
+                "  Zone {} [{}-{}]: pending={:?}, is_short_oriented={}",
+                zone.index, zone.lower_price, zone.upper_price,
+                zone.pending_side, zone.is_short_oriented
+            );
+        }
+
+        // Zone [90-95]: upper=95, price=95
+        // This zone's upper boundary EQUALS the price
+        // Per user's logic: zone is NOT below (upper < price fails: 95 < 95 = false)
+        // So it should be Sell (waiting to open short), not Buy
+        let zone_at_boundary = &strategy.zones[0]; // [90-95]
+        assert_eq!(zone_at_boundary.lower_price, 90.0);
+        assert_eq!(zone_at_boundary.upper_price, 95.0);
+
+        // BUG: Current code classifies this as Buy because 95 > 90
+        // EXPECTED: Should be Sell because 95 is NOT > 95 (upper)
+        println!(
+            "\n🔍 Zone [90-95] at price boundary:"
+        );
+        println!("  Current: pending_side = {:?}", zone_at_boundary.pending_side);
+        println!("  Expected: pending_side = Sell (zone at boundary, not below)");
+
+        // This assertion will FAIL with current buggy code,
+        // demonstrating the bug:
+        assert_eq!(
+            zone_at_boundary.pending_side,
+            OrderSide::Sell,
+            "Zone [90-95] at price boundary should be Sell, not Buy"
         );
     }
 }

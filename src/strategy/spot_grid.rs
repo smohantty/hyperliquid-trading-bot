@@ -130,7 +130,26 @@ impl SpotGridStrategy {
 
         // Seed inventory with what we actually have right now
         // This is critical for accurate tracking once the grid starts
-        self.inventory = ctx.get_spot_available(&self.base_asset);
+        let available_base = ctx.get_spot_available(&self.base_asset);
+        let available_quote = ctx.get_spot_available(&self.quote_asset);
+        self.inventory = available_base;
+
+        // Upfront Total Investment Validation
+        // Calculate approx market value of our total holdings for this strategy.
+        // We use the initial_price (which considers trigger price) as that is the price
+        // at which the asset requirements are calculated.
+        let initial_price = self.trigger_price.unwrap_or(market_info.last_price);
+        let total_wallet_value = (available_base * initial_price) + available_quote;
+
+        if total_wallet_value < self.total_investment {
+            let msg = format!(
+                "Insufficient Total Portfolio Value! Required: {:.2} {}, Have approx: {:.2} {} ({} {} + {} {}). Bailing out.",
+                self.total_investment, self.quote_asset, total_wallet_value, self.quote_asset,
+                available_base, self.base_asset, available_quote, self.quote_asset
+            );
+            error!("[SPOT_GRID] {}", msg);
+            return Err(anyhow!(msg));
+        }
 
         // 2. Check Assets & Rebalance if necessary
         self.check_initial_acquisition(ctx, &market_info, total_base_required, total_quote_required)

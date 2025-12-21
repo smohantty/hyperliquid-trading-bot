@@ -120,7 +120,7 @@ impl SpotGridStrategy {
         };
 
         // 1. Generate Zones
-        let total_base_required = self.generate_grid_levels(&market_info);
+        let total_base_required = self.generate_grid_levels(&market_info)?;
 
         info!(
             "[SPOT_GRID] Zones initialized. Total {} Required: {}",
@@ -131,7 +131,7 @@ impl SpotGridStrategy {
         self.check_initial_acquisition(ctx, &market_info, total_base_required)
     }
 
-    fn generate_grid_levels(&mut self, market_info: &MarketInfo) -> f64 {
+    fn generate_grid_levels(&mut self, market_info: &MarketInfo) -> Result<f64> {
         // Generate Levels
         let prices: Vec<f64> = common::calculate_grid_prices(
             self.grid_type.clone(),
@@ -146,6 +146,15 @@ impl SpotGridStrategy {
         let num_zones = self.grid_count as usize - 1;
         let quote_per_zone = self.total_investment / num_zones as f64;
 
+        if quote_per_zone < 10.0 {
+            let msg = format!(
+                "Quote per zone ({:.2}) is less than minimum order value (10.0). Increase total_investment or decrease grid_count.",
+                quote_per_zone
+            );
+            error!("[SPOT_GRID] {}", msg);
+            return Err(anyhow!(msg));
+        }
+
         // Use trigger_price if available, otherwise last_price
         let initial_price = self.trigger_price.unwrap_or(market_info.last_price);
 
@@ -158,10 +167,7 @@ impl SpotGridStrategy {
 
             // Calculate size based on quote investment per zone
             let raw_size = quote_per_zone / lower;
-            // Enforce minimum order value
-            let size = market_info
-                .ensure_min_sz(lower, 10.1)
-                .max(market_info.round_size(raw_size));
+            let size = market_info.round_size(raw_size);
 
             let initial_state = if initial_price < upper {
                 ZoneState::WaitingSell
@@ -190,7 +196,7 @@ impl SpotGridStrategy {
         }
 
         // Normalize total requirement to exchange precision
-        market_info.round_size(total_base_required)
+        Ok(market_info.round_size(total_base_required))
     }
 
     fn check_initial_acquisition(

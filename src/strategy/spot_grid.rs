@@ -1,5 +1,6 @@
 use super::common;
-use crate::config::strategy::{GridType, StrategyConfig};
+use super::types::{GridType, ZoneState};
+use crate::config::strategy::StrategyConfig;
 use crate::engine::context::StrategyContext;
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
@@ -7,12 +8,6 @@ use log::{debug, error, info, warn};
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-enum ZoneState {
-    WaitingBuy,
-    WaitingSell,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum StrategyState {
@@ -115,26 +110,15 @@ impl SpotGridStrategy {
         };
 
         // Generate Levels
-        let mut prices = Vec::with_capacity(self.grid_count as usize);
-        match self.grid_type {
-            GridType::Arithmetic => {
-                let step = (self.upper_price - self.lower_price) / (self.grid_count as f64 - 1.0);
-                for i in 0..self.grid_count {
-                    let mut price = self.lower_price + (i as f64 * step);
-                    price = market_info.round_price(price);
-                    prices.push(price);
-                }
-            }
-            GridType::Geometric => {
-                let ratio = (self.upper_price / self.lower_price)
-                    .powf(1.0 / (self.grid_count as f64 - 1.0));
-                for i in 0..self.grid_count {
-                    let mut price = self.lower_price * ratio.powi(i as i32);
-                    price = market_info.round_price(price);
-                    prices.push(price);
-                }
-            }
-        }
+        let prices: Vec<f64> = common::calculate_grid_prices(
+            self.grid_type.clone(),
+            self.lower_price,
+            self.upper_price,
+            self.grid_count,
+        )
+        .into_iter()
+        .map(|p| market_info.round_price(p))
+        .collect();
 
         let num_zones = self.grid_count as usize - 1;
         let quote_per_zone = self.total_investment / num_zones as f64;

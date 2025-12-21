@@ -4,6 +4,7 @@ use crate::config::strategy::StrategyConfig;
 pub mod common;
 pub mod perp_grid;
 pub mod spot_grid;
+pub mod types;
 
 use crate::engine::context::StrategyContext;
 use anyhow::Result;

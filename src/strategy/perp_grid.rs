@@ -284,53 +284,45 @@ impl PerpGridStrategy {
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) -> Result<()> {
-        let mut orders_to_place = Vec::new();
-
-        // 1. Identify needed orders
-
-        let mut intents = Vec::new();
-        for zone in &self.zones {
-            if zone.order_id.is_none() {
-                let is_buy = matches!(zone.state, ZoneState::WaitingBuy);
-                let price = if is_buy {
-                    zone.lower_price
-                } else {
-                    zone.upper_price
+        for idx in 0..self.zones.len() {
+            if self.zones[idx].order_id.is_none() {
+                let (is_buy, price, size, reduce_only) = {
+                    let zone = &self.zones[idx];
+                    let is_buy = matches!(zone.state, ZoneState::WaitingBuy);
+                    let price = if is_buy {
+                        zone.lower_price
+                    } else {
+                        zone.upper_price
+                    };
+                    let reduce_only = if zone.is_short_oriented {
+                        is_buy
+                    } else {
+                        !is_buy
+                    };
+                    (is_buy, price, zone.size, reduce_only)
                 };
-                intents.push((zone.index, is_buy, price, zone.size, zone.is_short_oriented));
+
+                let cloid = ctx.generate_cloid();
+                self.zones[idx].order_id = Some(cloid);
+                self.active_orders.insert(cloid, idx);
+
+                info!(
+                    "[PERP_GRID] Placing {:?} order @ {} (cloid: {}, reduce_only: {})",
+                    if is_buy { "BUY" } else { "SELL" },
+                    price,
+                    cloid,
+                    reduce_only
+                );
+
+                ctx.place_limit_order(
+                    self.symbol.clone(),
+                    is_buy,
+                    price,
+                    size,
+                    reduce_only,
+                    Some(cloid),
+                );
             }
-        }
-
-        // 2. Process intents
-        for (idx, is_buy, raw_price, raw_size, is_short_linked) in intents {
-            let cloid = ctx.generate_cloid();
-
-            let (price, size) = (raw_price, raw_size);
-
-            self.zones[idx].order_id = Some(cloid);
-            self.active_orders.insert(cloid, idx);
-
-            let reduce_only = if is_short_linked { is_buy } else { !is_buy };
-
-            orders_to_place.push((cloid, is_buy, price, size, reduce_only));
-        }
-
-        for (cloid, is_buy, price, size, reduce_only) in orders_to_place {
-            info!(
-                "[PERP_GRID] Placing {:?} order @ {} (cloid: {}, reduce_only: {})",
-                if is_buy { "BUY" } else { "SELL" },
-                price,
-                cloid,
-                reduce_only
-            );
-            ctx.place_limit_order(
-                self.symbol.clone(),
-                is_buy,
-                price,
-                size,
-                reduce_only,
-                Some(cloid),
-            );
         }
         Ok(())
     }

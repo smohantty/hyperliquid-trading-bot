@@ -1050,4 +1050,318 @@ mod tests {
             "Position size mismatch after SELL"
         );
     }
+
+    #[test]
+    fn test_perp_grid_pnl_and_ping_pong() {
+        // Test full ping-pong cycle with:
+        // 1. reduce_only flags set correctly
+        // 2. raw_dir matching exchange expectations
+        // 3. PnL calculation on closing fills
+        // 4. Fee accumulation
+        // 5. Counter order generation (ping-pong)
+
+        let symbol = "TEST".to_string();
+        let mut ctx = create_test_context(&symbol);
+        ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
+
+        let config = StrategyConfig::PerpGrid {
+            symbol: symbol.clone(),
+            leverage: 1,
+            is_isolated: true,
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 3, // Creates zones: 90-100, 100-110
+            total_investment: 1000.0,
+            grid_bias: GridBias::Long,
+            trigger_price: None,
+        };
+
+        let mut strategy = PerpGridStrategy::new(config);
+
+        // Initialize at price 95 (below mid-point of 100)
+        // Zone 0 (90-100): contains price 95 -> WaitingSell (already have position)
+        // Zone 1 (100-110): above price 95 -> WaitingSell (already have position)
+        // For Long bias, both zones should start WaitingSell (need to acquire first)
+        strategy.on_tick(95.0, &mut ctx).unwrap();
+
+        // Verify initial state
+        assert_eq!(strategy.realized_pnl, 0.0);
+        assert_eq!(strategy.total_fees, 0.0);
+        assert_eq!(strategy.position_size, 0.0);
+
+        // Complete acquisition if needed
+        if let StrategyState::AcquiringAssets { cloid, target_size } = strategy.state {
+            let acq_fee = 0.5; // $0.50 fee
+
+            strategy
+                .on_order_filled(
+                    &OrderFill {
+                        side: OrderSide::Buy,
+                        size: target_size,
+                        price: 95.0,
+                        fee: acq_fee,
+                        cloid: Some(cloid),
+                        reduce_only: Some(false), // Opening position
+                        raw_dir: Some("Open Long".to_string()),
+                    },
+                    &mut ctx,
+                )
+                .unwrap();
+
+            // Verify fee tracked
+            assert_eq!(strategy.total_fees, acq_fee);
+            // Verify avg_entry set
+            assert!((strategy.avg_entry_price - 95.0).abs() < 0.01);
+        }
+
+        assert!(matches!(strategy.state, StrategyState::Running));
+        ctx.order_queue.clear();
+
+        // Find a zone in WaitingBuy state (for Long bias, this is the opening order)
+        let buy_zone_idx = strategy
+            .zones
+            .iter()
+            .position(|z| z.state == ZoneState::WaitingBuy)
+            .expect("Should have a WaitingBuy zone");
+
+        let zone = &strategy.zones[buy_zone_idx];
+        let buy_cloid = zone.order_id.expect("Zone should have order");
+        let zone_size = zone.size;
+        let buy_price = zone.lower_price; // Buy at lower bound
+
+        // ============================================================
+        // STEP 1: Open Long (Buy) - reduce_only = false
+        // ============================================================
+        let buy_fee = 0.25;
+        strategy
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Buy,
+                    size: zone_size,
+                    price: buy_price,
+                    fee: buy_fee,
+                    cloid: Some(buy_cloid),
+                    reduce_only: Some(false), // Opening position
+                    raw_dir: Some("Open Long".to_string()),
+                },
+                &mut ctx,
+            )
+            .unwrap();
+
+        // Verify: No PnL on opening fill
+        assert_eq!(strategy.realized_pnl, 0.0);
+        // Verify: Fees accumulated
+        assert!((strategy.total_fees - 0.75).abs() < 0.01); // 0.5 + 0.25
+        // Verify: Zone flipped to WaitingSell
+        assert_eq!(strategy.zones[buy_zone_idx].state, ZoneState::WaitingSell);
+        // Verify: Entry price recorded
+        assert!((strategy.zones[buy_zone_idx].entry_price - buy_price).abs() < 0.01);
+        // Verify: Counter order placed (Sell at upper price)
+        let sell_cloid = strategy.zones[buy_zone_idx]
+            .order_id
+            .expect("Should have new sell order");
+
+        // Check the counter order in queue
+        let sell_order = ctx.order_queue.last().expect("Should have order in queue");
+        match sell_order {
+            OrderRequest::Limit {
+                side,
+                price,
+                reduce_only,
+                ..
+            } => {
+                assert!(side.is_sell(), "Counter order should be Sell");
+                assert!(
+                    (*price - strategy.zones[buy_zone_idx].upper_price).abs() < 0.01,
+                    "Sell should be at upper_price"
+                );
+                assert!(*reduce_only, "Close Long should be reduce_only");
+            }
+            _ => panic!("Expected Limit order"),
+        }
+
+        ctx.order_queue.clear();
+
+        // ============================================================
+        // STEP 2: Close Long (Sell) - reduce_only = true, generates PnL
+        // ============================================================
+        let sell_price = strategy.zones[buy_zone_idx].upper_price; // Sell at upper bound
+        let sell_fee = 0.30;
+        let expected_pnl = (sell_price - buy_price) * zone_size; // Profit!
+
+        let roundtrips_before = strategy.zones[buy_zone_idx].roundtrip_count;
+
+        strategy
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Sell,
+                    size: zone_size,
+                    price: sell_price,
+                    fee: sell_fee,
+                    cloid: Some(sell_cloid),
+                    reduce_only: Some(true), // Closing position!
+                    raw_dir: Some("Close Long".to_string()),
+                },
+                &mut ctx,
+            )
+            .unwrap();
+
+        // Verify: PnL calculated correctly
+        assert!(
+            (strategy.realized_pnl - expected_pnl).abs() < 0.01,
+            "Expected PnL {:.4}, got {:.4}",
+            expected_pnl,
+            strategy.realized_pnl
+        );
+
+        // Verify: Fees accumulated
+        assert!((strategy.total_fees - 1.05).abs() < 0.01); // 0.5 + 0.25 + 0.30
+
+        // Verify: Roundtrip count incremented
+        assert_eq!(
+            strategy.zones[buy_zone_idx].roundtrip_count,
+            roundtrips_before + 1
+        );
+
+        // Verify: Zone flipped back to WaitingBuy (ping-pong!)
+        assert_eq!(strategy.zones[buy_zone_idx].state, ZoneState::WaitingBuy);
+
+        // Verify: Entry price reset
+        assert_eq!(strategy.zones[buy_zone_idx].entry_price, 0.0);
+
+        // Verify: New buy order placed (ping-pong counter order)
+        let new_buy_order = ctx.order_queue.last().expect("Should have order in queue");
+        match new_buy_order {
+            OrderRequest::Limit {
+                side,
+                price,
+                reduce_only,
+                ..
+            } => {
+                assert!(side.is_buy(), "Counter order should be Buy");
+                assert!(
+                    (*price - strategy.zones[buy_zone_idx].lower_price).abs() < 0.01,
+                    "Buy should be at lower_price"
+                );
+                assert!(!*reduce_only, "Open Long should NOT be reduce_only");
+            }
+            _ => panic!("Expected Limit order"),
+        }
+
+        println!(
+            "✅ Ping-Pong Complete! PnL: {:.4}, Total Fees: {:.4}, Roundtrips: {}",
+            strategy.realized_pnl,
+            strategy.total_fees,
+            strategy.zones[buy_zone_idx].roundtrip_count
+        );
+    }
+
+    #[test]
+    fn test_perp_grid_short_bias_pnl() {
+        // Test Short bias: Sell high, buy low
+        let symbol = "TEST".to_string();
+        let mut ctx = create_test_context(&symbol);
+        ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
+
+        let config = StrategyConfig::PerpGrid {
+            symbol: symbol.clone(),
+            leverage: 1,
+            is_isolated: true,
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 3,
+            total_investment: 1000.0,
+            grid_bias: GridBias::Short, // Short bias!
+            trigger_price: None,
+        };
+
+        let mut strategy = PerpGridStrategy::new(config);
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // Handle acquisition for short bias
+        if let StrategyState::AcquiringAssets { cloid, target_size } = strategy.state {
+            strategy
+                .on_order_filled(
+                    &OrderFill {
+                        side: OrderSide::Sell,
+                        size: target_size,
+                        price: 100.0,
+                        fee: 0.5,
+                        cloid: Some(cloid),
+                        reduce_only: Some(false),
+                        raw_dir: Some("Open Short".to_string()),
+                    },
+                    &mut ctx,
+                )
+                .unwrap();
+
+            // Position should be negative (short)
+            assert!(strategy.position_size < 0.0);
+        }
+
+        ctx.order_queue.clear();
+
+        // Find a zone that's WaitingBuy (closing short for Short bias)
+        let close_zone_idx = strategy
+            .zones
+            .iter()
+            .position(|z| z.state == ZoneState::WaitingBuy && z.is_short_oriented)
+            .expect("Should have a WaitingBuy zone for short bias");
+
+        let zone = &strategy.zones[close_zone_idx];
+        let cloid = zone.order_id.expect("Zone should have order");
+        let zone_size = zone.size;
+        let entry_price = zone.entry_price; // Entry from acquisition
+        let close_price = zone.lower_price; // Buy at lower to close short
+
+        // Close Short (Buy) - reduce_only = true, generates PnL
+        let expected_pnl = (entry_price - close_price) * zone_size; // Profit when close < entry
+
+        strategy
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Buy,
+                    size: zone_size,
+                    price: close_price,
+                    fee: 0.25,
+                    cloid: Some(cloid),
+                    reduce_only: Some(true), // Closing short position
+                    raw_dir: Some("Close Short".to_string()),
+                },
+                &mut ctx,
+            )
+            .unwrap();
+
+        // Verify PnL for short: profit = (entry - close) * size
+        assert!(
+            (strategy.realized_pnl - expected_pnl).abs() < 0.01,
+            "Short PnL: expected {:.4}, got {:.4}",
+            expected_pnl,
+            strategy.realized_pnl
+        );
+
+        // Verify zone flipped to WaitingSell (ping-pong: now open short again)
+        assert_eq!(strategy.zones[close_zone_idx].state, ZoneState::WaitingSell);
+
+        // Verify counter order is Sell (Open Short)
+        let counter_order = ctx.order_queue.last().expect("Should have order");
+        match counter_order {
+            OrderRequest::Limit {
+                side,
+                reduce_only,
+                ..
+            } => {
+                assert!(side.is_sell(), "Counter should be Sell (Open Short)");
+                assert!(!*reduce_only, "Open Short should NOT be reduce_only");
+            }
+            _ => panic!("Expected Limit order"),
+        }
+
+        println!(
+            "✅ Short Bias Ping-Pong Complete! PnL: {:.4}",
+            strategy.realized_pnl
+        );
+    }
 }

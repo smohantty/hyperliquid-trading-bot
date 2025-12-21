@@ -32,7 +32,12 @@ stateDiagram-v2
 ```
 
 ### 1. Initial Asset Acquisition
-On startup, the bot calculates the required inventory (Base Asset) to populate all zones above the current price.
+On startup, the bot performs a **Strict Balance Check**:
+1.  Calculates the required inventory (Base Asset) to populate all zones above the current price.
+2.  Checks `Available Base Balance`.
+3.  **Validation**: If a deficit exists, it calculates the estimated cost in Quote (USDC). If `Available Quote Balance < Estimated Cost`, the bot **exits with an error**. It will not start with insufficient funds.
+
+If funds are sufficient:
 *   **If Inventory is Low**: It enters `AcquiringAssets` state and places a Market Buy to bridge the gap.
 *   **If Inventory is Sufficient**: It proceeds directly to `Running`.
 

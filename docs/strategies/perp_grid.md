@@ -25,7 +25,7 @@ A grid strategy designed for Perpetual Futures, supporting Leverage and Long/Sho
 ### 2. Leverage Management
 The strategy explicitly manages margin validation. 
 *   `total_investment`: represents the **Total Notional Value** (Position Size in USDC) you want the bot to manage.
-*   **Validation**: The bot checks `Wallet Balance * Leverage >= total_investment`. If your account doesn't have enough margin to support this size, it will not start.
+*   **Validation**: The bot checks `Wallet Balance * Leverage >= total_investment`. If your account doesn't have enough margin to support this size, it **exits with an error**.
 
 ### 3. Initial Position
 *   Similar to Spot, it calculates the required *initial position* based on the `grid_bias` and current price relative to the range.

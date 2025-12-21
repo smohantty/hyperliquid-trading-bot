@@ -1,8 +1,8 @@
 use crate::config::strategy::{GridType, StrategyConfig};
 use crate::engine::context::StrategyContext;
 use crate::strategy::Strategy;
-use anyhow::Result;
-use log::{debug, info, warn};
+use anyhow::{anyhow, Result};
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -97,18 +97,20 @@ impl SpotGridStrategy {
         }
     }
 
-    fn initialize_zones(&mut self, ctx: &mut StrategyContext) {
+    // Removed on_tick from here
+
+    fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         if self.grid_count < 2 {
             warn!("Grid count must be at least 2");
-            return;
+            return Err(anyhow!("Grid count must be at least 2"));
         }
 
         let market_info = match ctx.market_info(&self.symbol) {
             Some(info) => info,
             None => {
                 warn!("No market info for {}", self.symbol);
-                return;
-            } // Can't init without metadata
+                return Ok(()); // Retry later? Or error? Standard was return, so keeping Ok logic for now but ideally should be error if strictly init.
+            }
         };
 
         // Generate Levels
@@ -221,9 +223,22 @@ impl SpotGridStrategy {
             let rounded_deficit = min_acq_sz.max(market_info.round_size(deficit_with_buffer));
 
             if rounded_deficit > 0.0 {
+                // Check if we have enough QUOTE (USDC) to buy this deficit
+                let estimated_cost = rounded_deficit * acquisition_price;
+                let available_quote = ctx.get_spot_available("USDC");
+
+                if available_quote < estimated_cost {
+                    let msg = format!(
+                        "Insufficient Quote Balance for acquisition! Need ~{:.2} USDC, Have {:.2} USDC. Deficit: {} {}", 
+                        estimated_cost, available_quote, rounded_deficit, base_coin
+                    );
+                    error!("{}", msg);
+                    return Err(anyhow!(msg));
+                }
+
                 info!(
-                    "Acquisition Needed: Deficit of {} {}. Placing BUY order @ {}.",
-                    rounded_deficit, base_coin, acquisition_price
+                    "Acquisition Needed: Deficit of {} {}. Cost: ~{:.2} USDC. Placing BUY order @ {}.",
+                    rounded_deficit, base_coin, estimated_cost, acquisition_price
                 );
                 let cloid = ctx.generate_cloid();
                 self.state = StrategyState::AcquiringAssets { cloid };
@@ -236,7 +251,7 @@ impl SpotGridStrategy {
                     false,
                     Some(cloid),
                 );
-                return;
+                return Ok(());
             }
         }
 
@@ -251,6 +266,8 @@ impl SpotGridStrategy {
             info!("Assets verified. Starting Grid.");
             self.state = StrategyState::Running;
         }
+
+        Ok(())
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) {
@@ -302,13 +319,13 @@ impl SpotGridStrategy {
 
 impl Strategy for SpotGridStrategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()> {
+        // State Machine
         match self.state {
             StrategyState::Initializing => {
-                if let Some(market_info) = ctx.market_info(&self.symbol) {
-                    if market_info.last_price > 0.0 {
-                        self.initialize_zones(ctx);
-                    }
-                }
+                self.initialize_zones(ctx)?;
+            }
+            StrategyState::AcquiringAssets { .. } => {
+                // Handled in on_order_filled or wait for transition
             }
             StrategyState::WaitingForTrigger => {
                 if let Some(trigger) = self.trigger_price {
@@ -351,9 +368,7 @@ impl Strategy for SpotGridStrategy {
                     self.state = StrategyState::Running;
                 }
             }
-            StrategyState::AcquiringAssets { .. } => {
-                // Handled in on_order_filled
-            }
+
             StrategyState::Running => {
                 self.refresh_orders(ctx);
             }

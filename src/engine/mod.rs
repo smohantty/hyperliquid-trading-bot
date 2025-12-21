@@ -216,10 +216,10 @@ impl Engine {
 
         let target_symbol = self.config.symbol();
         if !markets.contains_key(target_symbol) {
-            panic!(
-                "Critical Error: Metadata for symbol '{}' not found.",
+            return Err(anyhow!(
+                "Critical Error: Metadata for symbol '{}' not found. Please check your configuration.",
                 target_symbol
-            );
+            ));
         } else {
             info!("Metadata loaded for {}.", target_symbol);
         }
@@ -281,7 +281,7 @@ impl Engine {
                     break;
                  }
                  Some(message) = receiver.recv() => {
-                     self.handle_message(message, &mut runtime, &mut strategy, &_exchange_client, &string_coin).await;
+                     self.handle_message(message, &mut runtime, &mut strategy, &_exchange_client, &string_coin).await?;
                  }
             }
         }
@@ -342,14 +342,14 @@ impl Engine {
         strategy: &mut Box<dyn Strategy>,
         exchange_client: &ExchangeClient,
         coin: &str,
-    ) {
+    ) -> Result<()> {
         match message {
             hyperliquid_rust_sdk::Message::AllMids(all_mids) => {
                 if let Some(price_str) = all_mids.data.mids.get(coin) {
                     let mid_price = price_str.parse::<f64>().unwrap_or(0.0);
                     if mid_price > 0.0 {
                         self.process_tick(mid_price, runtime, strategy, exchange_client, coin)
-                            .await;
+                            .await?;
                     }
                 }
             }
@@ -359,6 +359,7 @@ impl Engine {
             }
             _ => {}
         }
+        Ok(())
     }
 
     async fn process_tick(
@@ -368,7 +369,7 @@ impl Engine {
         strategy: &mut Box<dyn Strategy>,
         exchange_client: &ExchangeClient,
         coin: &str,
-    ) {
+    ) -> Result<()> {
         let target_symbol = self.config.symbol();
         // Update Market Info
         if let Some(info) = runtime.ctx.market_info_mut(target_symbol) {
@@ -381,9 +382,7 @@ impl Engine {
             .send(WSEvent::MarketUpdate(MarketEvent { price: mid_price }));
 
         // Call Strategy
-        if let Err(e) = strategy.on_tick(mid_price, &mut runtime.ctx) {
-            error!("Strategy error: {}", e);
-        }
+        strategy.on_tick(mid_price, &mut runtime.ctx)?;
 
         // Execute Order Queue
         while let Some(order_req) = runtime.ctx.order_queue.pop() {
@@ -425,6 +424,8 @@ impl Engine {
                 Err(e) => error!("Failed to cancel order {}: {:?}", cloid_to_cancel, e),
             }
         }
+
+        Ok(())
     }
 
     async fn process_order_request(

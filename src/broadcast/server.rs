@@ -8,6 +8,7 @@ use tokio::sync::broadcast;
 use tokio_tungstenite::accept_async;
 use tokio_tungstenite::tungstenite::Message;
 
+#[derive(Clone)]
 pub struct StatusBroadcaster {
     sender: broadcast::Sender<WSEvent>,
     last_config: Arc<Mutex<Option<WSEvent>>>,

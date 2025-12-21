@@ -122,6 +122,18 @@ impl TelegramReporter {
                                 }
                             }
                         }
+                        WSEvent::Error(e_msg) => {
+                            let msg = format!("🔴 <b>Bot Stopped (Error)</b>\nREASON: {}", e_msg);
+                            if let Err(e) = bot
+                                .send_message(chat_id, msg)
+                                .parse_mode(teloxide::types::ParseMode::Html)
+                                .await
+                            {
+                                error!("Failed to send Telegram error notification: {}", e);
+                            }
+                            // 🔴 CRITICAL: Break the loop to signal we are done and allow main to join
+                            break;
+                        }
                         _ => {}
                     }
                 }
@@ -130,5 +142,6 @@ impl TelegramReporter {
                 }
             }
         }
+        info!("Telegram Reporter Shutdown.");
     }
 }

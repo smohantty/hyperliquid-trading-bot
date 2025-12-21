@@ -90,20 +90,36 @@ async fn main() -> Result<()> {
     }
 
     // Initialize Telegram Reporter
+    let mut reporter_handle = None;
     if let Some(reporter) = TelegramReporter::new(broadcaster.subscribe())? {
         info!("Telegram Reporter initialized. Spawning background task...");
-        tokio::spawn(reporter.run());
+        reporter_handle = Some(tokio::spawn(reporter.run()));
     }
 
     // Initialize Strategy
     let strategy = init_strategy(config.clone());
 
     // Initialize Engine
-    let engine = Engine::new(config, exchange_config, broadcaster);
+    let engine = Engine::new(config, exchange_config, broadcaster.clone());
 
     // Run Engine
     if let Err(e) = engine.run(strategy).await {
         error!("Engine error: {}", e);
+        // Broadcast Error to Reporters
+        broadcaster.send(hyperliquid_trading_bot::broadcast::types::WSEvent::Error(
+            e.to_string(),
+        ));
+
+        // Wait for Telegram Reporter to finish sending the message
+        if let Some(handle) = reporter_handle {
+            info!("Waiting for Telegram Reporter to shut down...");
+            // Allow up to 10 seconds for the message to send
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(10), handle).await;
+        } else {
+            // Fallback if no reporter
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+
         std::process::exit(1);
     }
 

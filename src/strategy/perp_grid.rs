@@ -2,7 +2,7 @@ use crate::config::strategy::{GridBias, GridType, StrategyConfig};
 use crate::engine::context::StrategyContext;
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -105,10 +105,10 @@ impl PerpGridStrategy {
         }
     }
 
-    fn initialize_zones(&mut self, ctx: &mut StrategyContext) {
+    fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         if self.grid_count < 2 {
             warn!("Grid count must be at least 2");
-            return;
+            return Err(anyhow!("Grid count must be at least 2"));
         }
 
         // 1. Get initial data (scoped)
@@ -117,19 +117,17 @@ impl PerpGridStrategy {
                 Some(i) => i,
                 None => {
                     warn!("No market info");
-                    return;
+                    return Ok(());
                 }
             };
             info.last_price
         };
 
-        // Generate Levels (Pure calculation, no borrow)
+        // Generate Levels
         let price_range = self.upper_price - self.lower_price;
         let interval = price_range / (self.grid_count as f64 - 1.0);
         let mut prices = Vec::with_capacity(self.grid_count as usize);
 
-        // Re-borrow for rounding if strict, or just use raw math and round later?
-        // Better to round prices once.
         {
             let info = ctx.market_info(&self.symbol).unwrap();
             for i in 0..self.grid_count {
@@ -151,15 +149,15 @@ impl PerpGridStrategy {
 
         // Validation: Check if wallet has enough margin
         let wallet_balance = ctx.get_perp_available("USDC");
-
         let max_notional = wallet_balance * self.leverage as f64;
 
         if max_notional < self.total_investment {
-            warn!(
-                "Insufficient Margin! Balance: {}, Lev: {}, Max Notional: {}, Required: {}. Bailing out.",
+            let msg = format!(
+                "Insufficient Margin! Balance: {:.2}, Lev: {}, Max Notional: {:.2}, Required: {:.2}. Bailing out.",
                 wallet_balance, self.leverage, max_notional, self.total_investment
             );
-            return;
+            error!("{}", msg);
+            return Err(anyhow!(msg));
         }
 
         self.zones.clear();
@@ -170,11 +168,8 @@ impl PerpGridStrategy {
             let upper = prices[i + 1];
             let mid_price = (lower + upper) / 2.0;
 
-            // Borrow for size calc
             let size = {
                 let info = ctx.market_info(&self.symbol).unwrap();
-                // total_investment is Notional.
-                // Size = Notional / Price
                 let raw_size = investment_per_zone / mid_price;
                 info.ensure_min_sz(mid_price, 10.0)
                     .max(info.round_size(raw_size))
@@ -183,11 +178,7 @@ impl PerpGridStrategy {
             let (state, is_short_oriented) = match self.grid_bias {
                 GridBias::Long => {
                     if initial_price < upper {
-                        if initial_price < upper {
-                            (ZoneState::WaitingSell, false)
-                        } else {
-                            (ZoneState::WaitingBuy, false)
-                        }
+                        (ZoneState::WaitingSell, false)
                     } else {
                         (ZoneState::WaitingBuy, false)
                     }
@@ -212,7 +203,7 @@ impl PerpGridStrategy {
                 total_position_required += size;
             }
             if is_short_oriented && state == ZoneState::WaitingBuy {
-                total_position_required -= size;
+                total_position_required -= size; // Short position needed (negative size)
             }
 
             self.zones.push(GridZone {
@@ -235,29 +226,27 @@ impl PerpGridStrategy {
 
         if total_position_required.abs() > 0.0 {
             self.start_price = Some(initial_price);
+
             if let Some(trigger) = self.trigger_price {
                 info!(
                     "Assets required ({}), but waiting for trigger price {}",
                     total_position_required, trigger
                 );
                 self.state = StrategyState::WaitingForTrigger;
-                return;
+                return Ok(());
             }
 
             // Acquire Immediately
             info!("Acquiring initial position: {}", total_position_required);
-            // Generate CLOID (Mutable Borrow)
             let cloid = ctx.generate_cloid();
 
             let (activation_price, target_size, is_buy) = {
-                // Borrow Info (Immutable)
                 let info = ctx.market_info(&self.symbol).unwrap();
-                // Use nearest grid level for acquisition (Passive/Grid-Aligned)
                 let market_price = info.last_price;
                 let is_buy = total_position_required > 0.0;
 
                 let raw_price = if is_buy {
-                    // Long Bias/Buy: Find highest grid level BELOW market price
+                    // Long Bias: Find highest grid level BELOW market
                     self.zones
                         .iter()
                         .map(|z| z.lower_price)
@@ -265,7 +254,7 @@ impl PerpGridStrategy {
                         .max_by(|a, b| a.partial_cmp(b).unwrap())
                         .unwrap_or(market_price)
                 } else {
-                    // Short Bias/Sell: Find lowest grid level ABOVE market price
+                    // Short Bias: Find lowest grid level ABOVE market
                     self.zones
                         .iter()
                         .map(|z| z.upper_price)
@@ -278,11 +267,10 @@ impl PerpGridStrategy {
                     info.round_size(total_position_required.abs()),
                     is_buy,
                 )
-            }; // Drop Info
+            };
 
             if target_size > 0.0 {
                 self.state = StrategyState::AcquiringAssets { cloid, target_size };
-                // Call Place Order (Mutable Borrow)
                 ctx.place_limit_order(
                     self.symbol.clone(),
                     is_buy,
@@ -291,13 +279,15 @@ impl PerpGridStrategy {
                     false,
                     Some(cloid),
                 );
-                return;
+                return Ok(());
             }
         }
 
         self.state = StrategyState::Running;
-        self.refresh_orders(ctx)
-            .unwrap_or_else(|e| warn!("Failed to refresh orders: {}", e));
+        if let Err(e) = self.refresh_orders(ctx) {
+            warn!("Failed to refresh orders: {}", e);
+        }
+        Ok(())
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) -> Result<()> {
@@ -422,7 +412,11 @@ impl Strategy for PerpGridStrategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()> {
         match self.state {
             StrategyState::Initializing => {
-                self.initialize_zones(ctx);
+                if let Some(market_info) = ctx.market_info(&self.symbol) {
+                    if market_info.last_price > 0.0 {
+                        self.initialize_zones(ctx)?;
+                    }
+                }
             }
             StrategyState::WaitingForTrigger => {
                 if let Some(trigger) = self.trigger_price {
@@ -471,7 +465,7 @@ impl Strategy for PerpGridStrategy {
                         // Simplest: Just call initialize_zones again. It enters Running or Acquiring.
                         info!("Triggered! Re-initializing zones for accurate state.");
                         self.zones.clear();
-                        self.initialize_zones(ctx);
+                        self.initialize_zones(ctx)?;
                     }
                 } else {
                     self.state = StrategyState::Running;

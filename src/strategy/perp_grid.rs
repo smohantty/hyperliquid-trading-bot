@@ -274,20 +274,31 @@ impl PerpGridStrategy {
 
                 let raw_price = if side.is_buy() {
                     // Long Bias: Find highest grid level BELOW market
-                    self.zones
+                    let grid_price = self
+                        .zones
                         .iter()
                         .map(|z| z.lower_price)
                         .filter(|&p| p < market_price)
                         .max_by(|a, b| a.partial_cmp(b).unwrap())
-                        .unwrap_or(market_price)
+                        .unwrap_or(market_price);
+
+                    // Cap spread at 0.1% (0.001)
+                    // If grid level is too far (e.g. 1% away), bring it closer to 0.1% spread
+                    let limit_price = market_price * (1.0 - 0.001);
+                    grid_price.max(limit_price)
                 } else {
                     // Short Bias: Find lowest grid level ABOVE market
-                    self.zones
+                    let grid_price = self
+                        .zones
                         .iter()
                         .map(|z| z.upper_price)
                         .filter(|&p| p > market_price)
                         .min_by(|a, b| a.partial_cmp(b).unwrap())
-                        .unwrap_or(market_price)
+                        .unwrap_or(market_price);
+
+                    // Cap spread at 0.1% (0.001)
+                    let limit_price = market_price * (1.0 + 0.001);
+                    grid_price.min(limit_price)
                 };
                 (
                     market_info.round_price(raw_price),

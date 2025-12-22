@@ -49,7 +49,7 @@ pub struct SpotGridSummary {
     pub uptime: String, // Human-readable uptime, e.g. "2d 14h 30m"
 
     // Position
-    pub position_size: f64,    // Base asset inventory
+    pub position_size: f64, // Base asset inventory
     pub avg_entry_price: f64,
 
     // PnL
@@ -78,7 +78,7 @@ pub struct PerpGridSummary {
     pub uptime: String, // Human-readable uptime, e.g. "2d 14h 30m"
 
     // Position
-    pub position_size: f64,  // Positive = Long, Negative = Short
+    pub position_size: f64,    // Positive = Long, Negative = Short
     pub position_side: String, // "Long", "Short", "Flat"
     pub avg_entry_price: f64,
 
@@ -108,9 +108,10 @@ pub struct PerpGridSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GridState {
     pub symbol: String,
-    pub strategy_type: String,       // "spot_grid" or "perp_grid"
+    pub strategy_type: String, // "spot_grid" or "perp_grid"
     pub current_price: f64,
-    pub grid_bias: Option<String>,   // None for spot, "Long"/"Short"/"Neutral" for perp
+    pub grid_bias: Option<String>, // None for spot, "Long"/"Short"/"Neutral" for perp
+    pub sz_decimals: u32,          // Precision for size display
     pub zones: Vec<ZoneInfo>,
 }
 

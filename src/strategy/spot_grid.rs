@@ -200,9 +200,9 @@ impl SpotGridStrategy {
             // Zone ABOVE price line (lower > price): We acquired base at initial_price -> Sell at upper
             // Zone AT or BELOW price line: We have quote, waiting to buy at lower
             let pending_side = if lower > initial_price {
-                OrderSide::Sell  // Zone above price line → sell at upper, then ping-pong
+                OrderSide::Sell // Zone above price line → sell at upper, then ping-pong
             } else {
-                OrderSide::Buy   // Zone at/below price line → buy at lower, then ping-pong
+                OrderSide::Buy // Zone at/below price line → buy at lower, then ping-pong
             };
 
             if pending_side.is_sell() {
@@ -435,7 +435,11 @@ impl SpotGridStrategy {
     ) -> Result<()> {
         info!(
             "[SPOT_GRID] Rebalancing fill received! {} {} @ {}. Fee: {}. Starting grid.",
-            if fill.side.is_buy() { "Purchased" } else { "Sold" },
+            if fill.side.is_buy() {
+                "Purchased"
+            } else {
+                "Sold"
+            },
             fill.size,
             fill.price,
             fill.fee
@@ -446,8 +450,9 @@ impl SpotGridStrategy {
         if fill.side.is_buy() {
             let new_inventory = self.inventory + fill.size;
             if new_inventory > 0.0 {
-                self.avg_entry_price =
-                    (self.avg_entry_price * self.inventory + fill.price * fill.size) / new_inventory;
+                self.avg_entry_price = (self.avg_entry_price * self.inventory
+                    + fill.price * fill.size)
+                    / new_inventory;
             }
             self.inventory = new_inventory;
         } else {
@@ -649,7 +654,11 @@ impl Strategy for SpotGridStrategy {
 
                 // 2. Validate raw_dir if present (spot should be "Buy" or "Sell")
                 if let Some(ref raw_dir) = fill.raw_dir {
-                    let expected_dir = if expected_side.is_buy() { "Buy" } else { "Sell" };
+                    let expected_dir = if expected_side.is_buy() {
+                        "Buy"
+                    } else {
+                        "Sell"
+                    };
                     if raw_dir != expected_dir {
                         error!(
                             "[SPOT_GRID] ASSERTION FAILED: Zone {} expected raw_dir '{}' but got '{}'",
@@ -780,6 +789,10 @@ impl Strategy for SpotGridStrategy {
             strategy_type: "spot_grid".to_string(),
             current_price,
             grid_bias: None, // Spot has no bias
+            sz_decimals: ctx
+                .market_info(&self.symbol)
+                .map(|m| m.sz_decimals)
+                .unwrap_or(4),
             zones,
         }
     }
@@ -1215,7 +1228,11 @@ mod tests {
         assert_eq!(ctx.order_queue.len(), 1);
         match &ctx.order_queue[0] {
             crate::model::OrderRequest::Limit { side, sz, .. } => {
-                assert_eq!(*side, OrderSide::Sell, "Expected a SELL order for rebalancing");
+                assert_eq!(
+                    *side,
+                    OrderSide::Sell,
+                    "Expected a SELL order for rebalancing"
+                );
                 assert!(*sz > 0.0);
             }
             _ => panic!("Expected Limit order"),

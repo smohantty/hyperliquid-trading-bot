@@ -89,6 +89,7 @@ export interface GridState {
     strategy_type: 'spot_grid' | 'perp_grid';
     current_price: number;
     grid_bias: string | null;
+    sz_decimals: number;
     zones: ZoneInfo[];
 }
 

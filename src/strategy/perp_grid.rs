@@ -192,9 +192,9 @@ impl PerpGridStrategy {
                     // Zone ABOVE price (lower > price): Have long → Sell to close
                     // Zone AT/BELOW price (lower <= price): No position → Buy to open
                     if lower > initial_price {
-                        (OrderSide::Sell, ZoneMode::Long)  // Zone above → close long
+                        (OrderSide::Sell, ZoneMode::Long) // Zone above → close long
                     } else {
-                        (OrderSide::Buy, ZoneMode::Long)   // Zone at/below → open long
+                        (OrderSide::Buy, ZoneMode::Long) // Zone at/below → open long
                     }
                 }
                 GridBias::Short => {
@@ -202,9 +202,9 @@ impl PerpGridStrategy {
                     // Zone BELOW price (upper < price): Have short → Buy to close
                     // Zone AT/ABOVE price (upper >= price): No position → Sell to open
                     if upper < initial_price {
-                        (OrderSide::Buy, ZoneMode::Short)    // Zone below → close short
+                        (OrderSide::Buy, ZoneMode::Short) // Zone below → close short
                     } else {
-                        (OrderSide::Sell, ZoneMode::Short)   // Zone at/above → open short
+                        (OrderSide::Sell, ZoneMode::Short) // Zone at/above → open short
                     }
                 }
                 GridBias::Neutral => {
@@ -212,9 +212,9 @@ impl PerpGridStrategy {
                     // Zone center above price → short mode
                     // Zone center at/below price → long mode
                     if mid_price > initial_price {
-                        (OrderSide::Sell, ZoneMode::Short)   // Zone above center → open short
+                        (OrderSide::Sell, ZoneMode::Short) // Zone above center → open short
                     } else {
-                        (OrderSide::Buy, ZoneMode::Long)     // Zone at/below center → open long
+                        (OrderSide::Buy, ZoneMode::Long) // Zone at/below center → open long
                     }
                 }
             };
@@ -300,10 +300,7 @@ impl PerpGridStrategy {
                 self.state = StrategyState::AcquiringAssets { cloid, target_size };
                 info!(
                     "[ORDER_REQUEST] [PERP_GRID] REBALANCING: LIMIT {} {} {} @ {}",
-                    side,
-                    target_size,
-                    self.symbol,
-                    activation_price
+                    side, target_size, self.symbol, activation_price
                 );
                 ctx.place_order(OrderRequest::Limit {
                     symbol: self.symbol.clone(),
@@ -344,8 +341,8 @@ impl PerpGridStrategy {
                         zone.upper_price
                     };
                     let reduce_only = match zone.mode {
-                        ZoneMode::Short => side.is_buy(),  // Buy closes short
-                        ZoneMode::Long => side.is_sell(),  // Sell closes long
+                        ZoneMode::Short => side.is_buy(), // Buy closes short
+                        ZoneMode::Long => side.is_sell(), // Sell closes long
                     };
                     (side, price, zone.size, reduce_only)
                 };
@@ -407,8 +404,8 @@ impl PerpGridStrategy {
         // Long mode: Sell = Close (Reduce), Buy = Open.
         // Short mode: Buy = Close (Reduce), Sell = Open.
         let reduce_only = match zone.mode {
-            ZoneMode::Short => side.is_buy(),  // Buying to close short
-            ZoneMode::Long => side.is_sell(),  // Selling to close long
+            ZoneMode::Short => side.is_buy(), // Buying to close short
+            ZoneMode::Long => side.is_sell(), // Selling to close long
         };
 
         info!(
@@ -613,7 +610,7 @@ impl Strategy for PerpGridStrategy {
                     let is_opening = match (zone.pending_side, zone.mode) {
                         (OrderSide::Buy, ZoneMode::Long) => true,   // Open Long
                         (OrderSide::Sell, ZoneMode::Short) => true, // Open Short
-                        _ => false,                                  // Closing
+                        _ => false,                                 // Closing
                     };
 
                     // Update Position Size and Average Entry Price
@@ -805,6 +802,10 @@ impl Strategy for PerpGridStrategy {
             strategy_type: "perp_grid".to_string(),
             current_price,
             grid_bias: Some(format!("{:?}", self.grid_bias)),
+            sz_decimals: ctx
+                .market_info(&self.symbol)
+                .map(|m| m.sz_decimals)
+                .unwrap_or(4),
             zones,
         }
     }
@@ -1212,7 +1213,7 @@ mod tests {
         assert_eq!(strategy.realized_pnl, 0.0);
         // Verify: Fees accumulated
         assert!((strategy.total_fees - 0.75).abs() < 0.01); // 0.5 + 0.25
-        // Verify: Zone flipped to WaitingSell
+                                                            // Verify: Zone flipped to WaitingSell
         assert_eq!(strategy.zones[buy_zone_idx].pending_side, OrderSide::Sell);
         // Verify: Entry price recorded
         assert!((strategy.zones[buy_zone_idx].entry_price - buy_price).abs() < 0.01);
@@ -1415,9 +1416,7 @@ mod tests {
         let counter_order = ctx.order_queue.last().expect("Should have order");
         match counter_order {
             OrderRequest::Limit {
-                side,
-                reduce_only,
-                ..
+                side, reduce_only, ..
             } => {
                 assert!(side.is_sell(), "Counter should be Sell (Open Short)");
                 assert!(!*reduce_only, "Open Short should NOT be reduce_only");
@@ -1483,8 +1482,7 @@ mod tests {
         for zone in &strategy.zones {
             println!(
                 "  Zone {} [{}-{}]: pending={:?}, mode={:?}",
-                zone.index, zone.lower_price, zone.upper_price,
-                zone.pending_side, zone.mode
+                zone.index, zone.lower_price, zone.upper_price, zone.pending_side, zone.mode
             );
         }
 
@@ -1498,10 +1496,11 @@ mod tests {
 
         // BUG: Current code classifies this as Sell because 105 < 110
         // EXPECTED: Should be Buy because 105 is NOT < 105 (lower)
+        println!("\n🔍 Zone [105-110] at price boundary:");
         println!(
-            "\n🔍 Zone [105-110] at price boundary:"
+            "  Current: pending_side = {:?}",
+            zone_at_boundary.pending_side
         );
-        println!("  Current: pending_side = {:?}", zone_at_boundary.pending_side);
         println!("  Expected: pending_side = Buy (zone at boundary, not above)");
 
         // This assertion will FAIL with current buggy code,
@@ -1564,8 +1563,7 @@ mod tests {
         for zone in &strategy.zones {
             println!(
                 "  Zone {} [{}-{}]: pending={:?}, mode={:?}",
-                zone.index, zone.lower_price, zone.upper_price,
-                zone.pending_side, zone.mode
+                zone.index, zone.lower_price, zone.upper_price, zone.pending_side, zone.mode
             );
         }
 
@@ -1579,10 +1577,11 @@ mod tests {
 
         // BUG: Current code classifies this as Buy because 95 > 90
         // EXPECTED: Should be Sell because 95 is NOT > 95 (upper)
+        println!("\n🔍 Zone [90-95] at price boundary:");
         println!(
-            "\n🔍 Zone [90-95] at price boundary:"
+            "  Current: pending_side = {:?}",
+            zone_at_boundary.pending_side
         );
-        println!("  Current: pending_side = {:?}", zone_at_boundary.pending_side);
         println!("  Expected: pending_side = Sell (zone at boundary, not below)");
 
         // This assertion will FAIL with current buggy code,

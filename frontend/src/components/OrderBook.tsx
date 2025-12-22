@@ -14,8 +14,7 @@ const OrderBook: React.FC = () => {
         const bids: ZoneInfo[] = [];
 
         sortedZones.forEach(zone => {
-            const midPrice = (zone.lower_price + zone.upper_price) / 2;
-            if (midPrice > lastPrice) {
+            if (zone.pending_side === 'Sell') {
                 asks.push(zone);
             } else {
                 bids.push(zone);
@@ -95,7 +94,7 @@ const OrderBook: React.FC = () => {
                                 No asks
                             </div>
                         ) : (
-                            asks.map(zone => <ZoneRow key={zone.index} zone={zone} side="ask" />)
+                            asks.map(zone => <ZoneRow key={zone.index} zone={zone} side="ask" szDecimals={gridState.sz_decimals} />)
                         )}
                     </div>
                 </div>
@@ -159,7 +158,7 @@ const OrderBook: React.FC = () => {
                                 No bids
                             </div>
                         ) : (
-                            bids.map(zone => <ZoneRow key={zone.index} zone={zone} side="bid" />)
+                            bids.map(zone => <ZoneRow key={zone.index} zone={zone} side="bid" szDecimals={gridState.sz_decimals} />)
                         )}
                     </div>
                 </div>
@@ -168,13 +167,13 @@ const OrderBook: React.FC = () => {
     );
 };
 
-const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid' }> = ({ zone, side }) => {
+const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: number }> = ({ zone, side, szDecimals }) => {
     const isAsk = side === 'ask';
     const displayPrice = isAsk ? zone.upper_price : zone.lower_price;
 
     const isClose = zone.is_reduce_only || zone.action_type === 'close';
     const actionColor = isClose ? 'var(--accent-yellow)' :
-                        zone.pending_side === 'Buy' ? 'var(--color-buy)' : 'var(--color-sell)';
+        zone.pending_side === 'Buy' ? 'var(--color-buy)' : 'var(--color-sell)';
 
     const actionBadge = (
         <span style={{
@@ -204,7 +203,7 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid' }> = ({ zone, side
                         {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </span>
                     <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                        {zone.size.toFixed(4)}
+                        {zone.size.toFixed(szDecimals)}
                     </span>
                     <span style={{ flex: 1, textAlign: 'right' }}>{actionBadge}</span>
                 </>
@@ -212,7 +211,7 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid' }> = ({ zone, side
                 <>
                     <span style={{ flex: 1 }}>{actionBadge}</span>
                     <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                        {zone.size.toFixed(4)}
+                        {zone.size.toFixed(szDecimals)}
                     </span>
                     <span style={{ flex: 1, textAlign: 'right', color: 'var(--color-buy)', fontFamily: 'var(--font-mono)' }}>
                         {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}

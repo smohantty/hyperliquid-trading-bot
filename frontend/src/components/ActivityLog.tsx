@@ -3,7 +3,8 @@ import { useBotStore } from '../context/WebSocketContext';
 import type { OrderEvent } from '../types/schema';
 
 const ActivityLog: React.FC = () => {
-    const { orderHistory } = useBotStore();
+    const { orderHistory, config } = useBotStore();
+    const szDecimals = config?.sz_decimals || 4;
 
     return (
         <div style={{
@@ -54,7 +55,7 @@ const ActivityLog: React.FC = () => {
                     </div>
                 ) : (
                     orderHistory.map((order, idx) => (
-                        <OrderEventRow key={`${order.cloid || order.oid}-${idx}`} order={order} />
+                        <OrderEventRow key={`${order.cloid || order.oid}-${idx}`} order={order} szDecimals={szDecimals} />
                     ))
                 )}
             </div>
@@ -62,16 +63,16 @@ const ActivityLog: React.FC = () => {
     );
 };
 
-const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
+const OrderEventRow: React.FC<{ order: OrderEvent; szDecimals: number }> = ({ order, szDecimals }) => {
     const isBuy = order.side === 'Buy';
     const isFilled = order.status === 'FILLED';
 
     const sideColor = isBuy ? 'var(--color-buy)' : 'var(--color-sell)';
     const statusColor = isFilled ? 'var(--color-buy)' :
-                        order.status === 'OPEN' ? 'var(--text-primary)' :
-                        order.status === 'OPENING' ? 'var(--accent-yellow)' :
-                        order.status === 'CANCELLED' ? 'var(--text-tertiary)' :
-                        'var(--color-sell)';
+        order.status === 'OPEN' ? 'var(--text-primary)' :
+            order.status === 'OPENING' ? 'var(--accent-yellow)' :
+                order.status === 'CANCELLED' ? 'var(--text-tertiary)' :
+                    'var(--color-sell)';
 
     return (
         <div style={{
@@ -102,7 +103,7 @@ const OrderEventRow: React.FC<{ order: OrderEvent }> = ({ order }) => {
                 fontFamily: 'var(--font-mono)',
                 color: 'var(--text-primary)'
             }}>
-                {order.size.toFixed(4)} <span style={{ color: 'var(--text-tertiary)' }}>@</span> ${order.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                {order.size.toFixed(szDecimals)} <span style={{ color: 'var(--text-tertiary)' }}>@</span> ${order.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
             </span>
 
             {/* Status */}

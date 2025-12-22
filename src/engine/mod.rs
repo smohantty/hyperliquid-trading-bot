@@ -295,7 +295,15 @@ impl Engine {
             tokio::time::interval(std::time::Duration::from_millis(1000)); // 1Hz status update
 
         // Broadcast Config
-        let config_json = serde_json::to_value(&self.config).unwrap_or(serde_json::Value::Null);
+        let mut config_json = serde_json::to_value(&self.config).unwrap_or(serde_json::Value::Null);
+        if let Some(info) = runtime.ctx.market_info(target_symbol) {
+            if let Some(obj) = config_json.as_object_mut() {
+                obj.insert(
+                    "sz_decimals".to_string(),
+                    serde_json::json!(info.sz_decimals),
+                );
+            }
+        }
         self.broadcaster.send(WSEvent::Config(config_json));
 
         info!("Starting Event Loop...");

@@ -3,7 +3,9 @@ import { useBotStore } from '../context/WebSocketContext';
 import type { ZoneInfo } from '../types/schema';
 
 const OrderBook: React.FC = () => {
-    const { gridState, lastPrice } = useBotStore();
+    const { gridState, lastPrice, config } = useBotStore();
+
+    const szDecimals = config?.sz_decimals || 4;
 
     const { asks, bids } = useMemo(() => {
         if (!gridState || !lastPrice) return { asks: [], bids: [] };
@@ -94,7 +96,7 @@ const OrderBook: React.FC = () => {
                                 No asks
                             </div>
                         ) : (
-                            asks.map(zone => <ZoneRow key={zone.index} zone={zone} side="ask" szDecimals={gridState.sz_decimals} />)
+                            asks.map(zone => <ZoneRow key={zone.index} zone={zone} side="ask" szDecimals={szDecimals} />)
                         )}
                     </div>
                 </div>
@@ -158,7 +160,7 @@ const OrderBook: React.FC = () => {
                                 No bids
                             </div>
                         ) : (
-                            bids.map(zone => <ZoneRow key={zone.index} zone={zone} side="bid" szDecimals={gridState.sz_decimals} />)
+                            bids.map(zone => <ZoneRow key={zone.index} zone={zone} side="bid" szDecimals={szDecimals} />)
                         )}
                     </div>
                 </div>

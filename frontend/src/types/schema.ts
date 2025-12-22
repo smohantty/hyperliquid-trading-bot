@@ -15,6 +15,7 @@ export interface StrategyConfig {
     leverage?: number;
     is_isolated?: boolean;
     grid_bias?: 'long' | 'short' | 'neutral';
+    sz_decimals?: number;
 }
 
 // ============================================================
@@ -86,10 +87,9 @@ export interface ZoneInfo {
 
 export interface GridState {
     symbol: string;
-    strategy_type: 'spot_grid' | 'perp_grid';
+    strategy_type: string;
     current_price: number;
-    grid_bias: string | null;
-    sz_decimals: number;
+    grid_bias?: string;
     zones: ZoneInfo[];
 }
 

@@ -813,10 +813,6 @@ impl Strategy for PerpGridStrategy {
             strategy_type: "perp_grid".to_string(),
             current_price,
             grid_bias: Some(format!("{:?}", self.grid_bias)),
-            sz_decimals: ctx
-                .market_info(&self.symbol)
-                .map(|m| m.sz_decimals)
-                .unwrap_or(4),
             zones,
         }
     }

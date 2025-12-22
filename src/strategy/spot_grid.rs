@@ -789,10 +789,6 @@ impl Strategy for SpotGridStrategy {
             strategy_type: "spot_grid".to_string(),
             current_price,
             grid_bias: None, // Spot has no bias
-            sz_decimals: ctx
-                .market_info(&self.symbol)
-                .map(|m| m.sz_decimals)
-                .unwrap_or(4),
             zones,
         }
     }

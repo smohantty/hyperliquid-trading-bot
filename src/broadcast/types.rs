@@ -111,7 +111,6 @@ pub struct GridState {
     pub strategy_type: String, // "spot_grid" or "perp_grid"
     pub current_price: f64,
     pub grid_bias: Option<String>, // None for spot, "Long"/"Short"/"Neutral" for perp
-    pub sz_decimals: u32,          // Precision for size display
     pub zones: Vec<ZoneInfo>,
 }
 

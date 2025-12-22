@@ -57,14 +57,29 @@ impl StrategyConfig {
                 trigger_price,
                 lower_price,
                 upper_price,
+                grid_count,
                 ..
             }
             | StrategyConfig::PerpGrid {
                 trigger_price,
                 lower_price,
                 upper_price,
+                grid_count,
                 ..
             } => {
+                if *grid_count <= 2 {
+                    return Err(anyhow::anyhow!(
+                        "Grid count {} must be greater than 2.",
+                        grid_count
+                    ));
+                }
+                if *upper_price <= *lower_price {
+                    return Err(anyhow::anyhow!(
+                        "Upper price {} must be greater than lower price {}.",
+                        upper_price,
+                        lower_price
+                    ));
+                }
                 if let Some(trigger) = trigger_price {
                     if *trigger < *lower_price || *trigger > *upper_price {
                         return Err(anyhow::anyhow!(
@@ -112,4 +127,63 @@ pub fn print_strategy_help() {
      - trigger_price (Option<f64>): Price to trigger strategy start (optional)."
     );
     println!();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validation_upper_less_than_lower() {
+        let config = StrategyConfig::SpotGrid {
+            symbol: "BTC/USDC".to_string(),
+            upper_price: 1000.0,
+            lower_price: 2000.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 10,
+            total_investment: 1000.0,
+            trigger_price: None,
+        };
+        let res = config.validate();
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "Upper price 1000 must be greater than lower price 2000."
+        );
+    }
+
+    #[test]
+    fn test_validation_trigger_out_of_bounds() {
+        let config = StrategyConfig::SpotGrid {
+            symbol: "BTC/USDC".to_string(),
+            upper_price: 2000.0,
+            lower_price: 1000.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 10,
+            total_investment: 1000.0,
+            trigger_price: Some(3000.0),
+        };
+        let res = config.validate();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().to_string().contains("Trigger price"));
+    }
+
+    #[test]
+    fn test_validation_grid_count_too_low() {
+        let config = StrategyConfig::SpotGrid {
+            symbol: "BTC/USDC".to_string(),
+            upper_price: 2000.0,
+            lower_price: 1000.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 2,
+            total_investment: 1000.0,
+            trigger_price: None,
+        };
+        let res = config.validate();
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err().to_string(),
+            "Grid count 2 must be greater than 2."
+        );
+    }
 }

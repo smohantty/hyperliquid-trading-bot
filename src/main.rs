@@ -124,10 +124,13 @@ async fn main() -> Result<()> {
     );
 
     // Default port 9000 if not specified
-    let ws_port = Some(broadcast_config.websocket.port);
-    let broadcaster = StatusBroadcaster::new(ws_port);
-    if let Some(p) = ws_port {
-        info!("WebSocket Status Server enabled on port {}", p);
+    let ws_config = Some(broadcast_config.websocket.clone());
+    let broadcaster = StatusBroadcaster::new(ws_config.clone());
+    if let Some(conf) = ws_config {
+        info!(
+            "WebSocket Status Server enabled on {}:{}",
+            conf.host, conf.port
+        );
     }
 
     // Initialize Telegram Reporter

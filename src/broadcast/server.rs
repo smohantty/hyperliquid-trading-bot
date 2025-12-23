@@ -1,4 +1,5 @@
 use crate::broadcast::types::WSEvent;
+use crate::config::broadcast::WebsocketConfig;
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use std::net::SocketAddr;
@@ -17,21 +18,28 @@ pub struct StatusBroadcaster {
 }
 
 impl StatusBroadcaster {
-    pub fn new(port: Option<u16>) -> Self {
+    pub fn new(config: Option<WebsocketConfig>) -> Self {
         let (sender, _) = broadcast::channel(100);
         let last_config = Arc::new(Mutex::new(None));
         let last_summary = Arc::new(Mutex::new(None));
         let last_grid_state = Arc::new(Mutex::new(None));
 
-        if let Some(p) = port {
+        if let Some(conf) = config {
             let sender_clone = sender.clone();
             let config_clone = last_config.clone();
             let summary_clone = last_summary.clone();
             let grid_state_clone = last_grid_state.clone();
 
             tokio::spawn(async move {
-                if let Err(e) =
-                    run_server(p, sender_clone, config_clone, summary_clone, grid_state_clone).await
+                if let Err(e) = run_server(
+                    conf.host,
+                    conf.port,
+                    sender_clone,
+                    config_clone,
+                    summary_clone,
+                    grid_state_clone,
+                )
+                .await
                 {
                     error!("WebSocket Server failed: {}", e);
                 }
@@ -76,13 +84,14 @@ impl StatusBroadcaster {
 }
 
 async fn run_server(
+    host: String,
     port: u16,
     sender: broadcast::Sender<WSEvent>,
     last_config: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
 ) -> anyhow::Result<()> {
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("{}:{}", host, port);
     let listener = TcpListener::bind(&addr).await?;
     info!("WebSocket Status Server listening on: ws://{}", addr);
 

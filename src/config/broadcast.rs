@@ -11,6 +11,7 @@ pub struct TelegramConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebsocketConfig {
     pub port: u16,
+    pub host: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,7 +31,9 @@ pub fn load_broadcast_config(cli_ws_port: Option<u16>) -> Result<BroadcastConfig
         9000
     };
 
-    let websocket = WebsocketConfig { port };
+    let host = env::var("WS_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+
+    let websocket = WebsocketConfig { port, host };
 
     // 2. Telegram Config
     let tg_token = env::var("TELEGRAM_BOT_TOKEN").ok();

@@ -1,7 +1,7 @@
 use crate::broadcast::types::{PerpGridSummary, SpotGridSummary, WSEvent};
+use crate::config::broadcast::TelegramConfig;
 use anyhow::Result;
 use log::{error, info, warn};
-use std::env;
 use std::sync::Arc;
 use teloxide::prelude::*;
 use tokio::sync::{broadcast, Mutex};
@@ -175,21 +175,14 @@ pub struct TelegramReporter {
 }
 
 impl TelegramReporter {
-    pub fn new(receiver: broadcast::Receiver<WSEvent>) -> Result<Option<Self>> {
-        let token = env::var("TELEGRAM_BOT_TOKEN").ok();
-        let chat_id_str = env::var("TELEGRAM_CHAT_ID").ok();
-
-        if let (Some(token), Some(chat_id_val)) = (token, chat_id_str) {
-            let bot = Bot::new(token);
-            let chat_id = ChatId(chat_id_val.parse::<i64>()?);
-            Ok(Some(Self {
-                bot,
-                chat_id,
-                receiver,
-            }))
-        } else {
-            Ok(None)
-        }
+    pub fn new(receiver: broadcast::Receiver<WSEvent>, config: TelegramConfig) -> Result<Self> {
+        let bot = Bot::new(config.bot_token);
+        let chat_id = ChatId(config.chat_id.parse::<i64>()?);
+        Ok(Self {
+            bot,
+            chat_id,
+            receiver,
+        })
     }
 
     pub async fn run(self) {

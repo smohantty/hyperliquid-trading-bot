@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use hyperliquid_trading_bot::broadcast::StatusBroadcaster;
+use hyperliquid_trading_bot::config::broadcast::load_broadcast_config;
 use hyperliquid_trading_bot::config::{exchange::load_exchange_config, load_config};
 use hyperliquid_trading_bot::engine::Engine;
 use hyperliquid_trading_bot::reporter::telegram::TelegramReporter;
@@ -107,6 +108,15 @@ async fn main() -> Result<()> {
         exchange_config.network
     );
 
+    // Load broadcast configuration (Telegram & WebSocket)
+    let broadcast_config = match load_broadcast_config(args.ws_port) {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to load broadcast config: {}", e);
+            std::process::exit(1);
+        }
+    };
+
     info!(
         "Starting {} Strategy for {}",
         config.type_name(),
@@ -114,7 +124,7 @@ async fn main() -> Result<()> {
     );
 
     // Default port 9000 if not specified
-    let ws_port = args.ws_port.or(Some(9000));
+    let ws_port = Some(broadcast_config.websocket.port);
     let broadcaster = StatusBroadcaster::new(ws_port);
     if let Some(p) = ws_port {
         info!("WebSocket Status Server enabled on port {}", p);
@@ -122,9 +132,16 @@ async fn main() -> Result<()> {
 
     // Initialize Telegram Reporter
     let mut reporter_handle = None;
-    if let Some(reporter) = TelegramReporter::new(broadcaster.subscribe())? {
-        info!("Telegram Reporter initialized. Spawning background task...");
-        reporter_handle = Some(tokio::spawn(reporter.run()));
+    if let Some(telegram_config) = broadcast_config.telegram {
+        match TelegramReporter::new(broadcaster.subscribe(), telegram_config) {
+            Ok(reporter) => {
+                info!("Telegram Reporter initialized. Spawning background task...");
+                reporter_handle = Some(tokio::spawn(reporter.run()));
+            }
+            Err(e) => {
+                error!("Failed to initialize Telegram Reporter: {}", e);
+            }
+        }
     }
 
     // Initialize Strategy

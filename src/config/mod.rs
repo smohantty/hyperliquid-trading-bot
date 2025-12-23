@@ -2,6 +2,7 @@ use self::strategy::StrategyConfig;
 use crate::error::BotError;
 use std::fs;
 
+pub mod broadcast;
 pub mod creator;
 pub mod exchange;
 pub mod strategy;

@@ -38,7 +38,18 @@ pub fn load_broadcast_config(cli_ws_port: Option<u16>) -> Result<BroadcastConfig
     let websocket = WebsocketConfig { port, host };
 
     // 2. Telegram Config
-    let telegram = if let Ok(path) = env::var("TELEGRAM_CONFIG_FILE") {
+    let telegram = if let Ok(raw_path) = env::var("TELEGRAM_CONFIG_FILE") {
+        // Expand tilde if present
+        let path = if raw_path.starts_with("~/") {
+            if let Ok(home) = env::var("HOME") {
+                raw_path.replacen("~", &home, 1)
+            } else {
+                raw_path
+            }
+        } else {
+            raw_path
+        };
+
         let content = fs::read_to_string(&path)
             .context(format!("Failed to read TELEGRAM_CONFIG_FILE at {}", path))?;
         Some(

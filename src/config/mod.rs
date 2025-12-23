@@ -28,7 +28,18 @@ pub fn read_env_or_file(key: &str) -> anyhow::Result<String> {
 
     // 2. Try checking key_FILE
     let file_env_key = format!("{}_FILE", key);
-    if let Ok(path) = env::var(&file_env_key) {
+    if let Ok(raw_path) = env::var(&file_env_key) {
+        // Expand tilde if present
+        let path = if raw_path.starts_with("~/") {
+            if let Ok(home) = env::var("HOME") {
+                raw_path.replacen("~", &home, 1)
+            } else {
+                raw_path
+            }
+        } else {
+            raw_path
+        };
+
         let content = fs::read_to_string(&path)
             .map_err(|e| anyhow::anyhow!("Failed to read secret file {}: {}", path, e))?;
         return Ok(content.trim().to_string());

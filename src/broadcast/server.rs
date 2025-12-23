@@ -2,6 +2,7 @@ use crate::broadcast::types::WSEvent;
 use crate::config::broadcast::WebsocketConfig;
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
+use std::collections::VecDeque;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::net::{TcpListener, TcpStream};
@@ -15,6 +16,7 @@ pub struct StatusBroadcaster {
     last_config: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
+    order_history: Arc<Mutex<VecDeque<WSEvent>>>,
 }
 
 impl StatusBroadcaster {
@@ -23,12 +25,14 @@ impl StatusBroadcaster {
         let last_config = Arc::new(Mutex::new(None));
         let last_summary = Arc::new(Mutex::new(None));
         let last_grid_state = Arc::new(Mutex::new(None));
+        let order_history = Arc::new(Mutex::new(VecDeque::with_capacity(50)));
 
         if let Some(conf) = config {
             let sender_clone = sender.clone();
             let config_clone = last_config.clone();
             let summary_clone = last_summary.clone();
             let grid_state_clone = last_grid_state.clone();
+            let history_clone = order_history.clone();
 
             tokio::spawn(async move {
                 if let Err(e) = run_server(
@@ -38,6 +42,7 @@ impl StatusBroadcaster {
                     config_clone,
                     summary_clone,
                     grid_state_clone,
+                    history_clone,
                 )
                 .await
                 {
@@ -51,6 +56,7 @@ impl StatusBroadcaster {
             last_config,
             last_summary,
             last_grid_state,
+            order_history,
         }
     }
 
@@ -71,6 +77,14 @@ impl StatusBroadcaster {
                 let mut lock = self.last_grid_state.lock().unwrap();
                 *lock = Some(event.clone());
             }
+            // Cache recent order updates
+            WSEvent::OrderUpdate(_) => {
+                let mut lock = self.order_history.lock().unwrap();
+                if lock.len() >= 50 {
+                    lock.pop_front();
+                }
+                lock.push_back(event.clone());
+            }
             _ => {}
         }
 
@@ -90,6 +104,7 @@ async fn run_server(
     last_config: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
+    order_history: Arc<Mutex<VecDeque<WSEvent>>>,
 ) -> anyhow::Result<()> {
     let addr = format!("{}:{}", host, port);
     let listener = TcpListener::bind(&addr).await?;
@@ -100,6 +115,7 @@ async fn run_server(
         let config_clone = last_config.clone();
         let summary_clone = last_summary.clone();
         let grid_state_clone = last_grid_state.clone();
+        let history_clone = order_history.clone();
 
         tokio::spawn(async move {
             if let Err(e) = handle_connection(
@@ -109,6 +125,7 @@ async fn run_server(
                 config_clone,
                 summary_clone,
                 grid_state_clone,
+                history_clone,
             )
             .await
             {
@@ -127,6 +144,7 @@ async fn handle_connection(
     last_config: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
+    order_history: Arc<Mutex<VecDeque<WSEvent>>>,
 ) -> anyhow::Result<()> {
     info!("New WebSocket connection: {}", peer_addr);
 
@@ -153,6 +171,17 @@ async fn handle_connection(
 
         let grid_state_opt = last_grid_state.lock().unwrap().clone();
         if let Some(event) = grid_state_opt {
+            let json_str = serde_json::to_string(&event)?;
+            ws_sender.send(Message::Text(json_str)).await?;
+        }
+
+        // Send cached order history
+        let history_events: Vec<WSEvent> = {
+            let history = order_history.lock().unwrap();
+            history.iter().cloned().collect()
+        };
+
+        for event in history_events {
             let json_str = serde_json::to_string(&event)?;
             ws_sender.send(Message::Text(json_str)).await?;
         }

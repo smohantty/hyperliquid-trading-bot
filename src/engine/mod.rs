@@ -465,6 +465,7 @@ impl Engine {
                 size: 0.0,
                 status: "CANCELLING".to_string(),
                 fee: 0.0,
+                is_taker: false,
             }));
 
             let cancel_req = hyperliquid_rust_sdk::ClientCancelRequestCloid {
@@ -526,6 +527,7 @@ impl Engine {
                     size: 0.0,
                     status: "CANCELLING".to_string(),
                     fee: 0.0,
+                    is_taker: false,
                 }));
                 // Handled via separate cancellation logic usually, but keep fallback
                 info!(
@@ -604,19 +606,6 @@ impl Engine {
             cloid: cloid.map(|c| c.as_uuid()),
         };
 
-        // Broadcast Order Placed (OPEN via Request)
-        if let Some(c) = cloid {
-            self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
-                oid: 0, // Not assigned yet
-                cloid: Some(c.to_string()),
-                side: side.to_string(),
-                price: limit_px,
-                size: sz,
-                status: "OPENING".to_string(),
-                fee: 0.0,
-            }));
-        }
-
         // Audit Log: REQ
         if let Some(logger) = &self.audit_logger {
             logger.log_req(
@@ -684,6 +673,7 @@ impl Engine {
                             size: amount,
                             status: "FILLED".to_string(),
                             fee: 0.0, // Fee not always available immediately in response
+                            is_taker: true,
                         }));
 
                         if let Err(e) = strategy.on_order_filled(
@@ -728,6 +718,7 @@ impl Engine {
                             size: target_sz,
                             status: "OPEN".to_string(),
                             fee: 0.0,
+                            is_taker: false,
                         }));
                     }
                 }
@@ -743,6 +734,7 @@ impl Engine {
                         size: 0.0,
                         status: "FAILED".to_string(),
                         fee: 0.0,
+                        is_taker: false,
                     }));
                     if let Err(strategy_err) = strategy.on_order_failed(c, &mut runtime.ctx) {
                         error!("Strategy on_order_failed error: {}", strategy_err);
@@ -851,6 +843,7 @@ impl Engine {
                     size: amount,
                     status: "FILLED".to_string(),
                     fee,
+                    is_taker: false,
                 }));
 
                 if let Some(c) = cloid {

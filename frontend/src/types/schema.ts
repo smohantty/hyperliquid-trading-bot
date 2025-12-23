@@ -104,6 +104,7 @@ export interface OrderEvent {
     size: number;
     status: string;
     fee: number;
+    is_taker: boolean;
 }
 
 export interface MarketEvent {

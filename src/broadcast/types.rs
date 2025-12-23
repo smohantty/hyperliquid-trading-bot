@@ -145,6 +145,7 @@ pub struct OrderEvent {
     pub size: f64,
     pub status: String,
     pub fee: f64,
+    pub is_taker: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

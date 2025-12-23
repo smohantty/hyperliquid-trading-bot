@@ -385,6 +385,68 @@ impl PerpGridStrategy {
         Ok(())
     }
 
+    fn validate_fill_assertions(zone: &GridZone, fill: &OrderFill, zone_idx: usize) {
+        // 1. Validate fill.side matches zone's pending order side
+        let expected_side = zone.pending_side;
+        if fill.side != expected_side {
+            error!(
+                "[PERP_GRID] ASSERTION FAILED: Zone {} expected side {:?} but got {:?}",
+                zone_idx, expected_side, fill.side
+            );
+        }
+        debug_assert_eq!(
+            fill.side, expected_side,
+            "Zone {} fill side mismatch: expected {:?}, got {:?}",
+            zone_idx, expected_side, fill.side
+        );
+
+        // 2. Validate raw_dir matches expected exchange direction
+        // Long mode: Buy = "Open Long", Sell = "Close Long"
+        // Short mode: Sell = "Open Short", Buy = "Close Short"
+        let expected_dir = match (zone.pending_side, zone.mode) {
+            (OrderSide::Buy, ZoneMode::Long) => "Open Long",
+            (OrderSide::Sell, ZoneMode::Long) => "Close Long",
+            (OrderSide::Sell, ZoneMode::Short) => "Open Short",
+            (OrderSide::Buy, ZoneMode::Short) => "Close Short",
+        };
+        if let Some(ref raw_dir) = fill.raw_dir {
+            if raw_dir != expected_dir {
+                error!(
+                    "[PERP_GRID] ASSERTION FAILED: Zone {} expected raw_dir '{}' but got '{}'",
+                    zone_idx, expected_dir, raw_dir
+                );
+            }
+            debug_assert_eq!(
+                raw_dir, expected_dir,
+                "Zone {} raw_dir mismatch: expected '{}', got '{}'",
+                zone_idx, expected_dir, raw_dir
+            );
+        }
+
+        // 3. Validate reduce_only matches open/close expectation
+        // Opening positions: reduce_only = false
+        // Closing positions: reduce_only = true
+        let expected_reduce_only = match (zone.pending_side, zone.mode) {
+            (OrderSide::Buy, ZoneMode::Long) => false,   // Open Long
+            (OrderSide::Sell, ZoneMode::Long) => true,   // Close Long
+            (OrderSide::Sell, ZoneMode::Short) => false, // Open Short
+            (OrderSide::Buy, ZoneMode::Short) => true,   // Close Short
+        };
+        if let Some(reduce_only) = fill.reduce_only {
+            if reduce_only != expected_reduce_only {
+                error!(
+                    "[PERP_GRID] ASSERTION FAILED: Zone {} expected reduce_only={} but got {}",
+                    zone_idx, expected_reduce_only, reduce_only
+                );
+            }
+            debug_assert_eq!(
+                reduce_only, expected_reduce_only,
+                "Zone {} reduce_only mismatch: expected {}, got {}",
+                zone_idx, expected_reduce_only, reduce_only
+            );
+        }
+    }
+
     fn place_counter_order(
         &mut self,
         zone_idx: usize,
@@ -548,74 +610,8 @@ impl Strategy for PerpGridStrategy {
                     let zone = &mut self.zones[zone_idx];
                     zone.order_id = None;
 
-                    // ============================================================
-                    // FILL VALIDATION ASSERTIONS
-                    // Verify exchange fill data matches our internal expectations
-                    // ============================================================
-
-                    // 1. Validate fill.side matches zone's pending order side
-                    let expected_side = zone.pending_side;
-                    if fill.side != expected_side {
-                        error!(
-                            "[PERP_GRID] ASSERTION FAILED: Zone {} expected side {:?} but got {:?}",
-                            zone_idx, expected_side, fill.side
-                        );
-                    }
-                    debug_assert_eq!(
-                        fill.side, expected_side,
-                        "Zone {} fill side mismatch: expected {:?}, got {:?}",
-                        zone_idx, expected_side, fill.side
-                    );
-
-                    // 2. Validate raw_dir matches expected exchange direction
-                    // Long mode: Buy = "Open Long", Sell = "Close Long"
-                    // Short mode: Sell = "Open Short", Buy = "Close Short"
-                    let expected_dir = match (zone.pending_side, zone.mode) {
-                        (OrderSide::Buy, ZoneMode::Long) => "Open Long",
-                        (OrderSide::Sell, ZoneMode::Long) => "Close Long",
-                        (OrderSide::Sell, ZoneMode::Short) => "Open Short",
-                        (OrderSide::Buy, ZoneMode::Short) => "Close Short",
-                    };
-                    if let Some(ref raw_dir) = fill.raw_dir {
-                        if raw_dir != expected_dir {
-                            error!(
-                                "[PERP_GRID] ASSERTION FAILED: Zone {} expected raw_dir '{}' but got '{}'",
-                                zone_idx, expected_dir, raw_dir
-                            );
-                        }
-                        debug_assert_eq!(
-                            raw_dir, expected_dir,
-                            "Zone {} raw_dir mismatch: expected '{}', got '{}'",
-                            zone_idx, expected_dir, raw_dir
-                        );
-                    }
-
-                    // 3. Validate reduce_only matches open/close expectation
-                    // Opening positions: reduce_only = false
-                    // Closing positions: reduce_only = true
-                    let expected_reduce_only = match (zone.pending_side, zone.mode) {
-                        (OrderSide::Buy, ZoneMode::Long) => false,   // Open Long
-                        (OrderSide::Sell, ZoneMode::Long) => true,   // Close Long
-                        (OrderSide::Sell, ZoneMode::Short) => false, // Open Short
-                        (OrderSide::Buy, ZoneMode::Short) => true,   // Close Short
-                    };
-                    if let Some(reduce_only) = fill.reduce_only {
-                        if reduce_only != expected_reduce_only {
-                            error!(
-                                "[PERP_GRID] ASSERTION FAILED: Zone {} expected reduce_only={} but got {}",
-                                zone_idx, expected_reduce_only, reduce_only
-                            );
-                        }
-                        debug_assert_eq!(
-                            reduce_only, expected_reduce_only,
-                            "Zone {} reduce_only mismatch: expected {}, got {}",
-                            zone_idx, expected_reduce_only, reduce_only
-                        );
-                    }
-
-                    // ============================================================
-                    // END FILL VALIDATION
-                    // ============================================================
+                    // Validate fill assertions
+                    Self::validate_fill_assertions(zone, fill, zone_idx);
 
                     // Determine if this is an opening or closing fill
                     let is_opening = match (zone.pending_side, zone.mode) {

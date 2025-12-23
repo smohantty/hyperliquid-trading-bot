@@ -9,7 +9,7 @@ import {
 } from '../types/schema';
 
 // Union type for summaries
-type Summary = 
+type Summary =
     | { type: 'spot_grid'; data: SpotGridSummary }
     | { type: 'perp_grid'; data: PerpGridSummary };
 
@@ -42,7 +42,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const connect = () => {
         try {
             setConnectionStatus('connecting');
-            const ws = new WebSocket('ws://localhost:9000');
+            const port = import.meta.env.VITE_WS_PORT || '9000';
+            const wsUrl = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:${port}`;
+            const ws = new WebSocket(wsUrl);
             wsRef.current = ws;
 
             ws.onopen = () => {

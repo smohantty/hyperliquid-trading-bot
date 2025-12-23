@@ -1,73 +1,54 @@
-# React + TypeScript + Vite
+# Hyperliquid Trading Bot Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A real-time dashboard for the Hyperliquid Trading Bot, built with React, TypeScript, and Vite.
 
-Currently, two official plugins are available:
+## 🚀 Quick Start
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### 1. Same Machine (Default)
+If you are running the bot locally on port 9000 (default), just run:
 
-## React Compiler
+```bash
+npm install
+npm run dev
+```
+Open `http://localhost:5173`. It will connect to `ws://localhost:9000`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 2. Remote Machine (Accessing from Laptop)
+If the bot is running on a remote server (e.g., `192.168.0.25`) and you are running the frontend locally:
 
-## Expanding the ESLint configuration
+1. Create a `.env.local` file in this directory.
+2. Add your remote bot URL:
+   ```ini
+   VITE_WS_URL=ws://192.168.0.25:9000
+   ```
+3. Run `npm run dev`.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 3. Custom Port (Same Machine)
+If you changed the bot to run on a different port (e.g., 9001):
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+1. Create a `.env.local` file.
+2. Add the port override:
+   ```ini
+   VITE_WS_PORT=9001
+   ```
+3. Run `npm run dev`.
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 📦 Building for Production
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+To build the static files for hosting (e.g., to serve them directly from the remote machine):
+
+```bash
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+The output will be in the `dist` folder. You can test it locally with:
+```bash
+npx serve -s dist
 ```
+
+## 🔧 Configuration Options
+
+| Environment Variable | Description | Example |
+|---------------------|-------------|---------|
+| `VITE_WS_URL` | Overrides the entire WebSocket connection URL. Use this for connecting to a different machine. | `ws://192.168.1.100:9000` |
+| `VITE_WS_PORT` | Overrides only the port. Keeps the hostname dynamic (matches the browser URL). | `9001` |

@@ -1,6 +1,8 @@
-use anyhow::Result;
+use crate::config::read_env_or_file;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TelegramConfig {
@@ -36,13 +38,22 @@ pub fn load_broadcast_config(cli_ws_port: Option<u16>) -> Result<BroadcastConfig
     let websocket = WebsocketConfig { port, host };
 
     // 2. Telegram Config
-    let tg_token = env::var("TELEGRAM_BOT_TOKEN").ok();
-    let tg_chat = env::var("TELEGRAM_CHAT_ID").ok();
-
-    let telegram = if let (Some(bot_token), Some(chat_id)) = (tg_token, tg_chat) {
-        Some(TelegramConfig { bot_token, chat_id })
+    let telegram = if let Ok(path) = env::var("TELEGRAM_CONFIG_FILE") {
+        let content = fs::read_to_string(&path)
+            .context(format!("Failed to read TELEGRAM_CONFIG_FILE at {}", path))?;
+        Some(
+            serde_json::from_str(&content)
+                .context("Failed to parse TELEGRAM_CONFIG_FILE as JSON")?,
+        )
     } else {
-        None
+        let tg_token = read_env_or_file("TELEGRAM_BOT_TOKEN").ok();
+        let tg_chat = read_env_or_file("TELEGRAM_CHAT_ID").ok();
+
+        if let (Some(bot_token), Some(chat_id)) = (tg_token, tg_chat) {
+            Some(TelegramConfig { bot_token, chat_id })
+        } else {
+            None
+        }
     };
 
     Ok(BroadcastConfig {

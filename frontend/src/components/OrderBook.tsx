@@ -88,6 +88,7 @@ const OrderBook: React.FC = () => {
                     }}>
                         <span style={{ flex: 1 }}>Price</span>
                         <span style={{ flex: 1, textAlign: 'center' }}>Size</span>
+                        <span style={{ width: '40px', textAlign: 'center' }}>Trades</span>
                         <span style={{ flex: 1, textAlign: 'right' }}>Action</span>
                     </div>
                     <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
@@ -152,6 +153,7 @@ const OrderBook: React.FC = () => {
                     }}>
                         <span style={{ flex: 1 }}>Action</span>
                         <span style={{ flex: 1, textAlign: 'center' }}>Size</span>
+                        <span style={{ width: '40px', textAlign: 'center' }}>Trades</span>
                         <span style={{ flex: 1, textAlign: 'right' }}>Price</span>
                     </div>
                     <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
@@ -241,6 +243,9 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
                     <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
                         {zone.size.toFixed(szDecimals)}
                     </span>
+                    <span style={{ width: '40px', textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                        {zone.roundtrip_count}
+                    </span>
                     <span style={{ flex: 1, textAlign: 'right' }}>{actionBadge}</span>
                 </>
             ) : (
@@ -248,6 +253,9 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
                     <span style={{ flex: 1 }}>{actionBadge}</span>
                     <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
                         {zone.size.toFixed(szDecimals)}
+                    </span>
+                    <span style={{ width: '40px', textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                        {zone.roundtrip_count}
                     </span>
                     <span style={{ flex: 1, textAlign: 'right', color: 'var(--color-buy)', fontFamily: 'var(--font-mono)' }}>
                         {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}

@@ -772,20 +772,10 @@ impl Strategy for PerpGridStrategy {
             .zones
             .iter()
             .map(|z| {
-                // Determine action label and type based on pending_side and mode
-                let (action_label, action_type, is_reduce_only) = match (z.pending_side, z.mode) {
-                    (OrderSide::Buy, ZoneMode::Long) => {
-                        ("Open Long".to_string(), "open".to_string(), false)
-                    }
-                    (OrderSide::Sell, ZoneMode::Long) => {
-                        ("Close Long".to_string(), "close".to_string(), true)
-                    }
-                    (OrderSide::Sell, ZoneMode::Short) => {
-                        ("Open Short".to_string(), "open".to_string(), false)
-                    }
-                    (OrderSide::Buy, ZoneMode::Short) => {
-                        ("Close Short".to_string(), "close".to_string(), true)
-                    }
+                // Frontend will derive labels. We just need reduce_only for the struct.
+                let is_reduce_only = match z.mode {
+                    ZoneMode::Short => z.pending_side.is_buy(),
+                    ZoneMode::Long => z.pending_side.is_sell(),
                 };
 
                 ZoneInfo {
@@ -796,8 +786,6 @@ impl Strategy for PerpGridStrategy {
                     pending_side: z.pending_side.to_string(),
                     has_order: z.order_id.is_some(),
                     is_reduce_only,
-                    action_label,
-                    action_type,
                     entry_price: z.entry_price,
                     roundtrip_count: z.roundtrip_count,
                 }

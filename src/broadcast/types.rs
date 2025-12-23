@@ -127,10 +127,6 @@ pub struct ZoneInfo {
     pub has_order: bool,
     pub is_reduce_only: bool, // For perp: closing orders are reduce_only
 
-    // Semantic labels (for frontend rendering)
-    pub action_label: String, // "Buy", "Sell", "Open Long", "Close Long", etc.
-    pub action_type: String,  // "open" or "close"
-
     // Metrics
     pub entry_price: f64,
     pub roundtrip_count: u32,

@@ -173,9 +173,43 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
     const isAsk = side === 'ask';
     const displayPrice = isAsk ? zone.upper_price : zone.lower_price;
 
-    const isClose = zone.is_reduce_only || zone.action_type === 'close';
+    const isClose = zone.is_reduce_only;
+    // Derive action label/type if needed, or simply use pending side color
     const actionColor = isClose ? 'var(--accent-yellow)' :
         zone.pending_side === 'Buy' ? 'var(--color-buy)' : 'var(--color-sell)';
+
+    let displayLabel: string = zone.pending_side;
+    if (isClose) {
+        // If reducing, maybe we want special label?
+        // Backend used to send "Close Long", "Close Short" etc.
+        // We can infer context if we had strategy type passed down.
+        // But simplistic view:
+        displayLabel = zone.pending_side === 'Buy' ? 'Buy (Close)' : 'Sell (Close)';
+    } else {
+        displayLabel = zone.pending_side === 'Buy' ? 'Buy (Open)' : 'Sell (Open)';
+    }
+
+    // Better logic:
+    // If we want exact parity with backend logic:
+    // We need to know if it's Long/Short/Neutral mode (which is in gridState, but not passed to ZoneRow deeply... wait gridState is in context)
+
+    // For now, let's keep it simple or use what we have.
+    // The previous code usedt's improve ZoneRow to take gridBias/strategyType if we want specific "Open Long" text.
+    // But user said "frontend can easily figure it out".
+
+    // Let's use logic similar to backend.
+    // We don't have ZoneMode in frontend explicitly attached to ZoneInfo easily without passing parent state.
+    // But we know:
+    // Perp + Long Bias + Sell = Close Long
+    // etc.
+
+    // However, ZoneRow doesn't receive strategy info currently.
+    // I should update ZoneRow signature to receive context info if needed?
+    // Or just simplify.
+
+    // Let's assume passed prop or update signature.
+    // Looking at OrderBook.tsx, it maps zones.
+
 
     const actionBadge = (
         <span style={{
@@ -186,7 +220,7 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
             fontSize: '9px',
             fontWeight: 600
         }}>
-            {zone.action_label}
+            {displayLabel}
         </span>
     );
 

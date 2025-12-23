@@ -763,11 +763,6 @@ impl Strategy for SpotGridStrategy {
             .iter()
             .map(|z| {
                 // Spot grid: Buy = opening, Sell = closing
-                let (action_label, action_type) = match z.pending_side {
-                    OrderSide::Buy => ("Buy".to_string(), "open".to_string()),
-                    OrderSide::Sell => ("Sell".to_string(), "close".to_string()),
-                };
-
                 ZoneInfo {
                     index: z.index,
                     lower_price: z.lower_price,
@@ -776,8 +771,6 @@ impl Strategy for SpotGridStrategy {
                     pending_side: z.pending_side.to_string(),
                     has_order: z.order_id.is_some(),
                     is_reduce_only: false, // Spot doesn't have reduce_only
-                    action_label,
-                    action_type,
                     entry_price: z.entry_price,
                     roundtrip_count: z.roundtrip_count,
                 }

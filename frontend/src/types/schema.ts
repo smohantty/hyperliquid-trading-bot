@@ -79,8 +79,7 @@ export interface ZoneInfo {
     pending_side: 'Buy' | 'Sell';
     has_order: boolean;
     is_reduce_only: boolean;
-    action_label: string;
-    action_type: 'open' | 'close';
+
     entry_price: number;
     roundtrip_count: number;
 }

@@ -11,6 +11,7 @@ const OrderBook: React.FC = () => {
     const { asks, bids, maxSize } = useMemo(() => {
         if (!gridState || !lastPrice) return { asks: [], bids: [], maxSize: 0 };
 
+        // Sort all zones by price descending (highest first)
         const sortedZones = [...gridState.zones].sort((a, b) => b.upper_price - a.upper_price);
 
         const asks: ZoneInfo[] = [];
@@ -26,7 +27,12 @@ const OrderBook: React.FC = () => {
             }
         });
 
-        asks.reverse();
+        // IMPORTANT: Keep both in descending order (highest at top)
+        // This makes prices "meet" at the center:
+        // - Asks: highest at top, LOWEST (closest to current) at BOTTOM (near center)
+        // - Bids: HIGHEST (closest to current) at TOP (near center), lowest at bottom
+        // NO reverse needed - both descending creates the visual spread effect
+
         return { asks, bids, maxSize };
     }, [gridState, lastPrice]);
 
@@ -48,6 +54,13 @@ const OrderBook: React.FC = () => {
 
     const isPerp = gridState.strategy_type === 'perp_grid';
 
+    // Best ask (lowest sell) and best bid (highest buy) for spread display
+    const bestAsk = asks.length > 0 ? asks[asks.length - 1] : null;
+    const bestBid = bids.length > 0 ? bids[0] : null;
+    const spread = bestAsk && bestBid
+        ? ((bestAsk.upper_price - bestBid.lower_price) / lastPrice * 100).toFixed(3)
+        : null;
+
     return (
         <div className="card" style={{
             overflow: 'hidden',
@@ -67,13 +80,14 @@ const OrderBook: React.FC = () => {
                 </span>
             </div>
 
-            {/* CLOB Layout */}
+            {/* CLOB Layout - Prices meet in the middle */}
             <div style={{ display: 'flex', minHeight: '320px' }}>
-                {/* Asks Side */}
+                {/* Asks Side - Price column on RIGHT (adjacent to center) */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    {/* Header: Action | Trades | Size | Price */}
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: '1fr 80px 50px 90px',
+                        gridTemplateColumns: '85px 50px 70px 1fr',
                         padding: '10px 16px',
                         fontSize: '10px',
                         color: 'var(--text-tertiary)',
@@ -82,6 +96,163 @@ const OrderBook: React.FC = () => {
                         fontWeight: 500,
                         borderBottom: '1px solid var(--border-color)',
                         background: 'rgba(255, 82, 82, 0.03)'
+                    }}>
+                        <span>Action</span>
+                        <span style={{ textAlign: 'center' }}>Trades</span>
+                        <span style={{ textAlign: 'center' }}>Size</span>
+                        <span style={{ textAlign: 'right' }}>Price</span>
+                    </div>
+                    <div style={{
+                        flex: 1,
+                        overflowY: 'auto',
+                        maxHeight: '280px',
+                        display: 'flex',
+                        flexDirection: 'column'
+                    }}>
+                        {asks.length === 0 ? (
+                            <EmptyState side="asks" />
+                        ) : (
+                            asks.map((zone, idx) => (
+                                <ZoneRow
+                                    key={zone.index}
+                                    zone={zone}
+                                    side="ask"
+                                    szDecimals={szDecimals}
+                                    maxSize={maxSize}
+                                    isNearSpread={idx === asks.length - 1}
+                                />
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                {/* Center Price Column */}
+                <div style={{
+                    width: '150px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '20px 12px',
+                    background: 'linear-gradient(180deg, var(--bg-base) 0%, rgba(5, 7, 10, 0.95) 100%)',
+                    borderLeft: '1px solid var(--border-color)',
+                    borderRight: '1px solid var(--border-color)',
+                    position: 'relative'
+                }}>
+                    {/* Decorative glow */}
+                    <div style={{
+                        position: 'absolute',
+                        width: '80px',
+                        height: '80px',
+                        borderRadius: '50%',
+                        background: 'var(--accent-glow)',
+                        filter: 'blur(35px)',
+                        opacity: 0.4
+                    }} />
+
+                    <div style={{
+                        fontSize: '9px',
+                        color: 'var(--text-tertiary)',
+                        marginBottom: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        fontWeight: 500
+                    }}>
+                        Current
+                    </div>
+                    <div style={{
+                        fontSize: '18px',
+                        fontWeight: 700,
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-primary)',
+                        textShadow: '0 0 20px var(--accent-glow)',
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
+                        ${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+
+                    {/* Spread indicator */}
+                    {spread && (
+                        <div style={{
+                            marginTop: '12px',
+                            padding: '4px 10px',
+                            background: 'var(--bg-hover)',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '10px',
+                            color: 'var(--text-secondary)',
+                            fontFamily: 'var(--font-mono)',
+                            position: 'relative',
+                            zIndex: 1
+                        }}>
+                            <span style={{ color: 'var(--text-tertiary)' }}>Spread:</span> {spread}%
+                        </div>
+                    )}
+
+                    <div style={{
+                        marginTop: '16px',
+                        display: 'flex',
+                        gap: '20px',
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{
+                                color: 'var(--color-sell)',
+                                fontWeight: 700,
+                                fontSize: '18px',
+                                fontFamily: 'var(--font-mono)',
+                                textShadow: '0 0 12px var(--color-sell-glow)'
+                            }}>
+                                {asks.length}
+                            </div>
+                            <div style={{
+                                color: 'var(--text-tertiary)',
+                                fontSize: '9px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                marginTop: '2px'
+                            }}>
+                                Asks
+                            </div>
+                        </div>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{
+                                color: 'var(--color-buy)',
+                                fontWeight: 700,
+                                fontSize: '18px',
+                                fontFamily: 'var(--font-mono)',
+                                textShadow: '0 0 12px var(--color-buy-glow)'
+                            }}>
+                                {bids.length}
+                            </div>
+                            <div style={{
+                                color: 'var(--text-tertiary)',
+                                fontSize: '9px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                marginTop: '2px'
+                            }}>
+                                Bids
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Bids Side - Price column on LEFT (adjacent to center) */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    {/* Header: Price | Size | Trades | Action */}
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 70px 50px 85px',
+                        padding: '10px 16px',
+                        fontSize: '10px',
+                        color: 'var(--text-tertiary)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        fontWeight: 500,
+                        borderBottom: '1px solid var(--border-color)',
+                        background: 'rgba(0, 230, 118, 0.03)'
                     }}>
                         <span>Price</span>
                         <span style={{ textAlign: 'center' }}>Size</span>
@@ -93,152 +264,17 @@ const OrderBook: React.FC = () => {
                         overflowY: 'auto',
                         maxHeight: '280px'
                     }}>
-                        {asks.length === 0 ? (
-                            <EmptyState side="asks" />
-                        ) : (
-                            asks.map(zone => (
-                                <ZoneRow
-                                    key={zone.index}
-                                    zone={zone}
-                                    side="ask"
-                                    szDecimals={szDecimals}
-                                    maxSize={maxSize}
-                                />
-                            ))
-                        )}
-                    </div>
-                </div>
-
-                {/* Center Price Column */}
-                <div style={{
-                    width: '160px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '24px 16px',
-                    background: 'linear-gradient(180deg, var(--bg-base) 0%, rgba(5, 7, 10, 0.95) 100%)',
-                    borderLeft: '1px solid var(--border-color)',
-                    borderRight: '1px solid var(--border-color)',
-                    position: 'relative'
-                }}>
-                    {/* Decorative glow */}
-                    <div style={{
-                        position: 'absolute',
-                        width: '100px',
-                        height: '100px',
-                        borderRadius: '50%',
-                        background: 'var(--accent-glow)',
-                        filter: 'blur(40px)',
-                        opacity: 0.3
-                    }} />
-
-                    <div style={{
-                        fontSize: '10px',
-                        color: 'var(--text-tertiary)',
-                        marginBottom: '12px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '1px',
-                        fontWeight: 500
-                    }}>
-                        Current
-                    </div>
-                    <div style={{
-                        fontSize: '20px',
-                        fontWeight: 700,
-                        fontFamily: 'var(--font-mono)',
-                        color: 'var(--text-primary)',
-                        textShadow: '0 0 20px var(--accent-glow)',
-                        position: 'relative',
-                        zIndex: 1
-                    }}>
-                        ${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-
-                    <div style={{
-                        marginTop: '24px',
-                        display: 'flex',
-                        gap: '24px',
-                        position: 'relative',
-                        zIndex: 1
-                    }}>
-                        <div style={{ textAlign: 'center' }}>
-                            <div style={{
-                                color: 'var(--color-sell)',
-                                fontWeight: 700,
-                                fontSize: '20px',
-                                fontFamily: 'var(--font-mono)',
-                                textShadow: '0 0 15px var(--color-sell-glow)'
-                            }}>
-                                {asks.length}
-                            </div>
-                            <div style={{
-                                color: 'var(--text-tertiary)',
-                                fontSize: '10px',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px',
-                                marginTop: '4px'
-                            }}>
-                                Asks
-                            </div>
-                        </div>
-                        <div style={{ textAlign: 'center' }}>
-                            <div style={{
-                                color: 'var(--color-buy)',
-                                fontWeight: 700,
-                                fontSize: '20px',
-                                fontFamily: 'var(--font-mono)',
-                                textShadow: '0 0 15px var(--color-buy-glow)'
-                            }}>
-                                {bids.length}
-                            </div>
-                            <div style={{
-                                color: 'var(--text-tertiary)',
-                                fontSize: '10px',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.5px',
-                                marginTop: '4px'
-                            }}>
-                                Bids
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Bids Side */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: '90px 50px 80px 1fr',
-                        padding: '10px 16px',
-                        fontSize: '10px',
-                        color: 'var(--text-tertiary)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
-                        fontWeight: 500,
-                        borderBottom: '1px solid var(--border-color)',
-                        background: 'rgba(0, 230, 118, 0.03)'
-                    }}>
-                        <span>Action</span>
-                        <span style={{ textAlign: 'center' }}>Trades</span>
-                        <span style={{ textAlign: 'center' }}>Size</span>
-                        <span style={{ textAlign: 'right' }}>Price</span>
-                    </div>
-                    <div style={{
-                        flex: 1,
-                        overflowY: 'auto',
-                        maxHeight: '280px'
-                    }}>
                         {bids.length === 0 ? (
                             <EmptyState side="bids" />
                         ) : (
-                            bids.map(zone => (
+                            bids.map((zone, idx) => (
                                 <ZoneRow
                                     key={zone.index}
                                     zone={zone}
                                     side="bid"
                                     szDecimals={szDecimals}
                                     maxSize={maxSize}
+                                    isNearSpread={idx === 0}
                                 />
                             ))
                         )}
@@ -258,6 +294,8 @@ const EmptyState: React.FC<{ side: 'asks' | 'bids' }> = ({ side }) => (
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
+        justifyContent: 'center',
+        flex: 1,
         gap: '8px'
     }}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.5 }}>
@@ -274,7 +312,8 @@ const ZoneRow: React.FC<{
     side: 'ask' | 'bid';
     szDecimals: number;
     maxSize: number;
-}> = ({ zone, side, szDecimals, maxSize }) => {
+    isNearSpread?: boolean;
+}> = ({ zone, side, szDecimals, maxSize, isNearSpread }) => {
     const isAsk = side === 'ask';
     const displayPrice = isAsk ? zone.upper_price : zone.lower_price;
     const nextPrice = isAsk ? zone.lower_price : zone.upper_price;
@@ -310,7 +349,7 @@ const ZoneRow: React.FC<{
         <div style={{
             display: 'flex',
             flexDirection: 'column',
-            alignItems: isAsk ? 'flex-start' : 'flex-end',
+            alignItems: isAsk ? 'flex-end' : 'flex-start',
             gap: '2px'
         }}>
             <Tooltip content="Current Active Limit Order">
@@ -319,7 +358,8 @@ const ZoneRow: React.FC<{
                     fontFamily: 'var(--font-mono)',
                     fontWeight: 600,
                     cursor: 'help',
-                    fontSize: '12px'
+                    fontSize: '12px',
+                    textShadow: isNearSpread ? `0 0 8px ${isAsk ? 'var(--color-sell-glow)' : 'var(--color-buy-glow)'}` : 'none'
                 }}>
                     {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
@@ -337,59 +377,45 @@ const ZoneRow: React.FC<{
         </div>
     );
 
+    // Column order:
+    // Asks: Action | Trades | Size | Price (price on right, near center)
+    // Bids: Price | Size | Trades | Action (price on left, near center)
+
     return (
         <div style={{
             position: 'relative',
             display: 'grid',
-            gridTemplateColumns: isAsk ? '1fr 80px 50px 90px' : '90px 50px 80px 1fr',
+            gridTemplateColumns: isAsk ? '85px 50px 70px 1fr' : '1fr 70px 50px 85px',
             alignItems: 'center',
             padding: '8px 16px',
             fontSize: '12px',
             opacity: zone.has_order ? 1 : 0.35,
             borderBottom: '1px solid var(--border-color)',
+            background: isNearSpread ? (isAsk ? 'rgba(255, 82, 82, 0.03)' : 'rgba(0, 230, 118, 0.03)') : 'transparent',
             transition: 'background var(--transition-fast), opacity var(--transition-fast)'
         }}
         onMouseEnter={(e) => {
             e.currentTarget.style.background = 'var(--bg-hover)';
         }}
         onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.background = isNearSpread
+                ? (isAsk ? 'rgba(255, 82, 82, 0.03)' : 'rgba(0, 230, 118, 0.03)')
+                : 'transparent';
         }}
         >
-            {/* Depth Bar */}
+            {/* Depth Bar - grows from center outward */}
             <div
                 className={`depth-bar ${side === 'ask' ? 'ask' : 'bid'}`}
                 style={{
                     width: `${depthPercent}%`,
-                    [side === 'ask' ? 'right' : 'left']: 0
+                    // Asks: bar grows from right (center) to left
+                    // Bids: bar grows from left (center) to right
+                    [isAsk ? 'right' : 'left']: 0
                 }}
             />
 
             {isAsk ? (
-                <>
-                    <div style={{ position: 'relative', zIndex: 1 }}>{priceDisplay}</div>
-                    <span style={{
-                        textAlign: 'center',
-                        fontFamily: 'var(--font-mono)',
-                        color: 'var(--text-secondary)',
-                        position: 'relative',
-                        zIndex: 1
-                    }}>
-                        {zone.size.toFixed(szDecimals)}
-                    </span>
-                    <span style={{
-                        textAlign: 'center',
-                        fontFamily: 'var(--font-mono)',
-                        color: zone.roundtrip_count > 0 ? 'var(--accent-primary)' : 'var(--text-muted)',
-                        fontSize: '11px',
-                        position: 'relative',
-                        zIndex: 1
-                    }}>
-                        {zone.roundtrip_count}
-                    </span>
-                    <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>{actionBadge}</div>
-                </>
-            ) : (
+                // Asks: Action | Trades | Size | Price
                 <>
                     <div style={{ position: 'relative', zIndex: 1 }}>{actionBadge}</div>
                     <span style={{
@@ -412,6 +438,31 @@ const ZoneRow: React.FC<{
                         {zone.size.toFixed(szDecimals)}
                     </span>
                     <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>{priceDisplay}</div>
+                </>
+            ) : (
+                // Bids: Price | Size | Trades | Action
+                <>
+                    <div style={{ position: 'relative', zIndex: 1 }}>{priceDisplay}</div>
+                    <span style={{
+                        textAlign: 'center',
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-secondary)',
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
+                        {zone.size.toFixed(szDecimals)}
+                    </span>
+                    <span style={{
+                        textAlign: 'center',
+                        fontFamily: 'var(--font-mono)',
+                        color: zone.roundtrip_count > 0 ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        fontSize: '11px',
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
+                        {zone.roundtrip_count}
+                    </span>
+                    <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>{actionBadge}</div>
                 </>
             )}
         </div>

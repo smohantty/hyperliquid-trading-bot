@@ -47,7 +47,8 @@ pub struct PerpGridStrategy {
     active_orders: HashMap<Cloid, usize>, // cloid -> zone_index
     trade_count: u32,
     state: StrategyState,
-    start_price: Option<f64>,
+    initial_entry_price: Option<f64>,
+    trigger_reference_price: Option<f64>,
     start_time: Instant,
 
     // Performance Metrics
@@ -68,7 +69,8 @@ impl PerpGridStrategy {
             active_orders: HashMap::new(),
             trade_count: 0,
             state: StrategyState::Initializing,
-            start_price: None,
+            initial_entry_price: None,
+            trigger_reference_price: None,
             start_time: Instant::now(),
             realized_pnl: 0.0,
             total_fees: 0.0,
@@ -210,14 +212,13 @@ impl PerpGridStrategy {
         );
 
         if total_position_required.abs() > 0.0 {
-            self.start_price = Some(initial_price);
-
             if let Some(trigger) = self.config.trigger_price {
                 info!(
                     "[PERP_GRID] Assets required ({}), but waiting for trigger price {}",
                     total_position_required, trigger
                 );
                 self.state = StrategyState::WaitingForTrigger;
+                self.trigger_reference_price = Some(initial_price);
                 return Ok(());
             }
 
@@ -278,6 +279,7 @@ impl PerpGridStrategy {
                     "[ORDER_REQUEST] [PERP_GRID] REBALANCING: LIMIT {} {} {} @ {}",
                     side, target_size, self.config.symbol, activation_price
                 );
+                self.initial_entry_price = Some(activation_price);
                 ctx.place_order(OrderRequest::Limit {
                     symbol: self.config.symbol.clone(),
                     side,
@@ -290,7 +292,7 @@ impl PerpGridStrategy {
             }
         }
 
-        self.start_price = Some(initial_price);
+        self.initial_entry_price = Some(initial_price);
         self.state = StrategyState::Running;
         if let Err(e) = self.refresh_orders(ctx) {
             warn!("[PERP_GRID] Failed to refresh orders: {}", e);
@@ -486,9 +488,9 @@ impl Strategy for PerpGridStrategy {
                 if let Some(trigger) = self.config.trigger_price {
                     // Need start_price to know direction??
                     // initialize_zones sets self.start_price
-                    let start = self
-                        .start_price
-                        .expect("Start price must be set when in WaitingForTrigger state");
+                    let start = self.trigger_reference_price.expect(
+                        "Trigger reference price must be set when in WaitingForTrigger state",
+                    );
 
                     if common::check_trigger(price, trigger, start) {
                         info!(
@@ -562,7 +564,7 @@ impl Strategy for PerpGridStrategy {
                         }
                     }
 
-                    self.start_price = Some(fill.price);
+                    self.initial_entry_price = Some(fill.price);
                     self.state = StrategyState::Running;
                     self.refresh_orders(ctx)?;
                     return Ok(());
@@ -724,7 +726,7 @@ impl Strategy for PerpGridStrategy {
             grid_spacing_pct,
             roundtrips: total_roundtrips,
             margin_balance: ctx.get_perp_available("USDC"),
-            start_price: self.start_price,
+            initial_entry_price: self.initial_entry_price,
         })
     }
 

@@ -110,9 +110,9 @@ const SummaryCard: React.FC = () => {
                     <StatItem label="Position" value={Math.abs(perpData.position_size).toFixed(4)} subValue={perpData.position_side} valueColor={positionColor} />
                     <StatItem label="Avg Entry" value={`$${perpData.avg_entry_price.toFixed(2)}`} />
                     <StatItem
-                        label="Start Price"
-                        value={s.start_price ? `$${s.start_price.toFixed(2)}` : '--'}
-                        tooltip="Reference price when strategy started"
+                        label="Initial Entry"
+                        value={s.initial_entry_price ? `$${s.initial_entry_price.toFixed(2)}` : '--'}
+                        tooltip="Average acquisition cost when strategy started"
                     />
                     <StatItem label="Margin" value={`$${perpData.margin_balance.toFixed(2)}`} />
                     <StatItem label="Fees" value={`$${s.total_fees.toFixed(2)}`} valueColor="var(--color-sell)" isLast />
@@ -224,9 +224,9 @@ const SummaryCard: React.FC = () => {
                 <StatItem label="Position" value={spotData.position_size.toFixed(4)} />
                 <StatItem label="Avg Entry" value={`$${spotData.avg_entry_price.toFixed(4)}`} />
                 <StatItem
-                    label="Start Price"
-                    value={s.start_price ? `$${s.start_price.toFixed(4)}` : '--'}
-                    tooltip="Reference price when strategy started"
+                    label="Initial Entry"
+                    value={s.initial_entry_price ? `$${s.initial_entry_price.toFixed(4)}` : '--'}
+                    tooltip="Average acquisition cost when strategy started"
                 />
                 <StatItem label="Quote" value={`$${spotData.quote_balance.toFixed(2)}`} />
                 <StatItem label="Fees" value={`$${s.total_fees.toFixed(2)}`} valueColor="var(--color-sell)" isLast />

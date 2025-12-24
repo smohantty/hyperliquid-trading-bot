@@ -32,7 +32,7 @@ export interface SpotGridSummary {
     realized_pnl: number;
     unrealized_pnl: number;
     total_fees: number;
-    start_price?: number;
+    initial_entry_price?: number;
     grid_count: number;
     range_low: number;
     range_high: number;
@@ -61,7 +61,7 @@ export interface PerpGridSummary {
     grid_spacing_pct: [number, number]; // (min%, max%) - same for geometric, different for arithmetic
     roundtrips: number;
     margin_balance: number;
-    start_price?: number;
+    initial_entry_price?: number;
 }
 
 // Union type for any strategy summary

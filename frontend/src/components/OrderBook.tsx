@@ -130,12 +130,12 @@ const OrderBook: React.FC = () => {
                         fontSize: '11px'
                     }}>
                         <div style={{ textAlign: 'center' }}>
-                            <div style={{ color: 'var(--color-sell)', fontWeight: 600 }}>{asks.length}</div>
-                            <div style={{ color: 'var(--text-tertiary)', fontSize: '9px' }}>Asks</div>
+                            <div style={{ color: 'var(--color-sell)', fontWeight: 600, fontSize: '16px' }}>{asks.length}</div>
+                            <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Asks</div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
-                            <div style={{ color: 'var(--color-buy)', fontWeight: 600 }}>{bids.length}</div>
-                            <div style={{ color: 'var(--text-tertiary)', fontSize: '9px' }}>Bids</div>
+                            <div style={{ color: 'var(--color-buy)', fontWeight: 600, fontSize: '16px' }}>{bids.length}</div>
+                            <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Bids</div>
                         </div>
                     </div>
                 </div>

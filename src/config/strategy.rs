@@ -6,31 +6,37 @@ pub use crate::strategy::types::{GridBias, GridType};
 #[serde(tag = "type")]
 pub enum StrategyConfig {
     #[serde(rename = "spot_grid")]
-    SpotGrid {
-        symbol: String,
-        upper_price: f64,
-        lower_price: f64,
-        grid_type: GridType,
-        grid_count: u32,
-        total_investment: f64,
-        #[serde(default)]
-        trigger_price: Option<f64>,
-    },
+    SpotGrid(SpotGridConfig),
     #[serde(rename = "perp_grid")]
-    PerpGrid {
-        symbol: String,
-        leverage: u32,
-        #[serde(default = "default_is_isolated")]
-        is_isolated: bool,
-        upper_price: f64,
-        lower_price: f64,
-        grid_type: GridType,
-        grid_count: u32,
-        total_investment: f64,
-        grid_bias: GridBias,
-        #[serde(default)]
-        trigger_price: Option<f64>,
-    },
+    PerpGrid(PerpGridConfig),
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SpotGridConfig {
+    pub symbol: String,
+    pub upper_price: f64,
+    pub lower_price: f64,
+    pub grid_type: GridType,
+    pub grid_count: u32,
+    pub total_investment: f64,
+    #[serde(default)]
+    pub trigger_price: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct PerpGridConfig {
+    pub symbol: String,
+    pub leverage: u32,
+    #[serde(default = "default_is_isolated")]
+    pub is_isolated: bool,
+    pub upper_price: f64,
+    pub lower_price: f64,
+    pub grid_type: GridType,
+    pub grid_count: u32,
+    pub total_investment: f64,
+    pub grid_bias: GridBias,
+    #[serde(default)]
+    pub trigger_price: Option<f64>,
 }
 
 fn default_is_isolated() -> bool {
@@ -40,111 +46,105 @@ fn default_is_isolated() -> bool {
 impl StrategyConfig {
     pub fn type_name(&self) -> &str {
         match self {
-            StrategyConfig::SpotGrid { .. } => "Spot Grid",
-            StrategyConfig::PerpGrid { .. } => "Perp Grid",
+            StrategyConfig::SpotGrid(_) => "Spot Grid",
+            StrategyConfig::PerpGrid(_) => "Perp Grid",
         }
     }
 
     pub fn symbol(&self) -> &str {
         match self {
-            StrategyConfig::SpotGrid { symbol, .. } => symbol,
-            StrategyConfig::PerpGrid { symbol, .. } => symbol,
+            StrategyConfig::SpotGrid(c) => &c.symbol,
+            StrategyConfig::PerpGrid(c) => &c.symbol,
         }
     }
+
     pub fn validate(&self) -> anyhow::Result<()> {
         match self {
-            StrategyConfig::SpotGrid {
-                symbol,
-                trigger_price,
-                lower_price,
-                upper_price,
-                grid_count,
-                total_investment,
-                ..
-            } => {
-                // Common checks
-                if *grid_count <= 2 {
-                    return Err(anyhow::anyhow!(
-                        "Grid count {} must be greater than 2.",
-                        grid_count
-                    ));
-                }
-                if *upper_price <= *lower_price {
-                    return Err(anyhow::anyhow!(
-                        "Upper price {} must be greater than lower price {}.",
-                        upper_price,
-                        lower_price
-                    ));
-                }
-                if let Some(trigger) = trigger_price {
-                    if *trigger < *lower_price || *trigger > *upper_price {
-                        return Err(anyhow::anyhow!(
-                            "Trigger price {} is outside the grid range [{}, {}].",
-                            trigger,
-                            lower_price,
-                            upper_price
-                        ));
-                    }
-                    if *trigger <= 0.0 {
-                        return Err(anyhow::anyhow!("Trigger price must be positive."));
-                    }
-                }
+            StrategyConfig::SpotGrid(c) => c.validate(),
+            StrategyConfig::PerpGrid(c) => c.validate(),
+        }
+    }
+}
 
-                // Spot specific
-                if !symbol.contains('/') || symbol.len() < 3 {
-                    return Err(anyhow::anyhow!(
-                        "Spot symbol must be in 'Base/Quote' format"
-                    ));
-                }
-                if *total_investment <= 0.0 {
-                    return Err(anyhow::anyhow!("Total investment must be positive."));
-                }
+impl SpotGridConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        // Common checks
+        if self.grid_count <= 2 {
+            return Err(anyhow::anyhow!(
+                "Grid count {} must be greater than 2.",
+                self.grid_count
+            ));
+        }
+        if self.upper_price <= self.lower_price {
+            return Err(anyhow::anyhow!(
+                "Upper price {} must be greater than lower price {}.",
+                self.upper_price,
+                self.lower_price
+            ));
+        }
+        if let Some(trigger) = self.trigger_price {
+            if trigger < self.lower_price || trigger > self.upper_price {
+                return Err(anyhow::anyhow!(
+                    "Trigger price {} is outside the grid range [{}, {}].",
+                    trigger,
+                    self.lower_price,
+                    self.upper_price
+                ));
             }
-            StrategyConfig::PerpGrid {
-                leverage,
-                trigger_price,
-                lower_price,
-                upper_price,
-                grid_count,
-                total_investment,
-                ..
-            } => {
-                // Common checks
-                if *grid_count <= 2 {
-                    return Err(anyhow::anyhow!(
-                        "Grid count {} must be greater than 2.",
-                        grid_count
-                    ));
-                }
-                if *upper_price <= *lower_price {
-                    return Err(anyhow::anyhow!(
-                        "Upper price {} must be greater than lower price {}.",
-                        upper_price,
-                        lower_price
-                    ));
-                }
-                if let Some(trigger) = trigger_price {
-                    if *trigger < *lower_price || *trigger > *upper_price {
-                        return Err(anyhow::anyhow!(
-                            "Trigger price {} is outside the grid range [{}, {}].",
-                            trigger,
-                            lower_price,
-                            upper_price
-                        ));
-                    }
-                    if *trigger <= 0.0 {
-                        return Err(anyhow::anyhow!("Trigger price must be positive."));
-                    }
-                }
+            if trigger <= 0.0 {
+                return Err(anyhow::anyhow!("Trigger price must be positive."));
+            }
+        }
 
-                // Perp specific
-                if *leverage == 0 || *leverage > 50 {
-                    return Err(anyhow::anyhow!("Leverage must be between 1 and 50"));
-                }
-                if *total_investment <= 0.0 {
-                    return Err(anyhow::anyhow!("Total investment must be positive."));
-                }
+        // Spot specific
+        if !self.symbol.contains('/') || self.symbol.len() < 3 {
+            return Err(anyhow::anyhow!(
+                "Spot symbol must be in 'Base/Quote' format"
+            ));
+        }
+        if self.total_investment <= 0.0 {
+            return Err(anyhow::anyhow!("Total investment must be positive."));
+        }
+        Ok(())
+    }
+}
+
+impl PerpGridConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        // Common checks
+        if self.grid_count <= 2 {
+            return Err(anyhow::anyhow!(
+                "Grid count {} must be greater than 2.",
+                self.grid_count
+            ));
+        }
+        if self.upper_price <= self.lower_price {
+            return Err(anyhow::anyhow!(
+                "Upper price {} must be greater than lower price {}.",
+                self.upper_price,
+                self.lower_price
+            ));
+        }
+        if let Some(trigger) = self.trigger_price {
+            if trigger < self.lower_price || trigger > self.upper_price {
+                return Err(anyhow::anyhow!(
+                    "Trigger price {} is outside the grid range [{}, {}].",
+                    trigger,
+                    self.lower_price,
+                    self.upper_price
+                ));
             }
+            if trigger <= 0.0 {
+                return Err(anyhow::anyhow!("Trigger price must be positive."));
+            }
+        }
+
+        // Perp specific
+        if self.leverage == 0 || self.leverage > 50 {
+            return Err(anyhow::anyhow!("Leverage must be between 1 and 50"));
+        }
+        if self.total_investment <= 0.0 {
+            return Err(anyhow::anyhow!("Total investment must be positive."));
         }
         Ok(())
     }
@@ -189,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_validation_upper_less_than_lower() {
-        let config = StrategyConfig::SpotGrid {
+        let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
             upper_price: 1000.0,
             lower_price: 2000.0,
@@ -197,7 +197,7 @@ mod tests {
             grid_count: 10,
             total_investment: 1000.0,
             trigger_price: None,
-        };
+        });
         let res = config.validate();
         assert!(res.is_err());
         assert_eq!(
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_validation_trigger_out_of_bounds() {
-        let config = StrategyConfig::SpotGrid {
+        let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
             upper_price: 2000.0,
             lower_price: 1000.0,
@@ -216,7 +216,7 @@ mod tests {
             grid_count: 10,
             total_investment: 1000.0,
             trigger_price: Some(3000.0),
-        };
+        });
         let res = config.validate();
         assert!(res.is_err());
         assert!(res.unwrap_err().to_string().contains("Trigger price"));
@@ -224,7 +224,7 @@ mod tests {
 
     #[test]
     fn test_validation_grid_count_too_low() {
-        let config = StrategyConfig::SpotGrid {
+        let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
             upper_price: 2000.0,
             lower_price: 1000.0,
@@ -232,7 +232,7 @@ mod tests {
             grid_count: 2,
             total_investment: 1000.0,
             trigger_price: None,
-        };
+        });
         let res = config.validate();
         assert!(res.is_err());
         assert_eq!(
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_validation_invalid_symbol_format() {
-        let config = StrategyConfig::SpotGrid {
+        let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTCUSDC".to_string(), // Missing '/'
             upper_price: 2000.0,
             lower_price: 1000.0,
@@ -251,13 +251,13 @@ mod tests {
             grid_count: 5,
             total_investment: 1000.0,
             trigger_price: None,
-        };
+        });
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validation_negative_investment() {
-        let config = StrategyConfig::SpotGrid {
+        let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
             upper_price: 2000.0,
             lower_price: 1000.0,
@@ -265,14 +265,14 @@ mod tests {
             grid_count: 5,
             total_investment: -100.0,
             trigger_price: None,
-        };
+        });
         assert!(config.validate().is_err());
     }
 
     #[test]
     fn test_validation_invalid_leverage() {
         // Zero leverage
-        let config = StrategyConfig::PerpGrid {
+        let config = StrategyConfig::PerpGrid(PerpGridConfig {
             symbol: "BTC".to_string(),
             leverage: 0,
             is_isolated: true,
@@ -283,11 +283,11 @@ mod tests {
             total_investment: 1000.0,
             grid_bias: GridBias::Neutral,
             trigger_price: None,
-        };
+        });
         assert!(config.validate().is_err());
 
         // Too high leverage
-        let config2 = StrategyConfig::PerpGrid {
+        let config2 = StrategyConfig::PerpGrid(PerpGridConfig {
             symbol: "BTC".to_string(),
             leverage: 51,
             is_isolated: true,
@@ -298,13 +298,13 @@ mod tests {
             total_investment: 1000.0,
             grid_bias: GridBias::Neutral,
             trigger_price: None,
-        };
+        });
         assert!(config2.validate().is_err());
     }
 
     #[test]
     fn test_validation_valid_configs() {
-        let spot = StrategyConfig::SpotGrid {
+        let spot = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
             upper_price: 2000.0,
             lower_price: 1000.0,
@@ -312,10 +312,10 @@ mod tests {
             grid_count: 10,
             total_investment: 1000.0,
             trigger_price: None,
-        };
+        });
         assert!(spot.validate().is_ok());
 
-        let perp = StrategyConfig::PerpGrid {
+        let perp = StrategyConfig::PerpGrid(PerpGridConfig {
             symbol: "BTC".to_string(),
             leverage: 10,
             is_isolated: true,
@@ -326,7 +326,7 @@ mod tests {
             total_investment: 1000.0,
             grid_bias: GridBias::Neutral,
             trigger_price: None,
-        };
+        });
         assert!(perp.validate().is_ok());
     }
 }

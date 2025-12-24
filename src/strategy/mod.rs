@@ -34,7 +34,7 @@ pub trait Strategy {
 pub fn init_strategy(config: StrategyConfig) -> Result<Box<dyn Strategy>> {
     config.validate()?;
     match config {
-        StrategyConfig::SpotGrid { .. } => Ok(Box::new(spot_grid::SpotGridStrategy::new(config))),
-        StrategyConfig::PerpGrid { .. } => Ok(Box::new(perp_grid::PerpGridStrategy::new(config))),
+        StrategyConfig::SpotGrid(c) => Ok(Box::new(spot_grid::SpotGridStrategy::new(c))),
+        StrategyConfig::PerpGrid(c) => Ok(Box::new(perp_grid::PerpGridStrategy::new(c))),
     }
 }

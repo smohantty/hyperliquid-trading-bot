@@ -236,11 +236,11 @@ impl Engine {
         self.log_balances(&ctx);
 
         // 5. Setup Leverage/Margin for Perp strategies
-        if let StrategyConfig::PerpGrid {
+        if let StrategyConfig::PerpGrid(crate::config::strategy::PerpGridConfig {
             leverage,
             is_isolated,
             ..
-        } = &self.config
+        }) = &self.config
         {
             let is_cross = !is_isolated; // is_cross = true means cross margin
             let margin_mode = if is_cross { "Cross" } else { "Isolated" };

@@ -1,4 +1,4 @@
-use crate::config::strategy::{GridBias, GridType, StrategyConfig};
+use crate::config::strategy::{GridBias, GridType, PerpGridConfig, SpotGridConfig, StrategyConfig};
 use anyhow::Result;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use std::fs;
@@ -116,7 +116,7 @@ fn create_spot_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         None
     };
 
-    Ok(StrategyConfig::SpotGrid {
+    Ok(StrategyConfig::SpotGrid(SpotGridConfig {
         symbol,
         upper_price,
         lower_price,
@@ -124,7 +124,7 @@ fn create_spot_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         grid_count,
         total_investment,
         trigger_price,
-    })
+    }))
 }
 
 fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
@@ -213,7 +213,7 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         None
     };
 
-    Ok(StrategyConfig::PerpGrid {
+    Ok(StrategyConfig::PerpGrid(PerpGridConfig {
         symbol,
         leverage,
         is_isolated,
@@ -224,18 +224,18 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         total_investment,
         grid_bias,
         trigger_price,
-    })
+    }))
 }
 
 fn generate_default_filename(config: &StrategyConfig) -> String {
     match config {
-        StrategyConfig::SpotGrid {
+        StrategyConfig::SpotGrid(SpotGridConfig {
             symbol,
             upper_price,
             lower_price,
             grid_type,
             ..
-        } => {
+        }) => {
             // Extract asset name (e.g., "ETH" from "ETH/USDC")
             let asset = symbol.split('/').next().unwrap_or(symbol);
             format!(
@@ -243,14 +243,14 @@ fn generate_default_filename(config: &StrategyConfig) -> String {
                 asset, grid_type, lower_price, upper_price
             )
         }
-        StrategyConfig::PerpGrid {
+        StrategyConfig::PerpGrid(PerpGridConfig {
             symbol,
             leverage,
             grid_bias,
             lower_price,
             upper_price,
             ..
-        } => {
+        }) => {
             format!(
                 "{}_Perp_{:?}_{}x_{}_{}.toml",
                 symbol, grid_bias, leverage, lower_price, upper_price

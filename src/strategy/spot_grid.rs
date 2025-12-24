@@ -1,7 +1,8 @@
 use super::common;
 use super::types::GridType;
 use crate::broadcast::types::{GridState, StrategySummary};
-use crate::config::strategy::StrategyConfig;
+use crate::config::strategy::SpotGridConfig;
+
 use crate::engine::context::{MarketInfo, StrategyContext, MIN_NOTIONAL_VALUE};
 use crate::model::{Cloid, OrderFill, OrderRequest, OrderSide};
 use crate::strategy::Strategy;
@@ -65,46 +66,43 @@ pub struct SpotGridStrategy {
 }
 
 impl SpotGridStrategy {
-    pub fn new(config: StrategyConfig) -> Self {
-        match config {
-            StrategyConfig::SpotGrid {
-                symbol,
-                upper_price,
-                lower_price,
-                grid_type,
-                grid_count,
-                total_investment,
-                trigger_price,
-            } => {
-                let (base_asset, quote_asset) = match symbol.split_once('/') {
-                    Some((b, q)) => (b.to_string(), q.to_string()),
-                    None => (symbol.clone(), "USDC".to_string()),
-                };
+    pub fn new(config: SpotGridConfig) -> Self {
+        let SpotGridConfig {
+            symbol,
+            upper_price,
+            lower_price,
+            grid_type,
+            grid_count,
+            total_investment,
+            trigger_price,
+        } = config;
 
-                // Always start in Initializing to allow balance checks in initialize_zones
-                Self {
-                    symbol,
-                    base_asset,
-                    quote_asset,
-                    upper_price,
-                    lower_price,
-                    grid_type,
-                    grid_count,
-                    total_investment,
-                    trigger_price,
-                    zones: Vec::new(),
-                    active_orders: HashMap::new(),
-                    state: StrategyState::Initializing,
-                    trade_count: 0,
-                    start_price: None,
-                    start_time: Instant::now(),
-                    realized_pnl: 0.0,
-                    total_fees: 0.0,
-                    inventory: 0.0,
-                    avg_entry_price: 0.0,
-                }
-            }
-            _ => panic!("Invalid config type for SpotGridStrategy"),
+        let (base_asset, quote_asset) = match symbol.split_once('/') {
+            Some((b, q)) => (b.to_string(), q.to_string()),
+            None => (symbol.clone(), "USDC".to_string()),
+        };
+
+        // Always start in Initializing to allow balance checks in initialize_zones
+        Self {
+            symbol,
+            base_asset,
+            quote_asset,
+            upper_price,
+            lower_price,
+            grid_type,
+            grid_count,
+            total_investment,
+            trigger_price,
+            zones: Vec::new(),
+            active_orders: HashMap::new(),
+            state: StrategyState::Initializing,
+            trade_count: 0,
+            start_price: None,
+            start_time: Instant::now(),
+            realized_pnl: 0.0,
+            total_fees: 0.0,
+            inventory: 0.0,
+            avg_entry_price: 0.0,
         }
     }
 
@@ -790,7 +788,7 @@ impl Strategy for SpotGridStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::strategy::StrategyConfig;
+    use crate::config::strategy::SpotGridConfig;
     use crate::engine::context::{MarketInfo, StrategyContext};
 
     #[test]
@@ -798,7 +796,7 @@ mod tests {
         // Scenario: Assets Sufficient. Wait for trigger.
         // Start Price: 100. Trigger: 105. Expect: Wait until > 105.
 
-        let config = StrategyConfig::SpotGrid {
+        let config = SpotGridConfig {
             symbol: "HYPE/USDC".to_string(),
             upper_price: 110.0,
             lower_price: 90.0,
@@ -858,7 +856,7 @@ mod tests {
         // trigger_price=104 means initial_price=104
         // Zone [105-110] has lower=105 > 104 → Sell (needs base acquisition)
 
-        let config = StrategyConfig::SpotGrid {
+        let config = SpotGridConfig {
             symbol: "HYPE/USDC".to_string(),
             upper_price: 110.0,
             lower_price: 90.0,
@@ -942,7 +940,7 @@ mod tests {
         // 2. Fill Buy Order (Check Fee)
         // 3. Fill Sell Order (Check PnL, Fee, Roundtrip)
 
-        let config = StrategyConfig::SpotGrid {
+        let config = SpotGridConfig {
             symbol: "HYPE/USDC".to_string(),
             upper_price: 110.0,
             lower_price: 90.0,
@@ -1060,7 +1058,7 @@ mod tests {
         // 3. Buy 10 @ 110 -> Inventory 20, Avg 105
         // 4. Sell 5 @ 120 -> Inventory 15, Avg 105
 
-        let config = StrategyConfig::SpotGrid {
+        let config = SpotGridConfig {
             symbol: "HYPE/USDC".to_string(),
             upper_price: 110.0,
             lower_price: 90.0,
@@ -1178,7 +1176,7 @@ mod tests {
         // Scenario: High Base, Low Quote.
         // Expect: Sell excess base to cover quote requirements.
 
-        let config = StrategyConfig::SpotGrid {
+        let config = SpotGridConfig {
             symbol: "HYPE/USDC".to_string(),
             upper_price: 110.0,
             lower_price: 90.0,

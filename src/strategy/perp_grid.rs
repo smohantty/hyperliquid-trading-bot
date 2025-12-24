@@ -1,5 +1,6 @@
 use crate::broadcast::types::{GridState, StrategySummary};
-use crate::config::strategy::StrategyConfig;
+use crate::config::strategy::PerpGridConfig;
+
 use crate::engine::context::{StrategyContext, MIN_NOTIONAL_VALUE};
 use crate::model::{Cloid, OrderFill, OrderRequest, OrderSide};
 use crate::strategy::Strategy;
@@ -69,43 +70,42 @@ pub struct PerpGridStrategy {
 }
 
 impl PerpGridStrategy {
-    pub fn new(config: StrategyConfig) -> Self {
-        match config {
-            StrategyConfig::PerpGrid {
-                symbol,
-                leverage,
-                is_isolated,
-                upper_price,
-                lower_price,
-                grid_type,
-                grid_count,
-                total_investment,
-                grid_bias,
-                trigger_price, // Added Config Field
-            } => Self {
-                symbol,
-                leverage,
-                is_isolated,
-                upper_price,
-                lower_price,
-                grid_type,
-                grid_count,
-                total_investment,
-                grid_bias,
-                trigger_price, // Added Config Field
-                zones: Vec::new(),
-                active_orders: HashMap::new(),
-                trade_count: 0,
-                state: StrategyState::Initializing,
-                start_price: None,
-                start_time: Instant::now(),
-                realized_pnl: 0.0,
-                total_fees: 0.0,
-                unrealized_pnl: 0.0,
-                position_size: 0.0,
-                avg_entry_price: 0.0,
-            },
-            _ => panic!("Invalid config type for PerpGridStrategy"),
+    pub fn new(config: PerpGridConfig) -> Self {
+        let PerpGridConfig {
+            symbol,
+            leverage,
+            is_isolated,
+            upper_price,
+            lower_price,
+            grid_type,
+            grid_count,
+            total_investment,
+            grid_bias,
+            trigger_price,
+        } = config;
+
+        Self {
+            symbol,
+            leverage,
+            is_isolated,
+            upper_price,
+            lower_price,
+            grid_type,
+            grid_count,
+            total_investment,
+            grid_bias,
+            trigger_price,
+            zones: Vec::new(),
+            active_orders: HashMap::new(),
+            trade_count: 0,
+            state: StrategyState::Initializing,
+            start_price: None,
+            start_time: Instant::now(),
+            realized_pnl: 0.0,
+            total_fees: 0.0,
+            unrealized_pnl: 0.0,
+            position_size: 0.0,
+            avg_entry_price: 0.0,
         }
     }
 
@@ -805,6 +805,7 @@ impl Strategy for PerpGridStrategy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::strategy::PerpGridConfig;
     use crate::engine::context::{MarketInfo, StrategyContext};
     use std::collections::HashMap;
 
@@ -829,7 +830,7 @@ mod tests {
         // No balances needed for pure state logic, but typically we set them
         ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
 
-        let config = StrategyConfig::PerpGrid {
+        let config = PerpGridConfig {
             symbol: symbol.clone(),
             leverage: 10,
             is_isolated: true,
@@ -871,7 +872,7 @@ mod tests {
         let mut ctx = create_test_context(&symbol);
         ctx.update_perp_balance("USDC".to_string(), 1000.0, 1000.0);
 
-        let config = StrategyConfig::PerpGrid {
+        let config = PerpGridConfig {
             symbol: symbol.clone(),
             leverage: 1,
             is_isolated: true,
@@ -975,7 +976,7 @@ mod tests {
         let mut ctx = create_test_context(&symbol);
         ctx.update_perp_balance("USDC".to_string(), 1000.0, 1000.0);
 
-        let config = StrategyConfig::PerpGrid {
+        let config = PerpGridConfig {
             symbol: symbol.clone(),
             leverage: 1,
             is_isolated: true,
@@ -1111,14 +1112,14 @@ mod tests {
         let mut ctx = create_test_context(&symbol);
         ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
 
-        let config = StrategyConfig::PerpGrid {
+        let config = PerpGridConfig {
             symbol: symbol.clone(),
             leverage: 1,
             is_isolated: true,
-            upper_price: 110.0,
-            lower_price: 90.0,
+            upper_price: 120.0,
+            lower_price: 80.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 3, // Creates zones: [90-100], [100-110]
+            grid_count: 3,
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
@@ -1315,14 +1316,14 @@ mod tests {
         let mut ctx = create_test_context(&symbol);
         ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
 
-        let config = StrategyConfig::PerpGrid {
+        let config = PerpGridConfig {
             symbol: symbol.clone(),
             leverage: 1,
             is_isolated: true,
             upper_price: 110.0,
             lower_price: 90.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 3, // Zones: [90-100], [100-110]
+            grid_count: 3,
             total_investment: 1000.0,
             grid_bias: GridBias::Short, // Short bias!
             trigger_price: None,
@@ -1361,7 +1362,6 @@ mod tests {
 
         ctx.order_queue.clear();
 
-        // Find a zone that's WaitingBuy (closing short for Short bias)
         let close_zone_idx = strategy
             .zones
             .iter()
@@ -1449,7 +1449,7 @@ mod tests {
             info.last_price = 105.0;
         }
 
-        let config = StrategyConfig::PerpGrid {
+        let config = PerpGridConfig {
             symbol: "BTC".to_string(),
             leverage: 1,
             is_isolated: false,
@@ -1530,7 +1530,7 @@ mod tests {
             info.last_price = 95.0;
         }
 
-        let config = StrategyConfig::PerpGrid {
+        let config = PerpGridConfig {
             symbol: "BTC".to_string(),
             leverage: 1,
             is_isolated: false,

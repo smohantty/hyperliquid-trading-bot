@@ -8,101 +8,112 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
     const { connectionStatus, config } = useBotStore();
 
-    const getStatusColor = () => {
-        switch (connectionStatus) {
-            case 'connected': return 'var(--color-buy)';
-            case 'connecting': return 'var(--accent-yellow)';
-            case 'disconnected': return 'var(--color-sell)';
-        }
-    };
-
     return (
-        <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
+        <div style={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative'
+        }}>
             {/* Header */}
             <header style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                padding: '0 24px',
-                height: '48px',
-                background: 'var(--bg-secondary)',
-                borderBottom: '1px solid var(--border-color)'
+                padding: '0 28px',
+                height: '56px',
+                background: 'rgba(10, 13, 18, 0.75)',
+                backdropFilter: 'blur(20px) saturate(180%)',
+                borderBottom: '1px solid var(--border-subtle)',
+                position: 'sticky',
+                top: 0,
+                zIndex: 100,
+                animation: 'fadeIn 0.4s ease-out'
             }}>
                 {/* Left: Logo & Nav */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" style={{ color: 'var(--accent-yellow)' }}>
-                            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                        </svg>
-                        <span style={{
-                            fontSize: '14px',
-                            fontWeight: 600,
-                            color: 'var(--text-primary)'
+                <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        {/* Logo Icon */}
+                        <div style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '8px',
+                            background: 'linear-gradient(135deg, var(--accent-primary) 0%, rgba(0, 240, 192, 0.4) 100%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            boxShadow: '0 0 20px var(--accent-glow)'
                         }}>
-                            Grid Bot
-                        </span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" style={{ color: '#000' }}>
+                                <path d="M3 3h7v7H3V3z" fill="currentColor"/>
+                                <path d="M14 3h7v7h-7V3z" fill="currentColor" opacity="0.6"/>
+                                <path d="M3 14h7v7H3v-7z" fill="currentColor" opacity="0.6"/>
+                                <path d="M14 14h7v7h-7v-7z" fill="currentColor" opacity="0.3"/>
+                            </svg>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                            <span style={{
+                                fontSize: '15px',
+                                fontWeight: 600,
+                                color: 'var(--text-primary)',
+                                letterSpacing: '-0.02em'
+                            }}>
+                                GridBot
+                            </span>
+                            <span style={{
+                                fontSize: '10px',
+                                color: 'var(--text-tertiary)',
+                                letterSpacing: '0.5px'
+                            }}>
+                                HYPERLIQUID
+                            </span>
+                        </div>
                     </div>
 
                     {/* Nav Items */}
                     <nav style={{ display: 'flex', gap: '4px' }}>
                         <NavItem label="Dashboard" active />
-                        <NavItem label="History" />
+                        <NavItem label="Analytics" />
                         <NavItem label="Settings" />
                     </nav>
                 </div>
 
                 {/* Right: Status & Info */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
                     {config && (
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '8px',
-                            padding: '6px 12px',
-                            background: 'var(--bg-tertiary)',
-                            borderRadius: '4px'
+                            gap: '10px',
+                            padding: '8px 14px',
+                            background: 'var(--bg-hover)',
+                            borderRadius: 'var(--radius-md)',
+                            border: '1px solid var(--border-color)'
                         }}>
-                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            <span style={{
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                color: 'var(--text-primary)',
+                                fontFamily: 'var(--font-mono)'
+                            }}>
                                 {config.symbol}
                             </span>
-                            <span style={{
-                                fontSize: '10px',
-                                fontWeight: 600,
-                                color: config.type === 'perp_grid' ? 'var(--accent-yellow)' : 'var(--accent-blue)',
-                                background: config.type === 'perp_grid' ? 'rgba(240, 185, 11, 0.15)' : 'rgba(30, 144, 255, 0.15)',
-                                padding: '2px 6px',
-                                borderRadius: '3px'
-                            }}>
+                            <span className={`badge ${config.type === 'perp_grid' ? 'badge-neutral' : 'badge-muted'}`}>
                                 {config.type === 'perp_grid' ? 'PERP' : 'SPOT'}
                             </span>
                         </div>
                     )}
 
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        fontSize: '12px'
-                    }}>
-                        <div style={{
-                            width: '6px',
-                            height: '6px',
-                            borderRadius: '50%',
-                            backgroundColor: getStatusColor()
-                        }} />
-                        <span style={{ color: 'var(--text-secondary)' }}>
-                            {connectionStatus === 'connected' ? 'Live' : connectionStatus}
-                        </span>
-                    </div>
+                    <ConnectionStatus status={connectionStatus} />
                 </div>
             </header>
 
             {/* Main Content */}
             <main style={{
-                padding: '20px 24px',
-                maxWidth: '1400px',
+                flex: 1,
+                padding: '28px 32px',
+                maxWidth: '1520px',
+                width: '100%',
                 margin: '0 auto'
             }}>
                 {children}
@@ -113,18 +124,87 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
 const NavItem: React.FC<{ label: string; active?: boolean }> = ({ label, active }) => (
     <button style={{
-        background: active ? 'var(--bg-tertiary)' : 'transparent',
+        background: active ? 'var(--bg-hover)' : 'transparent',
         border: 'none',
-        padding: '6px 12px',
-        borderRadius: '4px',
-        fontSize: '12px',
+        padding: '8px 14px',
+        borderRadius: 'var(--radius-sm)',
+        fontSize: '13px',
         fontWeight: 500,
         color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
         cursor: 'pointer',
-        transition: 'all 0.15s ease'
-    }}>
+        transition: 'all var(--transition-fast)',
+        position: 'relative'
+    }}
+    onMouseEnter={(e) => {
+        if (!active) {
+            e.currentTarget.style.color = 'var(--text-secondary)';
+            e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+        }
+    }}
+    onMouseLeave={(e) => {
+        if (!active) {
+            e.currentTarget.style.color = 'var(--text-tertiary)';
+            e.currentTarget.style.background = 'transparent';
+        }
+    }}
+    >
         {label}
+        {active && (
+            <div style={{
+                position: 'absolute',
+                bottom: '-2px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '20px',
+                height: '2px',
+                background: 'var(--accent-primary)',
+                borderRadius: '1px',
+                boxShadow: '0 0 10px var(--accent-glow)'
+            }} />
+        )}
     </button>
 );
+
+const ConnectionStatus: React.FC<{ status: 'connected' | 'connecting' | 'disconnected' }> = ({ status }) => {
+    const statusConfig = {
+        connected: {
+            label: 'Live',
+            color: 'var(--color-buy)',
+            className: 'connected'
+        },
+        connecting: {
+            label: 'Connecting...',
+            color: 'var(--color-warning)',
+            className: 'connecting'
+        },
+        disconnected: {
+            label: 'Offline',
+            color: 'var(--color-sell)',
+            className: 'disconnected'
+        }
+    };
+
+    const config = statusConfig[status];
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 12px',
+            borderRadius: 'var(--radius-sm)',
+            background: status === 'connected' ? 'var(--color-buy-bg)' : 'transparent'
+        }}>
+            <div className={`status-dot ${config.className}`} />
+            <span style={{
+                fontSize: '12px',
+                fontWeight: 500,
+                color: config.color
+            }}>
+                {config.label}
+            </span>
+        </div>
+    );
+};
 
 export default Layout;

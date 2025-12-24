@@ -9,22 +9,33 @@ import ActivityLog from './components/ActivityLog';
 const DashboardContent: React.FC = () => {
   return (
     <Layout>
-      {/* Top Section: Summary & Config side by side */}
+      {/* Main Grid Layout */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '1.5rem',
-        marginBottom: '1.5rem'
+        gridTemplateColumns: '1fr 420px',
+        gridTemplateRows: 'auto auto',
+        gap: '24px'
       }}>
-        <SummaryCard />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        {/* Left Column: Summary Card (spans full height) */}
+        <div style={{ gridRow: '1 / 3' }}>
+          <SummaryCard />
+        </div>
+
+        {/* Right Column: Config + Activity stacked */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px'
+        }}>
           <ConfigPanel />
           <ActivityLog />
         </div>
       </div>
 
-      {/* Bottom Section: Order Book full width */}
-      <OrderBook />
+      {/* Order Book - Full Width Below */}
+      <div style={{ marginTop: '24px' }}>
+        <OrderBook />
+      </div>
     </Layout>
   );
 };

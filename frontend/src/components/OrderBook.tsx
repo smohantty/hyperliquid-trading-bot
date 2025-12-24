@@ -8,15 +8,17 @@ const OrderBook: React.FC = () => {
 
     const szDecimals = config?.sz_decimals || 4;
 
-    const { asks, bids } = useMemo(() => {
-        if (!gridState || !lastPrice) return { asks: [], bids: [] };
+    const { asks, bids, maxSize } = useMemo(() => {
+        if (!gridState || !lastPrice) return { asks: [], bids: [], maxSize: 0 };
 
         const sortedZones = [...gridState.zones].sort((a, b) => b.upper_price - a.upper_price);
 
         const asks: ZoneInfo[] = [];
         const bids: ZoneInfo[] = [];
+        let maxSize = 0;
 
         sortedZones.forEach(zone => {
+            if (zone.size > maxSize) maxSize = zone.size;
             if (zone.pending_side === 'Sell') {
                 asks.push(zone);
             } else {
@@ -25,20 +27,21 @@ const OrderBook: React.FC = () => {
         });
 
         asks.reverse();
-        return { asks, bids };
+        return { asks, bids, maxSize };
     }, [gridState, lastPrice]);
 
     if (!gridState || !lastPrice) {
         return (
-            <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                padding: '40px',
+            <div className="card" style={{
+                padding: '60px 40px',
                 textAlign: 'center',
-                color: 'var(--text-tertiary)'
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '16px',
+                animationDelay: '200ms'
             }}>
-                Loading Grid State...
+                <div className="skeleton" style={{ width: '100%', height: '200px' }} />
             </div>
         );
     }
@@ -46,124 +49,198 @@ const OrderBook: React.FC = () => {
     const isPerp = gridState.strategy_type === 'perp_grid';
 
     return (
-        <div style={{
-            background: 'var(--bg-secondary)',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
-            overflow: 'hidden'
+        <div className="card" style={{
+            overflow: 'hidden',
+            animationDelay: '200ms'
         }}>
             {/* Header */}
-            <div style={{
-                padding: '12px 16px',
-                borderBottom: '1px solid var(--border-color)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-            }}>
-                <span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
-                    Order Book
-                </span>
-                <span style={{
-                    fontSize: '10px',
-                    color: 'var(--text-tertiary)',
-                    background: 'var(--bg-tertiary)',
-                    padding: '2px 6px',
-                    borderRadius: '3px'
-                }}>
+            <div className="card-header">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-secondary)' }}>
+                        <path d="M3 3v18h18"/>
+                        <path d="M18 9l-5 5-4-4-3 3"/>
+                    </svg>
+                    <span className="card-header-title">Order Book</span>
+                </div>
+                <span className={`badge ${isPerp ? 'badge-neutral' : 'badge-muted'}`}>
                     {isPerp ? `PERP · ${gridState.grid_bias}` : 'SPOT'}
                 </span>
             </div>
 
             {/* CLOB Layout */}
-            <div style={{ display: 'flex' }}>
-                {/* Asks */}
-                <div style={{ flex: 1, borderRight: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', minHeight: '320px' }}>
+                {/* Asks Side */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                     <div style={{
-                        display: 'flex',
-                        padding: '8px 12px',
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 80px 50px 90px',
+                        padding: '10px 16px',
                         fontSize: '10px',
                         color: 'var(--text-tertiary)',
                         textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        fontWeight: 500,
                         borderBottom: '1px solid var(--border-color)',
-                        background: 'rgba(246, 70, 93, 0.03)'
+                        background: 'rgba(255, 82, 82, 0.03)'
                     }}>
-                        <span style={{ flex: 1 }}>Price</span>
-                        <span style={{ flex: 1, textAlign: 'center' }}>Size</span>
-                        <span style={{ width: '40px', textAlign: 'center' }}>Trades</span>
-                        <span style={{ flex: 1, textAlign: 'right' }}>Action</span>
+                        <span>Price</span>
+                        <span style={{ textAlign: 'center' }}>Size</span>
+                        <span style={{ textAlign: 'center' }}>Trades</span>
+                        <span style={{ textAlign: 'right' }}>Action</span>
                     </div>
-                    <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                    <div style={{
+                        flex: 1,
+                        overflowY: 'auto',
+                        maxHeight: '280px'
+                    }}>
                         {asks.length === 0 ? (
-                            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '11px' }}>
-                                No asks
-                            </div>
+                            <EmptyState side="asks" />
                         ) : (
-                            asks.map(zone => <ZoneRow key={zone.index} zone={zone} side="ask" szDecimals={szDecimals} />)
+                            asks.map(zone => (
+                                <ZoneRow
+                                    key={zone.index}
+                                    zone={zone}
+                                    side="ask"
+                                    szDecimals={szDecimals}
+                                    maxSize={maxSize}
+                                />
+                            ))
                         )}
                     </div>
                 </div>
 
-                {/* Center Price */}
+                {/* Center Price Column */}
                 <div style={{
-                    width: '140px',
+                    width: '160px',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '20px 16px',
-                    background: 'var(--bg-primary)'
+                    padding: '24px 16px',
+                    background: 'linear-gradient(180deg, var(--bg-base) 0%, rgba(5, 7, 10, 0.95) 100%)',
+                    borderLeft: '1px solid var(--border-color)',
+                    borderRight: '1px solid var(--border-color)',
+                    position: 'relative'
                 }}>
-                    <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                    {/* Decorative glow */}
+                    <div style={{
+                        position: 'absolute',
+                        width: '100px',
+                        height: '100px',
+                        borderRadius: '50%',
+                        background: 'var(--accent-glow)',
+                        filter: 'blur(40px)',
+                        opacity: 0.3
+                    }} />
+
+                    <div style={{
+                        fontSize: '10px',
+                        color: 'var(--text-tertiary)',
+                        marginBottom: '12px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        fontWeight: 500
+                    }}>
                         Current
                     </div>
                     <div style={{
-                        fontSize: '16px',
-                        fontWeight: 600,
+                        fontSize: '20px',
+                        fontWeight: 700,
                         fontFamily: 'var(--font-mono)',
-                        color: 'var(--text-primary)'
+                        color: 'var(--text-primary)',
+                        textShadow: '0 0 20px var(--accent-glow)',
+                        position: 'relative',
+                        zIndex: 1
                     }}>
                         ${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
+
                     <div style={{
-                        marginTop: '16px',
+                        marginTop: '24px',
                         display: 'flex',
-                        gap: '20px',
-                        fontSize: '11px'
+                        gap: '24px',
+                        position: 'relative',
+                        zIndex: 1
                     }}>
                         <div style={{ textAlign: 'center' }}>
-                            <div style={{ color: 'var(--color-sell)', fontWeight: 600, fontSize: '16px' }}>{asks.length}</div>
-                            <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Asks</div>
+                            <div style={{
+                                color: 'var(--color-sell)',
+                                fontWeight: 700,
+                                fontSize: '20px',
+                                fontFamily: 'var(--font-mono)',
+                                textShadow: '0 0 15px var(--color-sell-glow)'
+                            }}>
+                                {asks.length}
+                            </div>
+                            <div style={{
+                                color: 'var(--text-tertiary)',
+                                fontSize: '10px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                marginTop: '4px'
+                            }}>
+                                Asks
+                            </div>
                         </div>
                         <div style={{ textAlign: 'center' }}>
-                            <div style={{ color: 'var(--color-buy)', fontWeight: 600, fontSize: '16px' }}>{bids.length}</div>
-                            <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Bids</div>
+                            <div style={{
+                                color: 'var(--color-buy)',
+                                fontWeight: 700,
+                                fontSize: '20px',
+                                fontFamily: 'var(--font-mono)',
+                                textShadow: '0 0 15px var(--color-buy-glow)'
+                            }}>
+                                {bids.length}
+                            </div>
+                            <div style={{
+                                color: 'var(--text-tertiary)',
+                                fontSize: '10px',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                marginTop: '4px'
+                            }}>
+                                Bids
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Bids */}
-                <div style={{ flex: 1, borderLeft: '1px solid var(--border-color)' }}>
+                {/* Bids Side */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                     <div style={{
-                        display: 'flex',
-                        padding: '8px 12px',
+                        display: 'grid',
+                        gridTemplateColumns: '90px 50px 80px 1fr',
+                        padding: '10px 16px',
                         fontSize: '10px',
                         color: 'var(--text-tertiary)',
                         textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        fontWeight: 500,
                         borderBottom: '1px solid var(--border-color)',
-                        background: 'rgba(14, 203, 129, 0.03)'
+                        background: 'rgba(0, 230, 118, 0.03)'
                     }}>
-                        <span style={{ flex: 1 }}>Action</span>
-                        <span style={{ flex: 1, textAlign: 'center' }}>Size</span>
-                        <span style={{ width: '40px', textAlign: 'center' }}>Trades</span>
-                        <span style={{ flex: 1, textAlign: 'right' }}>Price</span>
+                        <span>Action</span>
+                        <span style={{ textAlign: 'center' }}>Trades</span>
+                        <span style={{ textAlign: 'center' }}>Size</span>
+                        <span style={{ textAlign: 'right' }}>Price</span>
                     </div>
-                    <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                    <div style={{
+                        flex: 1,
+                        overflowY: 'auto',
+                        maxHeight: '280px'
+                    }}>
                         {bids.length === 0 ? (
-                            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '11px' }}>
-                                No bids
-                            </div>
+                            <EmptyState side="bids" />
                         ) : (
-                            bids.map(zone => <ZoneRow key={zone.index} zone={zone} side="bid" szDecimals={szDecimals} />)
+                            bids.map(zone => (
+                                <ZoneRow
+                                    key={zone.index}
+                                    zone={zone}
+                                    side="bid"
+                                    szDecimals={szDecimals}
+                                    maxSize={maxSize}
+                                />
+                            ))
                         )}
                     </div>
                 </div>
@@ -172,85 +249,88 @@ const OrderBook: React.FC = () => {
     );
 };
 
-const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: number }> = ({ zone, side, szDecimals }) => {
+const EmptyState: React.FC<{ side: 'asks' | 'bids' }> = ({ side }) => (
+    <div style={{
+        padding: '40px 20px',
+        textAlign: 'center',
+        color: 'var(--text-tertiary)',
+        fontSize: '12px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '8px'
+    }}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.5 }}>
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        No {side}
+    </div>
+);
+
+const ZoneRow: React.FC<{
+    zone: ZoneInfo;
+    side: 'ask' | 'bid';
+    szDecimals: number;
+    maxSize: number;
+}> = ({ zone, side, szDecimals, maxSize }) => {
     const isAsk = side === 'ask';
     const displayPrice = isAsk ? zone.upper_price : zone.lower_price;
+    const nextPrice = isAsk ? zone.lower_price : zone.upper_price;
 
     const isClose = zone.is_reduce_only;
-    // Derive action label/type if needed, or simply use pending side color
-    const actionColor = isClose ? 'var(--accent-yellow)' :
+    const actionColor = isClose ? 'var(--color-warning)' :
         zone.pending_side === 'Buy' ? 'var(--color-buy)' : 'var(--color-sell)';
 
-    let displayLabel: string = zone.pending_side;
-    if (isClose) {
-        // If reducing, maybe we want special label?
-        // Backend used to send "Close Long", "Close Short" etc.
-        // We can infer context if we had strategy type passed down.
-        // But simplistic view:
-        displayLabel = zone.pending_side === 'Buy' ? 'Buy (Close)' : 'Sell (Close)';
-    } else {
-        displayLabel = zone.pending_side === 'Buy' ? 'Buy (Open)' : 'Sell (Open)';
-    }
+    const displayLabel = isClose
+        ? (zone.pending_side === 'Buy' ? 'Buy (Close)' : 'Sell (Close)')
+        : (zone.pending_side === 'Buy' ? 'Buy (Open)' : 'Sell (Open)');
 
-    // Better logic:
-    // If we want exact parity with backend logic:
-    // We need to know if it's Long/Short/Neutral mode (which is in gridState, but not passed to ZoneRow deeply... wait gridState is in context)
-
-    // For now, let's keep it simple or use what we have.
-    // The previous code usedt's improve ZoneRow to take gridBias/strategyType if we want specific "Open Long" text.
-    // But user said "frontend can easily figure it out".
-
-    // Let's use logic similar to backend.
-    // We don't have ZoneMode in frontend explicitly attached to ZoneInfo easily without passing parent state.
-    // But we know:
-    // Perp + Long Bias + Sell = Close Long
-    // etc.
-
-    // However, ZoneRow doesn't receive strategy info currently.
-    // I should update ZoneRow signature to receive context info if needed?
-    // Or just simplify.
-
-    // Let's assume passed prop or update signature.
-    // Looking at OrderBook.tsx, it maps zones.
-
-
-    const nextPrice = isAsk ? zone.lower_price : zone.upper_price;
+    // Calculate depth bar width
+    const depthPercent = maxSize > 0 ? (zone.size / maxSize) * 100 : 0;
 
     const actionBadge = (
         <span style={{
-            background: `${actionColor}20`,
+            background: `${actionColor}15`,
+            border: `1px solid ${actionColor}30`,
             color: actionColor,
-            padding: '2px 6px',
-            borderRadius: '3px',
+            padding: '3px 8px',
+            borderRadius: 'var(--radius-sm)',
             fontSize: '9px',
-            fontWeight: 600
+            fontWeight: 600,
+            letterSpacing: '0.3px',
+            whiteSpace: 'nowrap'
         }}>
             {displayLabel}
         </span>
     );
 
     const priceDisplay = (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: isAsk ? 'flex-start' : 'flex-end' }}>
+        <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: isAsk ? 'flex-start' : 'flex-end',
+            gap: '2px'
+        }}>
             <Tooltip content="Current Active Limit Order">
-                <span
-                    style={{
-                        color: isAsk ? 'var(--color-sell)' : 'var(--color-buy)',
-                        fontFamily: 'var(--font-mono)',
-                        cursor: 'help'
-                    }}
-                >
+                <span style={{
+                    color: isAsk ? 'var(--color-sell)' : 'var(--color-buy)',
+                    fontFamily: 'var(--font-mono)',
+                    fontWeight: 600,
+                    cursor: 'help',
+                    fontSize: '12px'
+                }}>
                     {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
             </Tooltip>
             <Tooltip content="Next Order Price (Ping-Pong)">
-                <span
-                    style={{
-                        color: 'var(--text-tertiary)',
-                        fontFamily: 'var(--font-mono)',
-                        marginTop: '1px',
-                        cursor: 'help'
-                    }}
-                >
+                <span style={{
+                    color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-mono)',
+                    cursor: 'help',
+                    fontSize: '10px'
+                }}>
                     {nextPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
             </Tooltip>
@@ -259,34 +339,79 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
 
     return (
         <div style={{
-            display: 'flex',
+            position: 'relative',
+            display: 'grid',
+            gridTemplateColumns: isAsk ? '1fr 80px 50px 90px' : '90px 50px 80px 1fr',
             alignItems: 'center',
-            padding: '6px 12px',
+            padding: '8px 16px',
             fontSize: '12px',
-            opacity: zone.has_order ? 1 : 0.4,
-            borderBottom: '1px solid var(--border-color)'
-        }}>
+            opacity: zone.has_order ? 1 : 0.35,
+            borderBottom: '1px solid var(--border-color)',
+            transition: 'background var(--transition-fast), opacity var(--transition-fast)'
+        }}
+        onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'var(--bg-hover)';
+        }}
+        onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+        }}
+        >
+            {/* Depth Bar */}
+            <div
+                className={`depth-bar ${side === 'ask' ? 'ask' : 'bid'}`}
+                style={{
+                    width: `${depthPercent}%`,
+                    [side === 'ask' ? 'right' : 'left']: 0
+                }}
+            />
+
             {isAsk ? (
                 <>
-                    <span style={{ flex: 1 }}>{priceDisplay}</span>
-                    <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                    <div style={{ position: 'relative', zIndex: 1 }}>{priceDisplay}</div>
+                    <span style={{
+                        textAlign: 'center',
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-secondary)',
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
                         {zone.size.toFixed(szDecimals)}
                     </span>
-                    <span style={{ width: '40px', textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                    <span style={{
+                        textAlign: 'center',
+                        fontFamily: 'var(--font-mono)',
+                        color: zone.roundtrip_count > 0 ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        fontSize: '11px',
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
                         {zone.roundtrip_count}
                     </span>
-                    <span style={{ flex: 1, textAlign: 'right' }}>{actionBadge}</span>
+                    <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>{actionBadge}</div>
                 </>
             ) : (
                 <>
-                    <span style={{ flex: 1 }}>{actionBadge}</span>
-                    <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-                        {zone.size.toFixed(szDecimals)}
-                    </span>
-                    <span style={{ width: '40px', textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                    <div style={{ position: 'relative', zIndex: 1 }}>{actionBadge}</div>
+                    <span style={{
+                        textAlign: 'center',
+                        fontFamily: 'var(--font-mono)',
+                        color: zone.roundtrip_count > 0 ? 'var(--accent-primary)' : 'var(--text-muted)',
+                        fontSize: '11px',
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
                         {zone.roundtrip_count}
                     </span>
-                    <span style={{ flex: 1, textAlign: 'right' }}>{priceDisplay}</span>
+                    <span style={{
+                        textAlign: 'center',
+                        fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-secondary)',
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
+                        {zone.size.toFixed(szDecimals)}
+                    </span>
+                    <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>{priceDisplay}</div>
                 </>
             )}
         </div>

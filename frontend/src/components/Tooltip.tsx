@@ -15,8 +15,8 @@ const Tooltip: React.FC<TooltipProps> = ({ content, children }) => {
         if (triggerRef.current) {
             const rect = triggerRef.current.getBoundingClientRect();
             setCoords({
-                top: rect.top - 8, // 8px gap above element
-                left: rect.left + rect.width / 2 // Center horizontally
+                top: rect.top - 10,
+                left: rect.left + rect.width / 2
             });
             setIsVisible(true);
         }
@@ -36,16 +36,19 @@ const Tooltip: React.FC<TooltipProps> = ({ content, children }) => {
                     top: coords.top,
                     left: coords.left,
                     transform: 'translate(-50%, -100%)',
-                    padding: '6px 10px',
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '4px',
+                    padding: '8px 12px',
+                    background: 'rgba(15, 19, 24, 0.95)',
+                    backdropFilter: 'blur(12px) saturate(180%)',
+                    border: '1px solid var(--border-strong)',
+                    borderRadius: 'var(--radius-sm)',
                     color: 'var(--text-primary)',
                     fontSize: '11px',
+                    fontWeight: 500,
                     whiteSpace: 'nowrap',
                     zIndex: 9999,
-                    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
-                    pointerEvents: 'none'
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.03) inset',
+                    pointerEvents: 'none',
+                    animation: 'fadeIn 0.15s ease-out'
                 }}>
                     {content}
                     {/* Arrow */}
@@ -53,10 +56,12 @@ const Tooltip: React.FC<TooltipProps> = ({ content, children }) => {
                         position: 'absolute',
                         top: '100%',
                         left: '50%',
-                        marginLeft: '-4px',
-                        borderWidth: '4px',
-                        borderStyle: 'solid',
-                        borderColor: 'var(--border-color) transparent transparent transparent'
+                        marginLeft: '-5px',
+                        width: 0,
+                        height: 0,
+                        borderLeft: '5px solid transparent',
+                        borderRight: '5px solid transparent',
+                        borderTop: '5px solid var(--border-strong)'
                     }} />
                     <div style={{
                         position: 'absolute',
@@ -64,9 +69,11 @@ const Tooltip: React.FC<TooltipProps> = ({ content, children }) => {
                         left: '50%',
                         marginLeft: '-4px',
                         marginTop: '-1px',
-                        borderWidth: '4px',
-                        borderStyle: 'solid',
-                        borderColor: 'var(--bg-secondary) transparent transparent transparent'
+                        width: 0,
+                        height: 0,
+                        borderLeft: '4px solid transparent',
+                        borderRight: '4px solid transparent',
+                        borderTop: '4px solid rgba(15, 19, 24, 0.95)'
                     }} />
                 </div>,
                 document.body

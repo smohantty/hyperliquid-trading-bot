@@ -7,17 +7,17 @@ const SummaryCard: React.FC = () => {
 
     if (!summary) {
         return (
-            <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                padding: '40px',
+            <div className="card" style={{
+                padding: '60px 40px',
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'var(--text-tertiary)'
+                gap: '16px',
+                animationDelay: '0ms'
             }}>
-                Waiting for strategy data...
+                <div className="skeleton" style={{ width: '200px', height: '40px' }} />
+                <div className="skeleton" style={{ width: '140px', height: '20px' }} />
             </div>
         );
     }
@@ -28,6 +28,7 @@ const SummaryCard: React.FC = () => {
 
     const totalPnl = s.realized_pnl + s.unrealized_pnl;
     const pnlColor = totalPnl >= 0 ? 'var(--color-buy)' : 'var(--color-sell)';
+    const pnlGlow = totalPnl >= 0 ? 'var(--color-buy-glow)' : 'var(--color-sell-glow)';
     const pnlSign = totalPnl >= 0 ? '+' : '';
 
     if (isPerp) {
@@ -42,72 +43,144 @@ const SummaryCard: React.FC = () => {
             perpData.position_side === 'Short' ? 'var(--color-sell)' :
                 'var(--text-tertiary)';
 
+        const biasClass = perpData.grid_bias === 'Long' ? 'badge-buy' :
+            perpData.grid_bias === 'Short' ? 'badge-sell' : 'badge-neutral';
+
         return (
-            <div style={{
-                background: 'var(--bg-secondary)',
-                borderRadius: '8px',
-                border: '1px solid var(--border-color)',
-                overflow: 'hidden'
+            <div className="card" style={{
+                overflow: 'hidden',
+                animationDelay: '0ms'
             }}>
                 {/* Header */}
                 <div style={{
-                    padding: '16px 20px',
+                    padding: '18px 22px',
                     borderBottom: '1px solid var(--border-color)',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '18px', fontWeight: 600 }}>{s.symbol}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                         <span style={{
-                            background: perpData.grid_bias === 'Long' ? 'rgba(14, 203, 129, 0.15)' :
-                                perpData.grid_bias === 'Short' ? 'rgba(246, 70, 93, 0.15)' :
-                                    'rgba(240, 185, 11, 0.15)',
-                            color: perpData.grid_bias === 'Long' ? 'var(--color-buy)' :
-                                perpData.grid_bias === 'Short' ? 'var(--color-sell)' :
-                                    'var(--accent-yellow)',
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '11px',
-                            fontWeight: 600
+                            fontSize: '22px',
+                            fontWeight: 700,
+                            letterSpacing: '-0.02em',
+                            color: 'var(--text-primary)'
                         }}>
+                            {s.symbol}
+                        </span>
+                        <span className={`badge ${biasClass}`}>
                             {perpData.leverage}x {perpData.grid_bias.toUpperCase()}
                         </span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                            ⏱️ {s.uptime}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '6px 10px',
+                            background: 'var(--bg-hover)',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '12px',
+                            color: 'var(--text-secondary)'
+                        }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            {s.uptime}
+                        </div>
+                        <span style={{
+                            fontSize: '12px',
+                            color: 'var(--text-tertiary)',
+                            fontFamily: 'var(--font-mono)'
+                        }}>
+                            {timeStr}
                         </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{timeStr}</span>
                     </div>
                 </div>
 
-                {/* Price & PnL */}
-                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)' }}>
-                    <div style={{ flex: 1, padding: '20px', borderRight: '1px solid var(--border-color)' }}>
-                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                {/* Price & PnL Hero Section */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    borderBottom: '1px solid var(--border-color)'
+                }}>
+                    <div style={{
+                        padding: '28px 24px',
+                        borderRight: '1px solid var(--border-color)',
+                        background: 'linear-gradient(135deg, rgba(0, 240, 192, 0.02) 0%, transparent 100%)'
+                    }}>
+                        <div style={{
+                            fontSize: '11px',
+                            color: 'var(--text-tertiary)',
+                            marginBottom: '10px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '1px',
+                            fontWeight: 500
+                        }}>
                             Market Price
                         </div>
-                        <div style={{ fontSize: '24px', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+                        <div style={{
+                            fontSize: '32px',
+                            fontWeight: 700,
+                            fontFamily: 'var(--font-mono)',
+                            color: 'var(--text-primary)',
+                            letterSpacing: '-0.02em'
+                        }}>
                             ${s.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                     </div>
-                    <div style={{ flex: 1, padding: '20px' }}>
-                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                    <div style={{
+                        padding: '28px 24px',
+                        background: totalPnl >= 0
+                            ? 'linear-gradient(135deg, rgba(0, 230, 118, 0.03) 0%, transparent 100%)'
+                            : 'linear-gradient(135deg, rgba(255, 82, 82, 0.03) 0%, transparent 100%)'
+                    }}>
+                        <div style={{
+                            fontSize: '11px',
+                            color: 'var(--text-tertiary)',
+                            marginBottom: '10px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '1px',
+                            fontWeight: 500
+                        }}>
                             Total PnL
                         </div>
-                        <div style={{ fontSize: '24px', fontWeight: 600, color: pnlColor, fontFamily: 'var(--font-mono)' }}>
+                        <div style={{
+                            fontSize: '32px',
+                            fontWeight: 700,
+                            color: pnlColor,
+                            fontFamily: 'var(--font-mono)',
+                            textShadow: `0 0 30px ${pnlGlow}`,
+                            letterSpacing: '-0.02em'
+                        }}>
                             {pnlSign}${Math.abs(totalPnl).toFixed(2)}
                         </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                            Realized: ${s.realized_pnl.toFixed(2)} · Unrealized: ${s.unrealized_pnl.toFixed(2)}
+                        <div style={{
+                            fontSize: '11px',
+                            color: 'var(--text-tertiary)',
+                            marginTop: '8px',
+                            fontFamily: 'var(--font-mono)'
+                        }}>
+                            Realized: <span style={{ color: 'var(--text-secondary)' }}>${s.realized_pnl.toFixed(2)}</span>
+                            {' · '}
+                            Unrealized: <span style={{ color: 'var(--text-secondary)' }}>${s.unrealized_pnl.toFixed(2)}</span>
                         </div>
                     </div>
                 </div>
 
                 {/* Stats Row */}
-                <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)' }}>
-                    <StatItem label="Position" value={Math.abs(perpData.position_size).toFixed(4)} subValue={perpData.position_side} valueColor={positionColor} />
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(5, 1fr)',
+                    borderBottom: '1px solid var(--border-color)'
+                }}>
+                    <StatItem
+                        label="Position"
+                        value={Math.abs(perpData.position_size).toFixed(4)}
+                        subValue={perpData.position_side}
+                        valueColor={positionColor}
+                    />
                     <StatItem label="Avg Entry" value={`$${perpData.avg_entry_price.toFixed(2)}`} />
                     <StatItem
                         label="Initial Entry"
@@ -120,35 +193,72 @@ const SummaryCard: React.FC = () => {
 
                 {/* Footer */}
                 <div style={{
-                    padding: '12px 20px',
+                    padding: '14px 22px',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     fontSize: '12px',
-                    color: 'var(--text-secondary)'
+                    color: 'var(--text-secondary)',
+                    background: 'rgba(0, 0, 0, 0.2)'
                 }}>
-                    <span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                         <Tooltip content="Active Grid Levels">
-                            <span style={{ cursor: 'help' }}>
-                                Grid: {s.grid_count} zones
+                            <span style={{
+                                cursor: 'help',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px'
+                            }}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <rect x="3" y="3" width="7" height="7"/>
+                                    <rect x="14" y="3" width="7" height="7"/>
+                                    <rect x="14" y="14" width="7" height="7"/>
+                                    <rect x="3" y="14" width="7" height="7"/>
+                                </svg>
+                                <span style={{ fontFamily: 'var(--font-mono)' }}>{s.grid_count}</span> zones
                             </span>
                         </Tooltip>
-                        {' · '}
+                        <span style={{ color: 'var(--text-tertiary)' }}>·</span>
                         <Tooltip content="Price Range (Min - Max)">
-                            <span style={{ cursor: 'help' }}>
+                            <span style={{ cursor: 'help', fontFamily: 'var(--font-mono)' }}>
                                 ${s.range_low.toLocaleString()} - ${s.range_high.toLocaleString()}
                             </span>
                         </Tooltip>
-                        {' · '}
-                        <Tooltip content="Grid Spacing Percentage (Distance between levels)">
-                            <span style={{ color: 'var(--accent-yellow)', cursor: 'help' }}>
+                        <span style={{ color: 'var(--text-tertiary)' }}>·</span>
+                        <Tooltip content="Grid Spacing Percentage">
+                            <span style={{
+                                color: 'var(--accent-primary)',
+                                cursor: 'help',
+                                fontFamily: 'var(--font-mono)'
+                            }}>
                                 {formatSpacing(s.grid_spacing_pct)}
                             </span>
                         </Tooltip>
-                    </span>
-                    <span style={{ color: 'var(--accent-yellow)', fontWeight: 500 }}>
-                        {s.roundtrips} roundtrips
-                    </span>
+                    </div>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '6px 12px',
+                        background: 'var(--accent-subtle)',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid rgba(0, 240, 192, 0.1)'
+                    }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2">
+                            <path d="M17 1l4 4-4 4"/>
+                            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                            <path d="M7 23l-4-4 4-4"/>
+                            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                        </svg>
+                        <span style={{
+                            color: 'var(--accent-primary)',
+                            fontWeight: 600,
+                            fontFamily: 'var(--font-mono)'
+                        }}>
+                            {s.roundtrips}
+                        </span>
+                        <span style={{ color: 'var(--text-tertiary)' }}>roundtrips</span>
+                    </div>
                 </div>
             </div>
         );
@@ -161,66 +271,132 @@ const SummaryCard: React.FC = () => {
     };
 
     return (
-        <div style={{
-            background: 'var(--bg-secondary)',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)',
-            overflow: 'hidden'
+        <div className="card" style={{
+            overflow: 'hidden',
+            animationDelay: '0ms'
         }}>
             {/* Header */}
             <div style={{
-                padding: '16px 20px',
+                padding: '18px 22px',
                 borderBottom: '1px solid var(--border-color)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '18px', fontWeight: 600 }}>{s.symbol}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                     <span style={{
-                        background: 'rgba(30, 144, 255, 0.15)',
-                        color: 'var(--accent-blue)',
-                        padding: '4px 8px',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        fontWeight: 600
+                        fontSize: '22px',
+                        fontWeight: 700,
+                        letterSpacing: '-0.02em'
                     }}>
+                        {s.symbol}
+                    </span>
+                    <span className="badge badge-muted">
                         SPOT GRID
                     </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        ⏱️ {s.uptime}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 10px',
+                        background: 'var(--bg-hover)',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '12px',
+                        color: 'var(--text-secondary)'
+                    }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        {s.uptime}
+                    </div>
+                    <span style={{
+                        fontSize: '12px',
+                        color: 'var(--text-tertiary)',
+                        fontFamily: 'var(--font-mono)'
+                    }}>
+                        {timeStr}
                     </span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>{timeStr}</span>
                 </div>
             </div>
 
             {/* Price & PnL */}
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)' }}>
-                <div style={{ flex: 1, padding: '20px', borderRight: '1px solid var(--border-color)' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '8px', textTransform: 'uppercase' }}>
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                borderBottom: '1px solid var(--border-color)'
+            }}>
+                <div style={{
+                    padding: '28px 24px',
+                    borderRight: '1px solid var(--border-color)',
+                    background: 'linear-gradient(135deg, rgba(0, 240, 192, 0.02) 0%, transparent 100%)'
+                }}>
+                    <div style={{
+                        fontSize: '11px',
+                        color: 'var(--text-tertiary)',
+                        marginBottom: '10px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        fontWeight: 500
+                    }}>
                         Market Price
                     </div>
-                    <div style={{ fontSize: '24px', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>
+                    <div style={{
+                        fontSize: '32px',
+                        fontWeight: 700,
+                        fontFamily: 'var(--font-mono)',
+                        letterSpacing: '-0.02em'
+                    }}>
                         ${s.price.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                     </div>
                 </div>
-                <div style={{ flex: 1, padding: '20px' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                <div style={{
+                    padding: '28px 24px',
+                    background: totalPnl >= 0
+                        ? 'linear-gradient(135deg, rgba(0, 230, 118, 0.03) 0%, transparent 100%)'
+                        : 'linear-gradient(135deg, rgba(255, 82, 82, 0.03) 0%, transparent 100%)'
+                }}>
+                    <div style={{
+                        fontSize: '11px',
+                        color: 'var(--text-tertiary)',
+                        marginBottom: '10px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                        fontWeight: 500
+                    }}>
                         Total PnL
                     </div>
-                    <div style={{ fontSize: '24px', fontWeight: 600, color: pnlColor, fontFamily: 'var(--font-mono)' }}>
+                    <div style={{
+                        fontSize: '32px',
+                        fontWeight: 700,
+                        color: pnlColor,
+                        fontFamily: 'var(--font-mono)',
+                        textShadow: `0 0 30px ${pnlGlow}`,
+                        letterSpacing: '-0.02em'
+                    }}>
                         {pnlSign}${Math.abs(totalPnl).toFixed(2)}
                     </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
-                        Realized: ${s.realized_pnl.toFixed(2)} · Unrealized: ${s.unrealized_pnl.toFixed(2)}
+                    <div style={{
+                        fontSize: '11px',
+                        color: 'var(--text-tertiary)',
+                        marginTop: '8px',
+                        fontFamily: 'var(--font-mono)'
+                    }}>
+                        Realized: <span style={{ color: 'var(--text-secondary)' }}>${s.realized_pnl.toFixed(2)}</span>
+                        {' · '}
+                        Unrealized: <span style={{ color: 'var(--text-secondary)' }}>${s.unrealized_pnl.toFixed(2)}</span>
                     </div>
                 </div>
             </div>
 
             {/* Stats Row */}
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)' }}>
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                borderBottom: '1px solid var(--border-color)'
+            }}>
                 <StatItem label="Position" value={spotData.position_size.toFixed(4)} />
                 <StatItem label="Avg Entry" value={`$${spotData.avg_entry_price.toFixed(4)}`} />
                 <StatItem
@@ -234,49 +410,80 @@ const SummaryCard: React.FC = () => {
 
             {/* Footer */}
             <div style={{
-                padding: '12px 20px',
+                padding: '14px 22px',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 fontSize: '12px',
-                color: 'var(--text-secondary)'
+                color: 'var(--text-secondary)',
+                background: 'rgba(0, 0, 0, 0.2)'
             }}>
-                <span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <Tooltip content="Active Grid Levels">
-                        <span style={{ cursor: 'help' }}>
-                            Grid: {s.grid_count} zones
+                        <span style={{
+                            cursor: 'help',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                        }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="3" y="3" width="7" height="7"/>
+                                <rect x="14" y="3" width="7" height="7"/>
+                                <rect x="14" y="14" width="7" height="7"/>
+                                <rect x="3" y="14" width="7" height="7"/>
+                            </svg>
+                            <span style={{ fontFamily: 'var(--font-mono)' }}>{s.grid_count}</span> zones
                         </span>
                     </Tooltip>
-                    {' · '}
+                    <span style={{ color: 'var(--text-tertiary)' }}>·</span>
                     <Tooltip content="Price Range (Min - Max)">
-                        <span style={{ cursor: 'help' }}>
+                        <span style={{ cursor: 'help', fontFamily: 'var(--font-mono)' }}>
                             ${s.range_low.toFixed(2)} - ${s.range_high.toFixed(2)}
                         </span>
                     </Tooltip>
-                    {' · '}
-                    <Tooltip content="Grid Spacing Percentage (Distance between levels)">
-                        <span style={{ color: 'var(--accent-yellow)', cursor: 'help' }} >
+                    <span style={{ color: 'var(--text-tertiary)' }}>·</span>
+                    <Tooltip content="Grid Spacing Percentage">
+                        <span style={{
+                            color: 'var(--accent-primary)',
+                            cursor: 'help',
+                            fontFamily: 'var(--font-mono)'
+                        }}>
                             {formatSpacing(s.grid_spacing_pct)}
                         </span>
                     </Tooltip>
-                </span>
-                <span style={{ color: 'var(--accent-yellow)', fontWeight: 500 }}>
-                    {s.roundtrips} roundtrips
-                </span>
+                </div>
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '6px 12px',
+                    background: 'var(--accent-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid rgba(0, 240, 192, 0.1)'
+                }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2">
+                        <path d="M17 1l4 4-4 4"/>
+                        <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                        <path d="M7 23l-4-4 4-4"/>
+                        <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                    </svg>
+                    <span style={{
+                        color: 'var(--accent-primary)',
+                        fontWeight: 600,
+                        fontFamily: 'var(--font-mono)'
+                    }}>
+                        {s.roundtrips}
+                    </span>
+                    <span style={{ color: 'var(--text-tertiary)' }}>roundtrips</span>
+                </div>
             </div>
         </div>
     );
 };
 
-// Format grid spacing: "2.50%" for geometric, "0.167% - 0.172%" for arithmetic
 const formatSpacing = (spacing: [number, number]): string => {
     const [min, max] = spacing;
-
-    // Determine precision based on value magnitude
-    // Small values need more precision to show meaningful differences
     const decimals = min < 1 ? 3 : 2;
-
-    // Use relative difference check: if difference is < 1% of the value, treat as same
     const relativeDiff = Math.abs(max - min) / Math.max(min, max);
     if (relativeDiff < 0.01) {
         return `${min.toFixed(decimals)}%`;
@@ -293,24 +500,50 @@ const StatItem: React.FC<{
     tooltip?: string;
 }> = ({ label, value, subValue, valueColor, isLast, tooltip }) => (
     <div style={{
-        flex: 1,
-        padding: '16px 20px',
-        borderRight: isLast ? 'none' : '1px solid var(--border-color)'
+        padding: '18px 20px',
+        borderRight: isLast ? 'none' : '1px solid var(--border-color)',
+        transition: 'background var(--transition-fast)'
     }}>
-        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div style={{
+            fontSize: '10px',
+            color: 'var(--text-tertiary)',
+            marginBottom: '8px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+        }}>
             {tooltip ? (
                 <Tooltip content={tooltip}>
-                    <span style={{ cursor: 'help', borderBottom: '1px dotted var(--text-tertiary)' }}>{label}</span>
+                    <span style={{
+                        cursor: 'help',
+                        borderBottom: '1px dotted var(--text-tertiary)'
+                    }}>
+                        {label}
+                    </span>
                 </Tooltip>
             ) : (
                 label
             )}
         </div>
-        <div style={{ fontSize: '14px', fontWeight: 500, color: valueColor || 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
+        <div style={{
+            fontSize: '15px',
+            fontWeight: 600,
+            color: valueColor || 'var(--text-primary)',
+            fontFamily: 'var(--font-mono)',
+            letterSpacing: '-0.01em'
+        }}>
             {value}
         </div>
         {subValue && (
-            <div style={{ fontSize: '11px', color: valueColor || 'var(--text-secondary)', marginTop: '2px' }}>
+            <div style={{
+                fontSize: '11px',
+                color: valueColor || 'var(--text-secondary)',
+                marginTop: '4px',
+                fontWeight: 500
+            }}>
                 {subValue}
             </div>
         )}

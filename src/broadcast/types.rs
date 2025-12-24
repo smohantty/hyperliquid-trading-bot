@@ -56,7 +56,7 @@ pub struct SpotGridSummary {
     pub realized_pnl: f64,
     pub unrealized_pnl: f64,
     pub total_fees: f64,
-    pub start_price: Option<f64>,
+    pub initial_entry_price: Option<f64>,
 
     // Grid metrics
     pub grid_count: u32,
@@ -99,7 +99,7 @@ pub struct PerpGridSummary {
 
     // Wallet
     pub margin_balance: f64,
-    pub start_price: Option<f64>,
+    pub initial_entry_price: Option<f64>,
 }
 
 // ============================================================

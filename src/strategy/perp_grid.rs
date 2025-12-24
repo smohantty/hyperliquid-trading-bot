@@ -86,7 +86,6 @@ impl PerpGridStrategy {
             let market_info = match ctx.market_info(&self.config.symbol) {
                 Some(i) => i,
                 None => {
-                    error!("[PERP_GRID] No market info for {}", self.config.symbol);
                     return Err(anyhow!("No market info for {}", self.config.symbol));
                 }
             };

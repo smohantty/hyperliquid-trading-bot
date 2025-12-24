@@ -96,7 +96,6 @@ impl SpotGridStrategy {
         let market_info = match ctx.market_info(&self.config.symbol) {
             Some(info) => info.clone(),
             None => {
-                error!("[SPOT_GRID] No market info for {}", self.config.symbol);
                 return Err(anyhow!("No market info for {}", self.config.symbol));
             }
         };

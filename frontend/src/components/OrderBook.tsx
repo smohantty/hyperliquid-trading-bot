@@ -8,18 +8,16 @@ const OrderBook: React.FC = () => {
 
     const szDecimals = config?.sz_decimals || 4;
 
-    const { asks, bids, maxSize } = useMemo(() => {
-        if (!gridState || !lastPrice) return { asks: [], bids: [], maxSize: 0 };
+    const { asks, bids } = useMemo(() => {
+        if (!gridState || !lastPrice) return { asks: [], bids: [] };
 
         // Sort all zones by price descending (highest first)
         const sortedZones = [...gridState.zones].sort((a, b) => b.upper_price - a.upper_price);
 
         const asks: ZoneInfo[] = [];
         const bids: ZoneInfo[] = [];
-        let maxSize = 0;
 
         sortedZones.forEach(zone => {
-            if (zone.size > maxSize) maxSize = zone.size;
             if (zone.pending_side === 'Sell') {
                 asks.push(zone);
             } else {
@@ -27,13 +25,12 @@ const OrderBook: React.FC = () => {
             }
         });
 
-        // IMPORTANT: Keep both in descending order (highest at top)
-        // This makes prices "meet" at the center:
-        // - Asks: highest at top, LOWEST (closest to current) at BOTTOM (near center)
-        // - Bids: HIGHEST (closest to current) at TOP (near center), lowest at bottom
-        // NO reverse needed - both descending creates the visual spread effect
+        // Both sides show closest to current price FIRST (at top)
+        // - Asks: reverse to ascending (lowest/closest at top)
+        // - Bids: keep descending (highest/closest at top)
+        asks.reverse();
 
-        return { asks, bids, maxSize };
+        return { asks, bids };
     }, [gridState, lastPrice]);
 
     if (!gridState || !lastPrice) {
@@ -55,7 +52,8 @@ const OrderBook: React.FC = () => {
     const isPerp = gridState.strategy_type === 'perp_grid';
 
     // Best ask (lowest sell) and best bid (highest buy) for spread display
-    const bestAsk = asks.length > 0 ? asks[asks.length - 1] : null;
+    // After reversing, asks[0] is the closest (lowest) ask
+    const bestAsk = asks.length > 0 ? asks[0] : null;
     const bestBid = bids.length > 0 ? bids[0] : null;
     const spread = bestAsk && bestBid
         ? ((bestAsk.upper_price - bestBid.lower_price) / lastPrice * 100).toFixed(3)
@@ -82,13 +80,13 @@ const OrderBook: React.FC = () => {
 
             {/* CLOB Layout - Prices meet in the middle */}
             <div style={{ display: 'flex', minHeight: '320px' }}>
-                {/* Asks Side - Price column on RIGHT (adjacent to center) */}
+                {/* Asks Side */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                    {/* Header: Action | Trades | Size | Price */}
+                    {/* Header: Action | Trades | Size | Dist | Price */}
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: '85px 50px 70px 1fr',
-                        padding: '10px 16px',
+                        gridTemplateColumns: '80px 45px 65px 55px 1fr',
+                        padding: '10px 14px',
                         fontSize: '10px',
                         color: 'var(--text-tertiary)',
                         textTransform: 'uppercase',
@@ -100,6 +98,7 @@ const OrderBook: React.FC = () => {
                         <span>Action</span>
                         <span style={{ textAlign: 'center' }}>Trades</span>
                         <span style={{ textAlign: 'center' }}>Size</span>
+                        <span style={{ textAlign: 'right' }}>Dist</span>
                         <span style={{ textAlign: 'right' }}>Price</span>
                     </div>
                     <div style={{
@@ -118,8 +117,8 @@ const OrderBook: React.FC = () => {
                                     zone={zone}
                                     side="ask"
                                     szDecimals={szDecimals}
-                                    maxSize={maxSize}
-                                    isNearSpread={idx === asks.length - 1}
+                                    currentPrice={lastPrice}
+                                    isNearSpread={idx === 0}
                                 />
                             ))
                         )}
@@ -128,7 +127,7 @@ const OrderBook: React.FC = () => {
 
                 {/* Center Price Column */}
                 <div style={{
-                    width: '150px',
+                    width: '140px',
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
@@ -239,13 +238,13 @@ const OrderBook: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Bids Side - Price column on LEFT (adjacent to center) */}
+                {/* Bids Side */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                    {/* Header: Price | Size | Trades | Action */}
+                    {/* Header: Price | Dist | Size | Trades | Action */}
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: '1fr 70px 50px 85px',
-                        padding: '10px 16px',
+                        gridTemplateColumns: '1fr 55px 65px 45px 80px',
+                        padding: '10px 14px',
                         fontSize: '10px',
                         color: 'var(--text-tertiary)',
                         textTransform: 'uppercase',
@@ -255,6 +254,7 @@ const OrderBook: React.FC = () => {
                         background: 'rgba(0, 230, 118, 0.03)'
                     }}>
                         <span>Price</span>
+                        <span>Dist</span>
                         <span style={{ textAlign: 'center' }}>Size</span>
                         <span style={{ textAlign: 'center' }}>Trades</span>
                         <span style={{ textAlign: 'right' }}>Action</span>
@@ -273,7 +273,7 @@ const OrderBook: React.FC = () => {
                                     zone={zone}
                                     side="bid"
                                     szDecimals={szDecimals}
-                                    maxSize={maxSize}
+                                    currentPrice={lastPrice}
                                     isNearSpread={idx === 0}
                                 />
                             ))
@@ -311,9 +311,9 @@ const ZoneRow: React.FC<{
     zone: ZoneInfo;
     side: 'ask' | 'bid';
     szDecimals: number;
-    maxSize: number;
+    currentPrice: number;
     isNearSpread?: boolean;
-}> = ({ zone, side, szDecimals, maxSize, isNearSpread }) => {
+}> = ({ zone, side, szDecimals, currentPrice, isNearSpread }) => {
     const isAsk = side === 'ask';
     const displayPrice = isAsk ? zone.upper_price : zone.lower_price;
     const nextPrice = isAsk ? zone.lower_price : zone.upper_price;
@@ -326,8 +326,19 @@ const ZoneRow: React.FC<{
         ? (zone.pending_side === 'Buy' ? 'Buy (Close)' : 'Sell (Close)')
         : (zone.pending_side === 'Buy' ? 'Buy (Open)' : 'Sell (Open)');
 
-    // Calculate depth bar width
-    const depthPercent = maxSize > 0 ? (zone.size / maxSize) * 100 : 0;
+    // Calculate distance from current price (as percentage)
+    const distancePercent = ((displayPrice - currentPrice) / currentPrice * 100);
+    const distanceDisplay = distancePercent >= 0
+        ? `+${distancePercent.toFixed(2)}%`
+        : `${distancePercent.toFixed(2)}%`;
+
+    // Color based on how close (closer = more vivid)
+    const absDistance = Math.abs(distancePercent);
+    const distanceColor = absDistance < 0.5
+        ? 'var(--accent-primary)'
+        : absDistance < 1
+            ? 'var(--text-primary)'
+            : 'var(--text-secondary)';
 
     const actionBadge = (
         <span style={{
@@ -352,18 +363,15 @@ const ZoneRow: React.FC<{
             alignItems: isAsk ? 'flex-end' : 'flex-start',
             gap: '2px'
         }}>
-            <Tooltip content="Current Active Limit Order">
-                <span style={{
-                    color: isAsk ? 'var(--color-sell)' : 'var(--color-buy)',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 600,
-                    cursor: 'help',
-                    fontSize: '12px',
-                    textShadow: isNearSpread ? `0 0 8px ${isAsk ? 'var(--color-sell-glow)' : 'var(--color-buy-glow)'}` : 'none'
-                }}>
-                    {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </span>
-            </Tooltip>
+            <span style={{
+                color: isAsk ? 'var(--color-sell)' : 'var(--color-buy)',
+                fontFamily: 'var(--font-mono)',
+                fontWeight: 600,
+                fontSize: '12px',
+                textShadow: isNearSpread ? `0 0 8px ${isAsk ? 'var(--color-sell-glow)' : 'var(--color-buy-glow)'}` : 'none'
+            }}>
+                {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
             <Tooltip content="Next Order Price (Ping-Pong)">
                 <span style={{
                     color: 'var(--text-muted)',
@@ -378,16 +386,15 @@ const ZoneRow: React.FC<{
     );
 
     // Column order:
-    // Asks: Action | Trades | Size | Price (price on right, near center)
-    // Bids: Price | Size | Trades | Action (price on left, near center)
+    // Asks: Action | Trades | Size | Dist | Price
+    // Bids: Price | Dist | Size | Trades | Action
 
     return (
         <div style={{
-            position: 'relative',
             display: 'grid',
-            gridTemplateColumns: isAsk ? '85px 50px 70px 1fr' : '1fr 70px 50px 85px',
+            gridTemplateColumns: isAsk ? '80px 45px 65px 55px 1fr' : '1fr 55px 65px 45px 80px',
             alignItems: 'center',
-            padding: '8px 16px',
+            padding: '8px 14px',
             fontSize: '12px',
             opacity: zone.has_order ? 1 : 0.35,
             borderBottom: '1px solid var(--border-color)',
@@ -403,52 +410,52 @@ const ZoneRow: React.FC<{
                 : 'transparent';
         }}
         >
-            {/* Depth Bar - grows from center outward */}
-            <div
-                className={`depth-bar ${side === 'ask' ? 'ask' : 'bid'}`}
-                style={{
-                    width: `${depthPercent}%`,
-                    // Asks: bar grows from right (center) to left
-                    // Bids: bar grows from left (center) to right
-                    [isAsk ? 'right' : 'left']: 0
-                }}
-            />
-
             {isAsk ? (
-                // Asks: Action | Trades | Size | Price
+                // Asks: Action | Trades | Size | Dist | Price
                 <>
-                    <div style={{ position: 'relative', zIndex: 1 }}>{actionBadge}</div>
+                    <div>{actionBadge}</div>
                     <span style={{
                         textAlign: 'center',
                         fontFamily: 'var(--font-mono)',
                         color: zone.roundtrip_count > 0 ? 'var(--accent-primary)' : 'var(--text-muted)',
-                        fontSize: '11px',
-                        position: 'relative',
-                        zIndex: 1
+                        fontSize: '11px'
                     }}>
                         {zone.roundtrip_count}
                     </span>
                     <span style={{
                         textAlign: 'center',
                         fontFamily: 'var(--font-mono)',
-                        color: 'var(--text-secondary)',
-                        position: 'relative',
-                        zIndex: 1
+                        color: 'var(--text-secondary)'
                     }}>
                         {zone.size.toFixed(szDecimals)}
                     </span>
-                    <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>{priceDisplay}</div>
+                    <span style={{
+                        textAlign: 'right',
+                        fontFamily: 'var(--font-mono)',
+                        color: distanceColor,
+                        fontSize: '11px',
+                        fontWeight: 500
+                    }}>
+                        {distanceDisplay}
+                    </span>
+                    <div style={{ textAlign: 'right' }}>{priceDisplay}</div>
                 </>
             ) : (
-                // Bids: Price | Size | Trades | Action
+                // Bids: Price | Dist | Size | Trades | Action
                 <>
-                    <div style={{ position: 'relative', zIndex: 1 }}>{priceDisplay}</div>
+                    <div>{priceDisplay}</div>
+                    <span style={{
+                        fontFamily: 'var(--font-mono)',
+                        color: distanceColor,
+                        fontSize: '11px',
+                        fontWeight: 500
+                    }}>
+                        {distanceDisplay}
+                    </span>
                     <span style={{
                         textAlign: 'center',
                         fontFamily: 'var(--font-mono)',
-                        color: 'var(--text-secondary)',
-                        position: 'relative',
-                        zIndex: 1
+                        color: 'var(--text-secondary)'
                     }}>
                         {zone.size.toFixed(szDecimals)}
                     </span>
@@ -456,13 +463,11 @@ const ZoneRow: React.FC<{
                         textAlign: 'center',
                         fontFamily: 'var(--font-mono)',
                         color: zone.roundtrip_count > 0 ? 'var(--accent-primary)' : 'var(--text-muted)',
-                        fontSize: '11px',
-                        position: 'relative',
-                        zIndex: 1
+                        fontSize: '11px'
                     }}>
                         {zone.roundtrip_count}
                     </span>
-                    <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>{actionBadge}</div>
+                    <div style={{ textAlign: 'right' }}>{actionBadge}</div>
                 </>
             )}
         </div>

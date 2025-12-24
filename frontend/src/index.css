@@ -372,26 +372,7 @@ code, .mono, [data-mono] {
   animation: pulse 1s ease-in-out infinite;
 }
 
-/* Depth bar for order book - grows from center outward */
-.depth-bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  transition: width 0.3s ease;
-  pointer-events: none;
-}
-
-.depth-bar.ask {
-  /* Asks: bar anchored on right (near center), grows leftward */
-  right: 0;
-  background: linear-gradient(270deg, rgba(255, 82, 82, 0.15) 0%, rgba(255, 82, 82, 0.02) 100%);
-}
-
-.depth-bar.bid {
-  /* Bids: bar anchored on left (near center), grows rightward */
-  left: 0;
-  background: linear-gradient(90deg, rgba(0, 230, 118, 0.15) 0%, rgba(0, 230, 118, 0.02) 100%);
-}
+/* Distance column styling is handled inline in OrderBook.tsx */
 
 /* Skeleton loading */
 .skeleton {

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { useBotStore } from '../context/WebSocketContext';
 import type { ZoneInfo } from '../types/schema';
+import Tooltip from './Tooltip';
 
 const OrderBook: React.FC = () => {
     const { gridState, lastPrice, config } = useBotStore();
@@ -230,19 +231,29 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
 
     const priceDisplay = (
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: isAsk ? 'flex-start' : 'flex-end' }}>
-            <span style={{
-                color: isAsk ? 'var(--color-sell)' : 'var(--color-buy)',
-                fontFamily: 'var(--font-mono)'
-            }}>
-                {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
-            <span style={{
-                color: 'var(--text-tertiary)',
-                fontFamily: 'var(--font-mono)',
-                marginTop: '1px'
-            }}>
-                {nextPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </span>
+            <Tooltip content="Current Active Limit Order">
+                <span
+                    style={{
+                        color: isAsk ? 'var(--color-sell)' : 'var(--color-buy)',
+                        fontFamily: 'var(--font-mono)',
+                        cursor: 'help'
+                    }}
+                >
+                    {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+            </Tooltip>
+            <Tooltip content="Next Order Price (Ping-Pong)">
+                <span
+                    style={{
+                        color: 'var(--text-tertiary)',
+                        fontFamily: 'var(--font-mono)',
+                        marginTop: '1px',
+                        cursor: 'help'
+                    }}
+                >
+                    {nextPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+            </Tooltip>
         </div>
     );
 

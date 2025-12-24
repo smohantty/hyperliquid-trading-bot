@@ -1,5 +1,6 @@
 import React from 'react';
 import { useBotStore } from '../context/WebSocketContext';
+import Tooltip from './Tooltip';
 
 const SummaryCard: React.FC = () => {
     const { summary, lastTickTime } = useBotStore();
@@ -38,8 +39,8 @@ const SummaryCard: React.FC = () => {
         };
 
         const positionColor = perpData.position_side === 'Long' ? 'var(--color-buy)' :
-                              perpData.position_side === 'Short' ? 'var(--color-sell)' :
-                              'var(--text-tertiary)';
+            perpData.position_side === 'Short' ? 'var(--color-sell)' :
+                'var(--text-tertiary)';
 
         return (
             <div style={{
@@ -60,11 +61,11 @@ const SummaryCard: React.FC = () => {
                         <span style={{ fontSize: '18px', fontWeight: 600 }}>{s.symbol}</span>
                         <span style={{
                             background: perpData.grid_bias === 'Long' ? 'rgba(14, 203, 129, 0.15)' :
-                                       perpData.grid_bias === 'Short' ? 'rgba(246, 70, 93, 0.15)' :
-                                       'rgba(240, 185, 11, 0.15)',
+                                perpData.grid_bias === 'Short' ? 'rgba(246, 70, 93, 0.15)' :
+                                    'rgba(240, 185, 11, 0.15)',
                             color: perpData.grid_bias === 'Long' ? 'var(--color-buy)' :
-                                   perpData.grid_bias === 'Short' ? 'var(--color-sell)' :
-                                   'var(--accent-yellow)',
+                                perpData.grid_bias === 'Short' ? 'var(--color-sell)' :
+                                    'var(--accent-yellow)',
                             padding: '4px 8px',
                             borderRadius: '4px',
                             fontSize: '11px',
@@ -122,11 +123,23 @@ const SummaryCard: React.FC = () => {
                     color: 'var(--text-secondary)'
                 }}>
                     <span>
-                        Grid: {s.grid_count} zones · ${s.range_low.toLocaleString()} - ${s.range_high.toLocaleString()}
+                        <Tooltip content="Active Grid Levels">
+                            <span style={{ cursor: 'help' }}>
+                                Grid: {s.grid_count} zones
+                            </span>
+                        </Tooltip>
                         {' · '}
-                        <span style={{ color: 'var(--accent-yellow)' }}>
-                            {formatSpacing(s.grid_spacing_pct)}
-                        </span>
+                        <Tooltip content="Price Range (Min - Max)">
+                            <span style={{ cursor: 'help' }}>
+                                ${s.range_low.toLocaleString()} - ${s.range_high.toLocaleString()}
+                            </span>
+                        </Tooltip>
+                        {' · '}
+                        <Tooltip content="Grid Spacing Percentage (Distance between levels)">
+                            <span style={{ color: 'var(--accent-yellow)', cursor: 'help' }}>
+                                {formatSpacing(s.grid_spacing_pct)}
+                            </span>
+                        </Tooltip>
                     </span>
                     <span style={{ color: 'var(--accent-yellow)', fontWeight: 500 }}>
                         {s.roundtrips} roundtrips
@@ -219,11 +232,23 @@ const SummaryCard: React.FC = () => {
                 color: 'var(--text-secondary)'
             }}>
                 <span>
-                    Grid: {s.grid_count} zones · ${s.range_low.toFixed(2)} - ${s.range_high.toFixed(2)}
+                    <Tooltip content="Active Grid Levels">
+                        <span style={{ cursor: 'help' }}>
+                            Grid: {s.grid_count} zones
+                        </span>
+                    </Tooltip>
                     {' · '}
-                    <span style={{ color: 'var(--accent-yellow)' }}>
-                        {formatSpacing(s.grid_spacing_pct)}
-                    </span>
+                    <Tooltip content="Price Range (Min - Max)">
+                        <span style={{ cursor: 'help' }}>
+                            ${s.range_low.toFixed(2)} - ${s.range_high.toFixed(2)}
+                        </span>
+                    </Tooltip>
+                    {' · '}
+                    <Tooltip content="Grid Spacing Percentage (Distance between levels)">
+                        <span style={{ color: 'var(--accent-yellow)', cursor: 'help' }} >
+                            {formatSpacing(s.grid_spacing_pct)}
+                        </span>
+                    </Tooltip>
                 </span>
                 <span style={{ color: 'var(--accent-yellow)', fontWeight: 500 }}>
                     {s.roundtrips} roundtrips

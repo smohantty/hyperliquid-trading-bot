@@ -547,6 +547,37 @@ impl SpotGridStrategy {
 
         Ok(())
     }
+    fn validate_fill(&self, zone_idx: usize, fill: &OrderFill) {
+        let expected_side = self.zones[zone_idx].pending_side;
+
+        // 1. Validate fill.side matches zone's pending order side
+        if fill.side != expected_side {
+            error!(
+                "[SPOT_GRID] ASSERTION FAILED: Zone {} expected side {:?} but got {:?}",
+                zone_idx, expected_side, fill.side
+            );
+        }
+        debug_assert_eq!(
+            fill.side, expected_side,
+            "Zone {} fill side mismatch: expected {:?}, got {:?}",
+            zone_idx, expected_side, fill.side
+        );
+
+        // 2. Validate raw_dir if present (spot should be "Buy" or "Sell")
+        if let Some(ref raw_dir) = fill.raw_dir {
+            let expected_dir = if expected_side.is_buy() {
+                "Buy"
+            } else {
+                "Sell"
+            };
+            if raw_dir != expected_dir {
+                error!(
+                    "[SPOT_GRID] ASSERTION FAILED: Zone {} expected raw_dir '{}' but got '{}'",
+                    zone_idx, expected_dir, raw_dir
+                );
+            }
+        }
+    }
 }
 
 impl Strategy for SpotGridStrategy {
@@ -611,42 +642,9 @@ impl Strategy for SpotGridStrategy {
                     }
                 }
 
-                // ============================================================
-                // FILL VALIDATION ASSERTIONS
-                // Verify exchange fill data matches our internal expectations
-                // ============================================================
+                // Validate Fill Expectations
+                self.validate_fill(zone_idx, fill);
                 let expected_side = self.zones[zone_idx].pending_side;
-
-                // 1. Validate fill.side matches zone's pending order side
-                if fill.side != expected_side {
-                    error!(
-                        "[SPOT_GRID] ASSERTION FAILED: Zone {} expected side {:?} but got {:?}",
-                        zone_idx, expected_side, fill.side
-                    );
-                }
-                debug_assert_eq!(
-                    fill.side, expected_side,
-                    "Zone {} fill side mismatch: expected {:?}, got {:?}",
-                    zone_idx, expected_side, fill.side
-                );
-
-                // 2. Validate raw_dir if present (spot should be "Buy" or "Sell")
-                if let Some(ref raw_dir) = fill.raw_dir {
-                    let expected_dir = if expected_side.is_buy() {
-                        "Buy"
-                    } else {
-                        "Sell"
-                    };
-                    if raw_dir != expected_dir {
-                        error!(
-                            "[SPOT_GRID] ASSERTION FAILED: Zone {} expected raw_dir '{}' but got '{}'",
-                            zone_idx, expected_dir, raw_dir
-                        );
-                    }
-                }
-                // ============================================================
-                // END FILL VALIDATION
-                // ============================================================
 
                 // Update Zone State
                 self.zones[zone_idx].order_id = None;

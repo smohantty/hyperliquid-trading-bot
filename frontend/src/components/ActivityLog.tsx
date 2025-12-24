@@ -40,6 +40,35 @@ const ActivityLog: React.FC = () => {
                 )}
             </div>
 
+            {/* Column Headers */}
+            {orderHistory.length > 0 && (
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '70px 50px 1fr 70px',
+                    padding: '8px 16px',
+                    fontSize: '9px',
+                    color: 'var(--text-tertiary)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontWeight: 600,
+                    borderBottom: '1px solid var(--border-color)',
+                    background: 'rgba(0, 0, 0, 0.2)',
+                    alignItems: 'center'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '10px', opacity: 0 }}>●</span>
+                        <span>Status</span>
+                    </div>
+                    <span>Side</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <span>Size</span>
+                        <span style={{ color: 'var(--text-muted)' }}>@</span>
+                        <span>Price</span>
+                    </div>
+                    <span style={{ textAlign: 'right' }}>Fee</span>
+                </div>
+            )}
+
             {/* Activity List */}
             <div
                 ref={scrollRef}
@@ -103,51 +132,55 @@ const OrderEventRow: React.FC<{
     const isFilled = order.status === 'FILLED';
 
     const sideColor = isBuy ? 'var(--color-buy)' : 'var(--color-sell)';
-    const sideBg = isBuy ? 'var(--color-buy-bg)' : 'var(--color-sell-bg)';
 
-    const getStatusStyle = () => {
+    const getStatusConfig = () => {
         switch (order.status) {
             case 'FILLED':
                 return {
+                    icon: '✓',
+                    label: 'Filled',
                     color: 'var(--color-buy)',
-                    bg: 'var(--color-buy-bg)',
-                    glow: 'var(--color-buy-glow)'
+                    bg: 'var(--color-buy-bg)'
                 };
             case 'OPEN':
                 return {
-                    color: 'var(--text-primary)',
-                    bg: 'var(--bg-hover)',
-                    glow: 'none'
+                    icon: '●',
+                    label: 'Open',
+                    color: 'var(--accent-primary)',
+                    bg: 'var(--accent-subtle)'
                 };
             case 'OPENING':
                 return {
+                    icon: '◐',
+                    label: 'Opening',
                     color: 'var(--color-warning)',
-                    bg: 'rgba(255, 171, 0, 0.1)',
-                    glow: 'var(--color-warning-glow)'
+                    bg: 'rgba(255, 171, 0, 0.1)'
                 };
             case 'CANCELLED':
                 return {
+                    icon: '✕',
+                    label: 'Cancelled',
                     color: 'var(--text-tertiary)',
-                    bg: 'transparent',
-                    glow: 'none'
+                    bg: 'transparent'
                 };
             default:
                 return {
+                    icon: '!',
+                    label: order.status,
                     color: 'var(--color-sell)',
-                    bg: 'var(--color-sell-bg)',
-                    glow: 'var(--color-sell-glow)'
+                    bg: 'var(--color-sell-bg)'
                 };
         }
     };
 
-    const statusStyle = getStatusStyle();
+    const statusConfig = getStatusConfig();
 
     return (
         <div style={{
-            display: 'flex',
+            display: 'grid',
+            gridTemplateColumns: '70px 50px 1fr 70px',
             alignItems: 'center',
-            gap: '12px',
-            padding: '12px 18px',
+            padding: '10px 16px',
             fontSize: '12px',
             borderBottom: '1px solid var(--border-color)',
             background: isFirst ? 'rgba(0, 240, 192, 0.02)' : 'transparent',
@@ -161,65 +194,63 @@ const OrderEventRow: React.FC<{
             e.currentTarget.style.background = isFirst ? 'rgba(0, 240, 192, 0.02)' : 'transparent';
         }}
         >
-            {/* Side Badge */}
-            <span style={{
-                background: sideBg,
-                border: `1px solid ${sideColor}30`,
-                color: sideColor,
-                padding: '3px 8px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '10px',
-                fontWeight: 600,
-                minWidth: '40px',
-                textAlign: 'center',
-                letterSpacing: '0.3px'
-            }}>
-                {order.side.toUpperCase()}
-            </span>
-
-            {/* Size @ Price */}
+            {/* Status - First Column */}
             <div style={{
-                flex: 1,
-                fontFamily: 'var(--font-mono)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px'
             }}>
+                <span style={{
+                    color: statusConfig.color,
+                    fontSize: '10px'
+                }}>
+                    {statusConfig.icon}
+                </span>
+                <span style={{
+                    color: statusConfig.color,
+                    fontSize: '11px',
+                    fontWeight: 600
+                }}>
+                    {statusConfig.label}
+                </span>
+            </div>
+
+            {/* Side - Second Column */}
+            <span style={{
+                color: sideColor,
+                fontSize: '11px',
+                fontWeight: 600,
+                textTransform: 'uppercase'
+            }}>
+                {order.side}
+            </span>
+
+            {/* Size @ Price - Third Column */}
+            <div style={{
+                fontFamily: 'var(--font-mono)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                fontSize: '11px'
+            }}>
                 <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
                     {order.size.toFixed(szDecimals)}
                 </span>
-                <span style={{ color: 'var(--text-tertiary)' }}>@</span>
+                <span style={{ color: 'var(--text-muted)' }}>@</span>
                 <span style={{ color: 'var(--text-secondary)' }}>
                     ${order.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
             </div>
 
-            {/* Status */}
+            {/* Fee - Fourth Column */}
             <span style={{
-                background: statusStyle.bg,
-                color: statusStyle.color,
-                padding: '3px 8px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: '10px',
-                fontWeight: 600,
-                letterSpacing: '0.3px',
-                boxShadow: statusStyle.glow !== 'none' ? `0 0 10px ${statusStyle.glow}` : 'none'
+                color: isFilled && order.fee > 0 ? 'var(--color-sell)' : 'var(--text-muted)',
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono)',
+                textAlign: 'right'
             }}>
-                {order.status}
+                {isFilled && order.fee > 0 ? `-$${order.fee.toFixed(4)}` : '--'}
             </span>
-
-            {/* Fee */}
-            {isFilled && order.fee > 0 && (
-                <span style={{
-                    color: 'var(--text-tertiary)',
-                    fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                    minWidth: '60px',
-                    textAlign: 'right'
-                }}>
-                    -${order.fee.toFixed(4)}
-                </span>
-            )}
         </div>
     );
 };

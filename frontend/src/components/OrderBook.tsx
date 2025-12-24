@@ -68,8 +68,8 @@ const OrderBook: React.FC = () => {
             <div className="card-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-secondary)' }}>
-                        <path d="M3 3v18h18"/>
-                        <path d="M18 9l-5 5-4-4-3 3"/>
+                        <path d="M3 3v18h18" />
+                        <path d="M18 9l-5 5-4-4-3 3" />
                     </svg>
                     <span className="card-header-title">Order Book</span>
                 </div>
@@ -119,6 +119,7 @@ const OrderBook: React.FC = () => {
                                     szDecimals={szDecimals}
                                     currentPrice={lastPrice}
                                     isNearSpread={idx === 0}
+                                    isPerp={isPerp}
                                 />
                             ))
                         )}
@@ -275,6 +276,7 @@ const OrderBook: React.FC = () => {
                                     szDecimals={szDecimals}
                                     currentPrice={lastPrice}
                                     isNearSpread={idx === 0}
+                                    isPerp={isPerp}
                                 />
                             ))
                         )}
@@ -299,9 +301,9 @@ const EmptyState: React.FC<{ side: 'asks' | 'bids' }> = ({ side }) => (
         gap: '8px'
     }}>
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.5 }}>
-            <circle cx="12" cy="12" r="10"/>
-            <line x1="15" y1="9" x2="9" y2="15"/>
-            <line x1="9" y1="9" x2="15" y2="15"/>
+            <circle cx="12" cy="12" r="10" />
+            <line x1="15" y1="9" x2="9" y2="15" />
+            <line x1="9" y1="9" x2="15" y2="15" />
         </svg>
         No {side}
     </div>
@@ -313,7 +315,8 @@ const ZoneRow: React.FC<{
     szDecimals: number;
     currentPrice: number;
     isNearSpread?: boolean;
-}> = ({ zone, side, szDecimals, currentPrice, isNearSpread }) => {
+    isPerp: boolean;
+}> = ({ zone, side, szDecimals, currentPrice, isNearSpread, isPerp }) => {
     const isAsk = side === 'ask';
     const displayPrice = isAsk ? zone.upper_price : zone.lower_price;
     const nextPrice = isAsk ? zone.lower_price : zone.upper_price;
@@ -322,9 +325,11 @@ const ZoneRow: React.FC<{
     const actionColor = isClose ? 'var(--color-warning)' :
         zone.pending_side === 'Buy' ? 'var(--color-buy)' : 'var(--color-sell)';
 
-    const displayLabel = isClose
-        ? (zone.pending_side === 'Buy' ? 'Buy (Close)' : 'Sell (Close)')
-        : (zone.pending_side === 'Buy' ? 'Buy (Open)' : 'Sell (Open)');
+    const displayLabel = !isPerp
+        ? zone.pending_side
+        : isClose
+            ? (zone.pending_side === 'Buy' ? 'Buy (Close)' : 'Sell (Close)')
+            : (zone.pending_side === 'Buy' ? 'Buy (Open)' : 'Sell (Open)');
 
     // Calculate distance from current price (as percentage)
     const distancePercent = ((displayPrice - currentPrice) / currentPrice * 100);
@@ -401,14 +406,14 @@ const ZoneRow: React.FC<{
             background: isNearSpread ? (isAsk ? 'rgba(255, 82, 82, 0.03)' : 'rgba(0, 230, 118, 0.03)') : 'transparent',
             transition: 'background var(--transition-fast), opacity var(--transition-fast)'
         }}
-        onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--bg-hover)';
-        }}
-        onMouseLeave={(e) => {
-            e.currentTarget.style.background = isNearSpread
-                ? (isAsk ? 'rgba(255, 82, 82, 0.03)' : 'rgba(0, 230, 118, 0.03)')
-                : 'transparent';
-        }}
+            onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-hover)';
+            }}
+            onMouseLeave={(e) => {
+                e.currentTarget.style.background = isNearSpread
+                    ? (isAsk ? 'rgba(255, 82, 82, 0.03)' : 'rgba(0, 230, 118, 0.03)')
+                    : 'transparent';
+            }}
         >
             {isAsk ? (
                 // Asks: Action | Trades | Size | Dist | Price

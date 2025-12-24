@@ -1,12 +1,10 @@
 import React, { type ReactNode } from 'react';
-import { useBotStore } from '../context/WebSocketContext';
 
 interface LayoutProps {
     children: ReactNode;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
-    const { connectionStatus, config } = useBotStore();
 
     return (
         <div style={{
@@ -78,34 +76,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </nav>
                 </div>
 
-                {/* Right: Status & Info */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    {config && (
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            padding: '8px 14px',
-                            background: 'var(--bg-hover)',
-                            borderRadius: 'var(--radius-md)',
-                            border: '1px solid var(--border-color)'
-                        }}>
-                            <span style={{
-                                fontSize: '13px',
-                                fontWeight: 500,
-                                color: 'var(--text-primary)',
-                                fontFamily: 'var(--font-mono)'
-                            }}>
-                                {config.symbol}
-                            </span>
-                            <span className={`badge ${config.type === 'perp_grid' ? 'badge-neutral' : 'badge-muted'}`}>
-                                {config.type === 'perp_grid' ? 'PERP' : 'SPOT'}
-                            </span>
-                        </div>
-                    )}
-
-                    <ConnectionStatus status={connectionStatus} />
-                </div>
             </header>
 
             {/* Main Content */}
@@ -164,47 +134,5 @@ const NavItem: React.FC<{ label: string; active?: boolean }> = ({ label, active 
         )}
     </button>
 );
-
-const ConnectionStatus: React.FC<{ status: 'connected' | 'connecting' | 'disconnected' }> = ({ status }) => {
-    const statusConfig = {
-        connected: {
-            label: 'Live',
-            color: 'var(--color-buy)',
-            className: 'connected'
-        },
-        connecting: {
-            label: 'Connecting...',
-            color: 'var(--color-warning)',
-            className: 'connecting'
-        },
-        disconnected: {
-            label: 'Offline',
-            color: 'var(--color-sell)',
-            className: 'disconnected'
-        }
-    };
-
-    const config = statusConfig[status];
-
-    return (
-        <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '6px 12px',
-            borderRadius: 'var(--radius-sm)',
-            background: status === 'connected' ? 'var(--color-buy-bg)' : 'transparent'
-        }}>
-            <div className={`status-dot ${config.className}`} />
-            <span style={{
-                fontSize: '12px',
-                fontWeight: 500,
-                color: config.color
-            }}>
-                {config.label}
-            </span>
-        </div>
-    );
-};
 
 export default Layout;

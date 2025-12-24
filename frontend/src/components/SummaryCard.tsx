@@ -3,7 +3,7 @@ import { useBotStore } from '../context/WebSocketContext';
 import Tooltip from './Tooltip';
 
 const SummaryCard: React.FC = () => {
-    const { summary, lastTickTime } = useBotStore();
+    const { summary, lastTickTime, connectionStatus } = useBotStore();
 
     if (!summary) {
         return (
@@ -59,7 +59,7 @@ const SummaryCard: React.FC = () => {
                     justifyContent: 'space-between',
                     alignItems: 'center'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <span style={{
                             fontSize: '22px',
                             fontWeight: 700,
@@ -69,8 +69,9 @@ const SummaryCard: React.FC = () => {
                             {s.symbol}
                         </span>
                         <span className={`badge ${biasClass}`}>
-                            {perpData.leverage}x {perpData.grid_bias.toUpperCase()}
+                            {perpData.grid_bias.toUpperCase()}
                         </span>
+                        <ConnectionStatus status={connectionStatus} />
                     </div>
                     <span style={{
                         fontSize: '12px',
@@ -343,7 +344,7 @@ const SummaryCard: React.FC = () => {
                 justifyContent: 'space-between',
                 alignItems: 'center'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <span style={{
                         fontSize: '22px',
                         fontWeight: 700,
@@ -352,8 +353,9 @@ const SummaryCard: React.FC = () => {
                         {s.symbol}
                     </span>
                     <span className="badge badge-muted">
-                        SPOT GRID
+                        SPOT
                     </span>
+                    <ConnectionStatus status={connectionStatus} />
                 </div>
                 <span style={{
                     fontSize: '12px',
@@ -660,5 +662,52 @@ const StatItem: React.FC<{
         )}
     </div>
 );
+
+const ConnectionStatus: React.FC<{ status: 'connected' | 'connecting' | 'disconnected' }> = ({ status }) => {
+    const statusConfig = {
+        connected: {
+            label: 'Live',
+            color: 'var(--color-buy)',
+            bgColor: 'var(--color-buy-bg)',
+            dotClass: 'connected'
+        },
+        connecting: {
+            label: 'Connecting',
+            color: 'var(--color-warning)',
+            bgColor: 'rgba(255, 171, 0, 0.1)',
+            dotClass: 'connecting'
+        },
+        disconnected: {
+            label: 'Offline',
+            color: 'var(--color-sell)',
+            bgColor: 'var(--color-sell-bg)',
+            dotClass: 'disconnected'
+        }
+    };
+
+    const config = statusConfig[status];
+
+    return (
+        <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 10px',
+            borderRadius: 'var(--radius-sm)',
+            background: config.bgColor,
+            border: `1px solid ${config.color}25`
+        }}>
+            <div className={`status-dot ${config.dotClass}`} style={{ width: '6px', height: '6px' }} />
+            <span style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: config.color,
+                letterSpacing: '0.3px'
+            }}>
+                {config.label}
+            </span>
+        </div>
+    );
+};
 
 export default SummaryCard;

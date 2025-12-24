@@ -213,6 +213,8 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
     // Looking at OrderBook.tsx, it maps zones.
 
 
+    const nextPrice = isAsk ? zone.lower_price : zone.upper_price;
+
     const actionBadge = (
         <span style={{
             background: `${actionColor}20`,
@@ -226,6 +228,24 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
         </span>
     );
 
+    const priceDisplay = (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: isAsk ? 'flex-start' : 'flex-end' }}>
+            <span style={{
+                color: isAsk ? 'var(--color-sell)' : 'var(--color-buy)',
+                fontFamily: 'var(--font-mono)'
+            }}>
+                {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+            <span style={{
+                color: 'var(--text-tertiary)',
+                fontFamily: 'var(--font-mono)',
+                marginTop: '1px'
+            }}>
+                {nextPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+        </div>
+    );
+
     return (
         <div style={{
             display: 'flex',
@@ -237,9 +257,7 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
         }}>
             {isAsk ? (
                 <>
-                    <span style={{ flex: 1, color: 'var(--color-sell)', fontFamily: 'var(--font-mono)' }}>
-                        {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
+                    <span style={{ flex: 1 }}>{priceDisplay}</span>
                     <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
                         {zone.size.toFixed(szDecimals)}
                     </span>
@@ -257,9 +275,7 @@ const ZoneRow: React.FC<{ zone: ZoneInfo; side: 'ask' | 'bid'; szDecimals: numbe
                     <span style={{ width: '40px', textAlign: 'center', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', fontSize: '11px' }}>
                         {zone.roundtrip_count}
                     </span>
-                    <span style={{ flex: 1, textAlign: 'right', color: 'var(--color-buy)', fontFamily: 'var(--font-mono)' }}>
-                        {displayPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </span>
+                    <span style={{ flex: 1, textAlign: 'right' }}>{priceDisplay}</span>
                 </>
             )}
         </div>

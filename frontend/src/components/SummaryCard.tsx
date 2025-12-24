@@ -244,8 +244,8 @@ const SummaryCard: React.FC = () => {
                             justifyContent: 'center'
                         }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2">
-                                <circle cx="12" cy="12" r="10"/>
-                                <polyline points="12 6 12 12 16 14"/>
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
                             </svg>
                         </div>
                         <div>
@@ -293,10 +293,10 @@ const SummaryCard: React.FC = () => {
                             justifyContent: 'center'
                         }}>
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2">
-                                <path d="M17 1l4 4-4 4"/>
-                                <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                                <path d="M7 23l-4-4 4-4"/>
-                                <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                                <path d="M17 1l4 4-4 4" />
+                                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                                <path d="M7 23l-4-4 4-4" />
+                                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
                             </svg>
                         </div>
                         <div>
@@ -523,8 +523,8 @@ const SummaryCard: React.FC = () => {
                         justifyContent: 'center'
                     }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <polyline points="12 6 12 12 16 14"/>
+                            <circle cx="12" cy="12" r="10" />
+                            <polyline points="12 6 12 12 16 14" />
                         </svg>
                     </div>
                     <div>
@@ -572,10 +572,10 @@ const SummaryCard: React.FC = () => {
                         justifyContent: 'center'
                     }}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2">
-                            <path d="M17 1l4 4-4 4"/>
-                            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                            <path d="M7 23l-4-4 4-4"/>
-                            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                            <path d="M17 1l4 4-4 4" />
+                            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                            <path d="M7 23l-4-4 4-4" />
+                            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
                         </svg>
                     </div>
                     <div>
@@ -631,8 +631,7 @@ const StatItem: React.FC<{
             {tooltip ? (
                 <Tooltip content={tooltip}>
                     <span style={{
-                        cursor: 'help',
-                        borderBottom: '1px dotted var(--text-tertiary)'
+                        cursor: 'help'
                     }}>
                         {label}
                     </span>

@@ -1,12 +1,26 @@
 import React from 'react';
 import { useBotStore } from '../context/WebSocketContext';
+import Tooltip from './Tooltip';
+
+// Format grid spacing: "0.228%" for geometric, "0.167% - 0.172%" for arithmetic
+const formatSpacing = (spacing: [number, number] | undefined): string => {
+    if (!spacing) return '--';
+    const [min, max] = spacing;
+    const decimals = min < 1 ? 3 : 2;
+    const relativeDiff = Math.abs(max - min) / Math.max(min, max);
+    if (relativeDiff < 0.01) {
+        return `${min.toFixed(decimals)}%`;
+    }
+    return `${min.toFixed(decimals)}% - ${max.toFixed(decimals)}%`;
+};
 
 const ConfigPanel: React.FC = () => {
-    const { config } = useBotStore();
+    const { config, summary } = useBotStore();
 
     if (!config) return null;
 
     const isPerp = config.type === 'perp_grid';
+    const gridSpacingPct = summary?.data?.grid_spacing_pct;
 
     return (
         <div className="card" style={{
@@ -67,16 +81,24 @@ const ConfigPanel: React.FC = () => {
                         />
                         <ConfigCell
                             label="Spacing"
-                            value={config.grid_type.charAt(0).toUpperCase() + config.grid_type.slice(1)}
-                            icon="spacing"
+                            value={formatSpacing(gridSpacingPct)}
+                            subValue={config.grid_type.charAt(0).toUpperCase() + config.grid_type.slice(1)}
+                            icon="percent"
+                            highlight
+                            highlightColor="var(--accent-primary)"
+                            tooltip="Profit margin per roundtrip (before fees)"
                             isLast
                         />
                     </>
                 ) : (
                     <ConfigCell
                         label="Spacing"
-                        value={config.grid_type.charAt(0).toUpperCase() + config.grid_type.slice(1)}
-                        icon="spacing"
+                        value={formatSpacing(gridSpacingPct)}
+                        subValue={config.grid_type.charAt(0).toUpperCase() + config.grid_type.slice(1)}
+                        icon="percent"
+                        highlight
+                        highlightColor="var(--accent-primary)"
+                        tooltip="Profit margin per roundtrip (before fees)"
                         isLast
                     />
                 )}
@@ -134,17 +156,26 @@ const icons: Record<string, React.ReactNode> = {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 10H3M21 6H3M21 14H3M21 18H3"/>
         </svg>
+    ),
+    percent: (
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="6" cy="6" r="3"/>
+            <circle cx="18" cy="18" r="3"/>
+            <path d="M20 4L4 20"/>
+        </svg>
     )
 };
 
 const ConfigCell: React.FC<{
     label: string;
     value: string;
+    subValue?: string;
     icon?: string;
     highlight?: boolean;
     highlightColor?: string;
+    tooltip?: string;
     isLast?: boolean;
-}> = ({ label, value, icon, highlight, highlightColor, isLast }) => (
+}> = ({ label, value, subValue, icon, highlight, highlightColor, tooltip, isLast }) => (
     <div style={{
         padding: '16px 18px',
         borderRight: isLast ? 'none' : '1px solid var(--border-color)',
@@ -164,7 +195,15 @@ const ConfigCell: React.FC<{
             fontWeight: 500
         }}>
             {icon && <span style={{ opacity: 0.7 }}>{icons[icon]}</span>}
-            {label}
+            {tooltip ? (
+                <Tooltip content={tooltip}>
+                    <span style={{ cursor: 'help', borderBottom: '1px dotted var(--text-tertiary)' }}>
+                        {label}
+                    </span>
+                </Tooltip>
+            ) : (
+                label
+            )}
         </div>
         <div style={{
             fontSize: '13px',
@@ -175,6 +214,15 @@ const ConfigCell: React.FC<{
         }}>
             {value}
         </div>
+        {subValue && (
+            <div style={{
+                fontSize: '10px',
+                color: 'var(--text-tertiary)',
+                marginTop: '4px'
+            }}>
+                {subValue}
+            </div>
+        )}
     </div>
 );
 

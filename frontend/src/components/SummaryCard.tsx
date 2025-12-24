@@ -72,31 +72,13 @@ const SummaryCard: React.FC = () => {
                             {perpData.leverage}x {perpData.grid_bias.toUpperCase()}
                         </span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '6px 10px',
-                            background: 'var(--bg-hover)',
-                            borderRadius: 'var(--radius-sm)',
-                            fontSize: '12px',
-                            color: 'var(--text-secondary)'
-                        }}>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <circle cx="12" cy="12" r="10"/>
-                                <polyline points="12 6 12 12 16 14"/>
-                            </svg>
-                            {s.uptime}
-                        </div>
-                        <span style={{
-                            fontSize: '12px',
-                            color: 'var(--text-tertiary)',
-                            fontFamily: 'var(--font-mono)'
-                        }}>
-                            {timeStr}
-                        </span>
-                    </div>
+                    <span style={{
+                        fontSize: '12px',
+                        color: 'var(--text-tertiary)',
+                        fontFamily: 'var(--font-mono)'
+                    }}>
+                        {timeStr}
+                    </span>
                 </div>
 
                 {/* Price & PnL Hero Section - 4 Column Grid */}
@@ -236,73 +218,106 @@ const SummaryCard: React.FC = () => {
                     <StatItem label="Fees" value={`$${s.total_fees.toFixed(2)}`} valueColor="var(--color-sell)" isLast />
                 </div>
 
-                {/* Footer */}
+                {/* Footer - Uptime & Roundtrips */}
                 <div style={{
-                    padding: '14px 22px',
+                    padding: '16px 22px',
                     display: 'flex',
-                    justifyContent: 'space-between',
+                    justifyContent: 'center',
                     alignItems: 'center',
-                    fontSize: '12px',
-                    color: 'var(--text-secondary)',
+                    gap: '32px',
                     background: 'rgba(0, 0, 0, 0.2)'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                        <Tooltip content="Active Grid Levels">
-                            <span style={{
-                                cursor: 'help',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px'
-                            }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                    <rect x="3" y="3" width="7" height="7"/>
-                                    <rect x="14" y="3" width="7" height="7"/>
-                                    <rect x="14" y="14" width="7" height="7"/>
-                                    <rect x="3" y="14" width="7" height="7"/>
-                                </svg>
-                                <span style={{ fontFamily: 'var(--font-mono)' }}>{s.grid_count}</span> zones
-                            </span>
-                        </Tooltip>
-                        <span style={{ color: 'var(--text-tertiary)' }}>·</span>
-                        <Tooltip content="Price Range (Min - Max)">
-                            <span style={{ cursor: 'help', fontFamily: 'var(--font-mono)' }}>
-                                ${s.range_low.toLocaleString()} - ${s.range_high.toLocaleString()}
-                            </span>
-                        </Tooltip>
-                        <span style={{ color: 'var(--text-tertiary)' }}>·</span>
-                        <Tooltip content="Grid Spacing Percentage">
-                            <span style={{
-                                color: 'var(--accent-primary)',
-                                cursor: 'help',
-                                fontFamily: 'var(--font-mono)'
-                            }}>
-                                {formatSpacing(s.grid_spacing_pct)}
-                            </span>
-                        </Tooltip>
-                    </div>
+                    {/* Uptime */}
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px',
-                        padding: '6px 12px',
-                        background: 'var(--accent-subtle)',
-                        borderRadius: 'var(--radius-sm)',
-                        border: '1px solid rgba(0, 240, 192, 0.1)'
+                        gap: '10px'
                     }}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2">
-                            <path d="M17 1l4 4-4 4"/>
-                            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                            <path d="M7 23l-4-4 4-4"/>
-                            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-                        </svg>
-                        <span style={{
-                            color: 'var(--accent-primary)',
-                            fontWeight: 600,
-                            fontFamily: 'var(--font-mono)'
+                        <div style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            background: 'var(--bg-hover)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
                         }}>
-                            {s.roundtrips}
-                        </span>
-                        <span style={{ color: 'var(--text-tertiary)' }}>roundtrips</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div style={{
+                                fontSize: '10px',
+                                color: 'var(--text-tertiary)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                marginBottom: '2px'
+                            }}>
+                                Uptime
+                            </div>
+                            <div style={{
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                color: 'var(--text-primary)',
+                                fontFamily: 'var(--font-mono)'
+                            }}>
+                                {s.uptime}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Divider */}
+                    <div style={{
+                        width: '1px',
+                        height: '32px',
+                        background: 'var(--border-color)'
+                    }} />
+
+                    {/* Roundtrips */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px'
+                    }}>
+                        <div style={{
+                            width: '36px',
+                            height: '36px',
+                            borderRadius: '50%',
+                            background: 'var(--accent-subtle)',
+                            border: '1px solid rgba(0, 240, 192, 0.15)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2">
+                                <path d="M17 1l4 4-4 4"/>
+                                <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                                <path d="M7 23l-4-4 4-4"/>
+                                <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <div style={{
+                                fontSize: '10px',
+                                color: 'var(--text-tertiary)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.5px',
+                                marginBottom: '2px'
+                            }}>
+                                Roundtrips
+                            </div>
+                            <div style={{
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                color: 'var(--accent-primary)',
+                                fontFamily: 'var(--font-mono)',
+                                textShadow: '0 0 10px var(--accent-glow)'
+                            }}>
+                                {s.roundtrips}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -340,31 +355,13 @@ const SummaryCard: React.FC = () => {
                         SPOT GRID
                     </span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        padding: '6px 10px',
-                        background: 'var(--bg-hover)',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: '12px',
-                        color: 'var(--text-secondary)'
-                    }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <polyline points="12 6 12 12 16 14"/>
-                        </svg>
-                        {s.uptime}
-                    </div>
-                    <span style={{
-                        fontSize: '12px',
-                        color: 'var(--text-tertiary)',
-                        fontFamily: 'var(--font-mono)'
-                    }}>
-                        {timeStr}
-                    </span>
-                </div>
+                <span style={{
+                    fontSize: '12px',
+                    color: 'var(--text-tertiary)',
+                    fontFamily: 'var(--font-mono)'
+                }}>
+                    {timeStr}
+                </span>
             </div>
 
             {/* Price & PnL - 4 Column Grid */}
@@ -499,87 +496,110 @@ const SummaryCard: React.FC = () => {
                 <StatItem label="Fees" value={`$${s.total_fees.toFixed(2)}`} valueColor="var(--color-sell)" isLast />
             </div>
 
-            {/* Footer */}
+            {/* Footer - Uptime & Roundtrips */}
             <div style={{
-                padding: '14px 22px',
+                padding: '16px 22px',
                 display: 'flex',
-                justifyContent: 'space-between',
+                justifyContent: 'center',
                 alignItems: 'center',
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
+                gap: '32px',
                 background: 'rgba(0, 0, 0, 0.2)'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <Tooltip content="Active Grid Levels">
-                        <span style={{
-                            cursor: 'help',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                        }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <rect x="3" y="3" width="7" height="7"/>
-                                <rect x="14" y="3" width="7" height="7"/>
-                                <rect x="14" y="14" width="7" height="7"/>
-                                <rect x="3" y="14" width="7" height="7"/>
-                            </svg>
-                            <span style={{ fontFamily: 'var(--font-mono)' }}>{s.grid_count}</span> zones
-                        </span>
-                    </Tooltip>
-                    <span style={{ color: 'var(--text-tertiary)' }}>·</span>
-                    <Tooltip content="Price Range (Min - Max)">
-                        <span style={{ cursor: 'help', fontFamily: 'var(--font-mono)' }}>
-                            ${s.range_low.toFixed(2)} - ${s.range_high.toFixed(2)}
-                        </span>
-                    </Tooltip>
-                    <span style={{ color: 'var(--text-tertiary)' }}>·</span>
-                    <Tooltip content="Grid Spacing Percentage">
-                        <span style={{
-                            color: 'var(--accent-primary)',
-                            cursor: 'help',
-                            fontFamily: 'var(--font-mono)'
-                        }}>
-                            {formatSpacing(s.grid_spacing_pct)}
-                        </span>
-                    </Tooltip>
-                </div>
+                {/* Uptime */}
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    padding: '6px 12px',
-                    background: 'var(--accent-subtle)',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid rgba(0, 240, 192, 0.1)'
+                    gap: '10px'
                 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2">
-                        <path d="M17 1l4 4-4 4"/>
-                        <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
-                        <path d="M7 23l-4-4 4-4"/>
-                        <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-                    </svg>
-                    <span style={{
-                        color: 'var(--accent-primary)',
-                        fontWeight: 600,
-                        fontFamily: 'var(--font-mono)'
+                    <div style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        background: 'var(--bg-hover)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
                     }}>
-                        {s.roundtrips}
-                    </span>
-                    <span style={{ color: 'var(--text-tertiary)' }}>roundtrips</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div style={{
+                            fontSize: '10px',
+                            color: 'var(--text-tertiary)',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            marginBottom: '2px'
+                        }}>
+                            Uptime
+                        </div>
+                        <div style={{
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            fontFamily: 'var(--font-mono)'
+                        }}>
+                            {s.uptime}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{
+                    width: '1px',
+                    height: '32px',
+                    background: 'var(--border-color)'
+                }} />
+
+                {/* Roundtrips */}
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px'
+                }}>
+                    <div style={{
+                        width: '36px',
+                        height: '36px',
+                        borderRadius: '50%',
+                        background: 'var(--accent-subtle)',
+                        border: '1px solid rgba(0, 240, 192, 0.15)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                    }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2">
+                            <path d="M17 1l4 4-4 4"/>
+                            <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+                            <path d="M7 23l-4-4 4-4"/>
+                            <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <div style={{
+                            fontSize: '10px',
+                            color: 'var(--text-tertiary)',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            marginBottom: '2px'
+                        }}>
+                            Roundtrips
+                        </div>
+                        <div style={{
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            color: 'var(--accent-primary)',
+                            fontFamily: 'var(--font-mono)',
+                            textShadow: '0 0 10px var(--accent-glow)'
+                        }}>
+                            {s.roundtrips}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     );
-};
-
-const formatSpacing = (spacing: [number, number]): string => {
-    const [min, max] = spacing;
-    const decimals = min < 1 ? 3 : 2;
-    const relativeDiff = Math.abs(max - min) / Math.max(min, max);
-    if (relativeDiff < 0.01) {
-        return `${min.toFixed(decimals)}%`;
-    }
-    return `${min.toFixed(decimals)}% - ${max.toFixed(decimals)}%`;
 };
 
 const StatItem: React.FC<{

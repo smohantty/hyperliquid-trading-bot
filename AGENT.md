@@ -3,12 +3,31 @@
 ## 1. Project Context
 You are working on a high-performance, event-driven trading bot for Hyperliquid (Spot & Perp).
 The codebase is written in **Rust** and uses `tokio` for concurrency.
+Key dependencies:
+-   `hyperliquid_rust_sdk` for exchange interaction.
+-   `teloxide` for Telegram integration.
+-   `tracing` for structured logging.
+
+### System Architecture Summary
+*   **Engine** (`src/engine`): The "brain". Orchestrates the event loop, manages Exchange connection (`hyperliquid_rust_sdk`), state, and error handling.
+*   **Strategy** (`src/strategy`): Pure logic. Receives `on_tick` and `on_order_filled` events. Returns simple actions. **DO NOT** make API calls here.
+*   **Broadcaster** (`src/broadcast`): Sidecar WebSocket server. Pushes state to the Frontend/UI.
+*   **Frontend** (`frontend/`): Vite + Electron app for visualization.
+*   **Models** (`src/model.rs`): Shared types (`Cloid`, `OrderRequest`, `OrderFill`) to decouple logic from the raw SDK.
+
+### Developer Cheat Sheet
+*   **Add Strategy**: Implement `Strategy` trait in `src/strategy/`. Register in `src/config/strategy.rs` and `src/strategy/mod.rs`.
+*   **Config**: Defined in `src/config/strategy.rs`. Supports `SpotGrid` and `PerpGrid`. 
+    *   *Validation logic is critical*: Check `validate()` in `strategy.rs`.
+*   **Run Local**: `cargo run --bin hyperliquid-trading-bot -- -c configs/config.toml`
+*   **Run Frontend**: `cd frontend && npm install && npm run dev`
 
 ### Critical Documentation
 Before starting any task, **YOU MUST READ** these documents to understand the system:
 -   **Architecture**: `docs/design.md` (System overview, components, data flow).
 -   **Strategies**: `docs/strategies/` (Detailed logic for `SpotGrid` and `PerpGrid`).
 -   **Usage**: `README.md` (Setup, CLI commands, Config).
+-   **Config Reference**: `src/config/strategy.rs` (The authoritative definition of valid parameters).
 
 ## 2. Mandatory Workflow
 You must strictly follow this process for every user request involving code changes:
@@ -53,6 +72,10 @@ You must strictly follow this process for every user request involving code chan
 *   **Engine**: `src/engine/`
 *   **Strategies**: `src/strategy/`
 *   **Broadcasting**: `src/broadcast/`
+*   **Reporters**: `src/reporter/` (Telegram)
+*   **Logging**: `src/logging/` (Audit)
+*   **Core Types**: `src/model.rs`
+*   **Frontend**: `frontend/` (Vite + Electron)
 *   **Docs**: `docs/`
 
 Remember: **Documentation is part of the Code.** Update it.

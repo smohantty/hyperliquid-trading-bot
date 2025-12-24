@@ -99,29 +99,30 @@ const SummaryCard: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Price & PnL Hero Section */}
+                {/* Price & PnL Hero Section - 4 Column Grid */}
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '1fr 1fr',
+                    gridTemplateColumns: '1.2fr 1fr 1fr 1.2fr',
                     borderBottom: '1px solid var(--border-color)'
                 }}>
+                    {/* Market Price */}
                     <div style={{
-                        padding: '28px 24px',
+                        padding: '24px 20px',
                         borderRight: '1px solid var(--border-color)',
                         background: 'linear-gradient(135deg, rgba(0, 240, 192, 0.02) 0%, transparent 100%)'
                     }}>
                         <div style={{
-                            fontSize: '11px',
+                            fontSize: '10px',
                             color: 'var(--text-tertiary)',
-                            marginBottom: '10px',
+                            marginBottom: '8px',
                             textTransform: 'uppercase',
-                            letterSpacing: '1px',
+                            letterSpacing: '0.5px',
                             fontWeight: 500
                         }}>
                             Market Price
                         </div>
                         <div style={{
-                            fontSize: '32px',
+                            fontSize: '26px',
                             fontWeight: 700,
                             fontFamily: 'var(--font-mono)',
                             color: 'var(--text-primary)',
@@ -130,41 +131,85 @@ const SummaryCard: React.FC = () => {
                             ${s.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </div>
                     </div>
+
+                    {/* Realized PnL */}
                     <div style={{
-                        padding: '28px 24px',
-                        background: totalPnl >= 0
-                            ? 'linear-gradient(135deg, rgba(0, 230, 118, 0.03) 0%, transparent 100%)'
-                            : 'linear-gradient(135deg, rgba(255, 82, 82, 0.03) 0%, transparent 100%)'
+                        padding: '24px 20px',
+                        borderRight: '1px solid var(--border-color)'
                     }}>
                         <div style={{
-                            fontSize: '11px',
+                            fontSize: '10px',
                             color: 'var(--text-tertiary)',
-                            marginBottom: '10px',
+                            marginBottom: '8px',
                             textTransform: 'uppercase',
-                            letterSpacing: '1px',
+                            letterSpacing: '0.5px',
+                            fontWeight: 500
+                        }}>
+                            Realized
+                        </div>
+                        <div style={{
+                            fontSize: '18px',
+                            fontWeight: 600,
+                            fontFamily: 'var(--font-mono)',
+                            color: s.realized_pnl >= 0 ? 'var(--color-buy)' : 'var(--color-sell)',
+                            letterSpacing: '-0.01em'
+                        }}>
+                            {s.realized_pnl >= 0 ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                        </div>
+                    </div>
+
+                    {/* Unrealized PnL */}
+                    <div style={{
+                        padding: '24px 20px',
+                        borderRight: '1px solid var(--border-color)'
+                    }}>
+                        <div style={{
+                            fontSize: '10px',
+                            color: 'var(--text-tertiary)',
+                            marginBottom: '8px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
+                            fontWeight: 500
+                        }}>
+                            Unrealized
+                        </div>
+                        <div style={{
+                            fontSize: '18px',
+                            fontWeight: 600,
+                            fontFamily: 'var(--font-mono)',
+                            color: s.unrealized_pnl >= 0 ? 'var(--color-buy)' : 'var(--color-sell)',
+                            letterSpacing: '-0.01em'
+                        }}>
+                            {s.unrealized_pnl >= 0 ? '+' : ''}${s.unrealized_pnl.toFixed(2)}
+                        </div>
+                    </div>
+
+                    {/* Total PnL - Hero */}
+                    <div style={{
+                        padding: '24px 20px',
+                        background: totalPnl >= 0
+                            ? 'linear-gradient(135deg, rgba(0, 230, 118, 0.05) 0%, transparent 100%)'
+                            : 'linear-gradient(135deg, rgba(255, 82, 82, 0.05) 0%, transparent 100%)'
+                    }}>
+                        <div style={{
+                            fontSize: '10px',
+                            color: 'var(--text-tertiary)',
+                            marginBottom: '8px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.5px',
                             fontWeight: 500
                         }}>
                             Total PnL
                         </div>
                         <div style={{
-                            fontSize: '32px',
+                            fontSize: '26px',
                             fontWeight: 700,
                             color: pnlColor,
                             fontFamily: 'var(--font-mono)',
-                            textShadow: `0 0 30px ${pnlGlow}`,
+                            textShadow: `0 0 20px ${pnlGlow}`,
                             letterSpacing: '-0.02em'
                         }}>
                             {pnlSign}${Math.abs(totalPnl).toFixed(2)}
-                        </div>
-                        <div style={{
-                            fontSize: '11px',
-                            color: 'var(--text-tertiary)',
-                            marginTop: '8px',
-                            fontFamily: 'var(--font-mono)'
-                        }}>
-                            Realized: <span style={{ color: 'var(--text-secondary)' }}>${s.realized_pnl.toFixed(2)}</span>
-                            {' · '}
-                            Unrealized: <span style={{ color: 'var(--text-secondary)' }}>${s.unrealized_pnl.toFixed(2)}</span>
                         </div>
                     </div>
                 </div>
@@ -322,71 +367,117 @@ const SummaryCard: React.FC = () => {
                 </div>
             </div>
 
-            {/* Price & PnL */}
+            {/* Price & PnL - 4 Column Grid */}
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
+                gridTemplateColumns: '1.2fr 1fr 1fr 1.2fr',
                 borderBottom: '1px solid var(--border-color)'
             }}>
+                {/* Market Price */}
                 <div style={{
-                    padding: '28px 24px',
+                    padding: '24px 20px',
                     borderRight: '1px solid var(--border-color)',
                     background: 'linear-gradient(135deg, rgba(0, 240, 192, 0.02) 0%, transparent 100%)'
                 }}>
                     <div style={{
-                        fontSize: '11px',
+                        fontSize: '10px',
                         color: 'var(--text-tertiary)',
-                        marginBottom: '10px',
+                        marginBottom: '8px',
                         textTransform: 'uppercase',
-                        letterSpacing: '1px',
+                        letterSpacing: '0.5px',
                         fontWeight: 500
                     }}>
                         Market Price
                     </div>
                     <div style={{
-                        fontSize: '32px',
+                        fontSize: '26px',
                         fontWeight: 700,
                         fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-primary)',
                         letterSpacing: '-0.02em'
                     }}>
                         ${s.price.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                     </div>
                 </div>
+
+                {/* Realized PnL */}
                 <div style={{
-                    padding: '28px 24px',
-                    background: totalPnl >= 0
-                        ? 'linear-gradient(135deg, rgba(0, 230, 118, 0.03) 0%, transparent 100%)'
-                        : 'linear-gradient(135deg, rgba(255, 82, 82, 0.03) 0%, transparent 100%)'
+                    padding: '24px 20px',
+                    borderRight: '1px solid var(--border-color)'
                 }}>
                     <div style={{
-                        fontSize: '11px',
+                        fontSize: '10px',
                         color: 'var(--text-tertiary)',
-                        marginBottom: '10px',
+                        marginBottom: '8px',
                         textTransform: 'uppercase',
-                        letterSpacing: '1px',
+                        letterSpacing: '0.5px',
+                        fontWeight: 500
+                    }}>
+                        Realized
+                    </div>
+                    <div style={{
+                        fontSize: '18px',
+                        fontWeight: 600,
+                        fontFamily: 'var(--font-mono)',
+                        color: s.realized_pnl >= 0 ? 'var(--color-buy)' : 'var(--color-sell)',
+                        letterSpacing: '-0.01em'
+                    }}>
+                        {s.realized_pnl >= 0 ? '+' : ''}${s.realized_pnl.toFixed(2)}
+                    </div>
+                </div>
+
+                {/* Unrealized PnL */}
+                <div style={{
+                    padding: '24px 20px',
+                    borderRight: '1px solid var(--border-color)'
+                }}>
+                    <div style={{
+                        fontSize: '10px',
+                        color: 'var(--text-tertiary)',
+                        marginBottom: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                        fontWeight: 500
+                    }}>
+                        Unrealized
+                    </div>
+                    <div style={{
+                        fontSize: '18px',
+                        fontWeight: 600,
+                        fontFamily: 'var(--font-mono)',
+                        color: s.unrealized_pnl >= 0 ? 'var(--color-buy)' : 'var(--color-sell)',
+                        letterSpacing: '-0.01em'
+                    }}>
+                        {s.unrealized_pnl >= 0 ? '+' : ''}${s.unrealized_pnl.toFixed(2)}
+                    </div>
+                </div>
+
+                {/* Total PnL - Hero */}
+                <div style={{
+                    padding: '24px 20px',
+                    background: totalPnl >= 0
+                        ? 'linear-gradient(135deg, rgba(0, 230, 118, 0.05) 0%, transparent 100%)'
+                        : 'linear-gradient(135deg, rgba(255, 82, 82, 0.05) 0%, transparent 100%)'
+                }}>
+                    <div style={{
+                        fontSize: '10px',
+                        color: 'var(--text-tertiary)',
+                        marginBottom: '8px',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
                         fontWeight: 500
                     }}>
                         Total PnL
                     </div>
                     <div style={{
-                        fontSize: '32px',
+                        fontSize: '26px',
                         fontWeight: 700,
                         color: pnlColor,
                         fontFamily: 'var(--font-mono)',
-                        textShadow: `0 0 30px ${pnlGlow}`,
+                        textShadow: `0 0 20px ${pnlGlow}`,
                         letterSpacing: '-0.02em'
                     }}>
                         {pnlSign}${Math.abs(totalPnl).toFixed(2)}
-                    </div>
-                    <div style={{
-                        fontSize: '11px',
-                        color: 'var(--text-tertiary)',
-                        marginTop: '8px',
-                        fontFamily: 'var(--font-mono)'
-                    }}>
-                        Realized: <span style={{ color: 'var(--text-secondary)' }}>${s.realized_pnl.toFixed(2)}</span>
-                        {' · '}
-                        Unrealized: <span style={{ color: 'var(--text-secondary)' }}>${s.unrealized_pnl.toFixed(2)}</span>
                     </div>
                 </div>
             </div>

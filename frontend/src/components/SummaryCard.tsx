@@ -26,7 +26,7 @@ const SummaryCard: React.FC = () => {
     const isPerp = summary.type === 'perp_grid';
     const s = summary.data;
 
-    const totalPnl = s.realized_pnl + s.unrealized_pnl;
+    const totalPnl = s.realized_pnl + s.unrealized_pnl - s.total_fees;
     const pnlColor = totalPnl >= 0 ? 'var(--color-buy)' : 'var(--color-sell)';
     const pnlGlow = totalPnl >= 0 ? 'var(--color-buy-glow)' : 'var(--color-sell-glow)';
     const pnlSign = totalPnl >= 0 ? '+' : '';

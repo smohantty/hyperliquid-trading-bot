@@ -21,7 +21,7 @@ impl CachedSummary {
         match self {
             CachedSummary::SpotGrid(s) => {
                 let spacing = format_spacing(s.grid_spacing_pct);
-                let total_pnl = s.realized_pnl + s.unrealized_pnl;
+                let total_pnl = s.realized_pnl + s.unrealized_pnl - s.total_fees;
                 let pnl_emoji = if total_pnl >= 0.0 { "🟢" } else { "🔴" };
                 let pnl_sign = if total_pnl >= 0.0 { "+" } else { "" };
 
@@ -85,7 +85,7 @@ impl CachedSummary {
             }
             CachedSummary::PerpGrid(s) => {
                 let spacing = format_spacing(s.grid_spacing_pct);
-                let total_pnl = s.realized_pnl + s.unrealized_pnl;
+                let total_pnl = s.realized_pnl + s.unrealized_pnl - s.total_fees;
                 let pnl_emoji = if total_pnl >= 0.0 { "🟢" } else { "🔴" };
                 let pnl_sign = if total_pnl >= 0.0 { "+" } else { "" };
                 let bias_emoji = match s.grid_bias.as_str() {

@@ -1,10 +1,10 @@
 import React from 'react';
 import { useBotStore } from '../context/WebSocketContext';
 
-const MetricCard: React.FC<{ 
-    label: string; 
-    value: string | number; 
-    color?: string; 
+const MetricCard: React.FC<{
+    label: string;
+    value: string | number;
+    color?: string;
     subValue?: string;
     badge?: { text: string; color: string };
 }> = ({ label, value, color, subValue, badge }) => (
@@ -54,7 +54,7 @@ const HeaderMetrics: React.FC = () => {
     // Render based on strategy type
     if (summary.type === 'spot_grid') {
         const s = summary.data;
-        const totalPnl = s.realized_pnl + s.unrealized_pnl;
+        const totalPnl = s.realized_pnl + s.unrealized_pnl - s.total_fees;
         const pnlColor = totalPnl >= 0 ? 'var(--color-buy)' : 'var(--color-sell)';
 
         return (
@@ -93,12 +93,12 @@ const HeaderMetrics: React.FC = () => {
 
     // Perp Grid
     const s = summary.data;
-    const totalPnl = s.realized_pnl + s.unrealized_pnl;
+    const totalPnl = s.realized_pnl + s.unrealized_pnl - s.total_fees;
     const pnlColor = totalPnl >= 0 ? 'var(--color-buy)' : 'var(--color-sell)';
-    
+
     const positionIcon = s.position_side === 'Long' ? '📈' : s.position_side === 'Short' ? '📉' : '➖';
     const positionColor = s.position_side === 'Long' ? 'var(--color-buy)' : s.position_side === 'Short' ? 'var(--color-sell)' : 'var(--text-primary)';
-    
+
     const biasColor = s.grid_bias === 'Long' ? 'var(--color-buy)' : s.grid_bias === 'Short' ? 'var(--color-sell)' : 'var(--accent-primary)';
 
     return (

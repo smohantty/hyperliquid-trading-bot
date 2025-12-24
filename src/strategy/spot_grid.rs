@@ -1,5 +1,5 @@
 use super::common;
-use super::types::GridType;
+
 use crate::broadcast::types::{GridState, StrategySummary};
 use crate::config::strategy::SpotGridConfig;
 
@@ -38,15 +38,9 @@ struct GridZone {
 
 #[allow(dead_code)]
 pub struct SpotGridStrategy {
-    symbol: String,
+    pub config: SpotGridConfig,
     base_asset: String,
     quote_asset: String,
-    upper_price: f64,
-    lower_price: f64,
-    grid_type: GridType,
-    grid_count: u32,
-    total_investment: f64,
-    trigger_price: Option<f64>,
 
     // Internal State
     zones: Vec<GridZone>,
@@ -67,36 +61,26 @@ pub struct SpotGridStrategy {
 
 impl SpotGridStrategy {
     pub fn new(config: SpotGridConfig) -> Self {
-        let SpotGridConfig {
-            symbol,
-            upper_price,
-            lower_price,
-            grid_type,
-            grid_count,
-            total_investment,
-            trigger_price,
-        } = config;
-
-        let (base_asset, quote_asset) = match symbol.split_once('/') {
-            Some((b, q)) => (b.to_string(), q.to_string()),
-            None => (symbol.clone(), "USDC".to_string()),
+        // Parse symbol (e.g., "HYPE/USDC")
+        let parts: Vec<&str> = config.symbol.split('/').collect();
+        let (base_asset, quote_asset) = if parts.len() == 2 {
+            (parts[0].to_string(), parts[1].to_string())
+        } else {
+            warn!(
+                "Invalid symbol format: {}. Assuming base/USDC.",
+                config.symbol
+            );
+            (config.symbol.clone(), "USDC".to_string())
         };
 
-        // Always start in Initializing to allow balance checks in initialize_zones
         Self {
-            symbol,
+            config,
             base_asset,
             quote_asset,
-            upper_price,
-            lower_price,
-            grid_type,
-            grid_count,
-            total_investment,
-            trigger_price,
             zones: Vec::new(),
             active_orders: HashMap::new(),
-            state: StrategyState::Initializing,
             trade_count: 0,
+            state: StrategyState::Initializing,
             start_price: None,
             start_time: Instant::now(),
             realized_pnl: 0.0,
@@ -107,16 +91,13 @@ impl SpotGridStrategy {
     }
 
     fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
-        if self.grid_count < 2 {
-            warn!("[SPOT_GRID] Grid count must be at least 2");
-            return Err(anyhow!("Grid count must be at least 2"));
-        }
+        self.config.validate().map_err(|e| anyhow!(e))?;
 
-        let market_info = match ctx.market_info(&self.symbol) {
+        let market_info = match ctx.market_info(&self.config.symbol) {
             Some(info) => info.clone(),
             None => {
-                error!("[SPOT_GRID] No market info for {}", self.symbol);
-                return Err(anyhow!("No market info for {}", self.symbol));
+                error!("[SPOT_GRID] No market info for {}", self.config.symbol);
+                return Err(anyhow!("No market info for {}", self.config.symbol));
             }
         };
 
@@ -139,13 +120,13 @@ impl SpotGridStrategy {
         // Calculate approx market value of our total holdings for this strategy.
         // We use the initial_price (which considers trigger price) as that is the price
         // at which the asset requirements are calculated.
-        let initial_price = self.trigger_price.unwrap_or(market_info.last_price);
+        let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
         let total_wallet_value = (available_base * initial_price) + available_quote;
 
-        if total_wallet_value < self.total_investment {
+        if total_wallet_value < self.config.total_investment {
             let msg = format!(
                 "Insufficient Total Portfolio Value! Required: {:.2} {}, Have approx: {:.2} {} ({} {} + {} {}). Bailing out.",
-                self.total_investment, self.quote_asset, total_wallet_value, self.quote_asset,
+                self.config.total_investment, self.quote_asset, total_wallet_value, self.quote_asset,
                 available_base, self.base_asset, available_quote, self.quote_asset
             );
             error!("[SPOT_GRID] {}", msg);
@@ -159,17 +140,17 @@ impl SpotGridStrategy {
     fn generate_grid_levels(&mut self, market_info: &MarketInfo) -> Result<(f64, f64)> {
         // Generate Levels
         let prices: Vec<f64> = common::calculate_grid_prices(
-            self.grid_type.clone(),
-            self.lower_price,
-            self.upper_price,
-            self.grid_count,
+            self.config.grid_type.clone(),
+            self.config.lower_price,
+            self.config.upper_price,
+            self.config.grid_count,
         )
         .into_iter()
         .map(|p| market_info.round_price(p))
         .collect();
 
-        let num_zones = self.grid_count as usize - 1;
-        let quote_per_zone = self.total_investment / num_zones as f64;
+        let num_zones = self.config.grid_count as usize - 1;
+        let quote_per_zone = self.config.total_investment / num_zones as f64;
 
         if quote_per_zone < MIN_NOTIONAL_VALUE {
             let msg = format!(
@@ -181,7 +162,7 @@ impl SpotGridStrategy {
         }
 
         // Use trigger_price if available, otherwise last_price
-        let initial_price = self.trigger_price.unwrap_or(market_info.last_price);
+        let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
 
         self.zones.clear();
         let mut total_base_required = 0.0;
@@ -246,14 +227,14 @@ impl SpotGridStrategy {
         let quote_deficit = total_quote_required - available_quote;
 
         // Use trigger_price if available, otherwise last_price
-        let initial_price = self.trigger_price.unwrap_or(market_info.last_price);
+        let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
 
         if base_deficit > 0.0 {
             // Case 1: Not enough base asset (e.g. BTC) to cover the SELL levels.
             // Need to BUY base asset.
             let mut acquisition_price = initial_price;
 
-            if let Some(trigger) = self.trigger_price {
+            if let Some(trigger) = self.config.trigger_price {
                 acquisition_price = market_info.round_price(trigger);
             } else {
                 let nearest_level = self
@@ -296,7 +277,7 @@ impl SpotGridStrategy {
                 self.state = StrategyState::AcquiringAssets { cloid };
 
                 ctx.place_order(OrderRequest::Limit {
-                    symbol: self.symbol.clone(),
+                    symbol: self.config.symbol.clone(),
                     side: OrderSide::Buy,
                     price: acquisition_price,
                     sz: rounded_deficit,
@@ -310,7 +291,7 @@ impl SpotGridStrategy {
             // Need to SELL some base asset to get quote.
             let mut acquisition_price = initial_price;
 
-            if let Some(trigger) = self.trigger_price {
+            if let Some(trigger) = self.config.trigger_price {
                 acquisition_price = market_info.round_price(trigger);
             } else {
                 // Find nearest level ABOVE market to sell at
@@ -361,7 +342,7 @@ impl SpotGridStrategy {
                 self.state = StrategyState::AcquiringAssets { cloid };
 
                 ctx.place_order(OrderRequest::Limit {
-                    symbol: self.symbol.clone(),
+                    symbol: self.config.symbol.clone(),
                     side: OrderSide::Sell,
                     price: acquisition_price,
                     sz: rounded_sell_sz,
@@ -373,7 +354,7 @@ impl SpotGridStrategy {
         }
 
         // No Deficit (or negligible)
-        if let Some(_trigger) = self.trigger_price {
+        if let Some(_trigger) = self.config.trigger_price {
             // Passive Wait Mode
             info!("[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state.");
             self.start_price = Some(market_info.last_price);
@@ -413,10 +394,10 @@ impl SpotGridStrategy {
 
             info!(
                 "[ORDER_REQUEST] [SPOT_GRID] GRID_LVL_{}: LIMIT {} {} {} @ {}",
-                index, side, size, self.symbol, price
+                index, side, size, self.config.symbol, price
             );
             ctx.place_order(OrderRequest::Limit {
-                symbol: self.symbol.clone(),
+                symbol: self.config.symbol.clone(),
                 side,
                 price,
                 sz: size,
@@ -550,14 +531,14 @@ impl SpotGridStrategy {
 
         info!(
             "[ORDER_REQUEST] [SPOT_GRID] COUNTER_ORDER: LIMIT {} {} {} @ {}",
-            side, zone.size, self.symbol, price
+            side, zone.size, self.config.symbol, price
         );
 
         self.active_orders.insert(next_cloid, zone_idx);
         zone.order_id = Some(next_cloid);
 
         ctx.place_order(OrderRequest::Limit {
-            symbol: self.symbol.clone(),
+            symbol: self.config.symbol.clone(),
             side,
             price,
             sz: zone.size,
@@ -580,7 +561,7 @@ impl Strategy for SpotGridStrategy {
                 // Handled in on_order_filled or wait for transition
             }
             StrategyState::WaitingForTrigger => {
-                if let Some(trigger) = self.trigger_price {
+                if let Some(trigger) = self.config.trigger_price {
                     // Directional Trigger Logic
                     // Requires start_price to be set during initialization
 
@@ -703,7 +684,7 @@ impl Strategy for SpotGridStrategy {
         use crate::broadcast::types::SpotGridSummary;
 
         let current_price = ctx
-            .market_info(&self.symbol)
+            .market_info(&self.config.symbol)
             .map(|m| m.last_price)
             .unwrap_or(0.0);
 
@@ -719,17 +700,17 @@ impl Strategy for SpotGridStrategy {
 
         // Calculate grid spacing percentage
         let grid_spacing_pct = common::calculate_grid_spacing_pct(
-            &self.grid_type,
-            self.lower_price,
-            self.upper_price,
-            self.grid_count,
+            &self.config.grid_type,
+            self.config.lower_price,
+            self.config.upper_price,
+            self.config.grid_count,
         );
 
         // Calculate uptime
         let uptime = common::format_uptime(self.start_time.elapsed());
 
         StrategySummary::SpotGrid(SpotGridSummary {
-            symbol: self.symbol.clone(),
+            symbol: self.config.symbol.clone(),
             price: current_price,
             state: format!("{:?}", self.state),
             uptime,
@@ -739,8 +720,8 @@ impl Strategy for SpotGridStrategy {
             unrealized_pnl,
             total_fees: self.total_fees,
             grid_count: self.zones.len() as u32,
-            range_low: self.lower_price,
-            range_high: self.upper_price,
+            range_low: self.config.lower_price,
+            range_high: self.config.upper_price,
             grid_spacing_pct,
             roundtrips: total_roundtrips,
             base_balance: ctx.get_spot_total(&self.base_asset),
@@ -752,7 +733,7 @@ impl Strategy for SpotGridStrategy {
         use crate::broadcast::types::ZoneInfo;
 
         let current_price = ctx
-            .market_info(&self.symbol)
+            .market_info(&self.config.symbol)
             .map(|m| m.last_price)
             .unwrap_or(0.0);
 
@@ -776,7 +757,7 @@ impl Strategy for SpotGridStrategy {
             .collect();
 
         GridState {
-            symbol: self.symbol.clone(),
+            symbol: self.config.symbol.clone(),
             strategy_type: "spot_grid".to_string(),
             current_price,
             grid_bias: None, // Spot has no bias
@@ -790,6 +771,7 @@ mod tests {
     use super::*;
     use crate::config::strategy::SpotGridConfig;
     use crate::engine::context::{MarketInfo, StrategyContext};
+    use crate::strategy::types::GridType;
 
     #[test]
     fn test_spot_grid_passive_trigger() {

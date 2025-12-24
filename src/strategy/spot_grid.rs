@@ -48,6 +48,7 @@ pub struct SpotGridStrategy {
     state: StrategyState,
     trade_count: u32,
     initial_entry_price: Option<f64>,
+    trigger_reference_price: Option<f64>,
     start_time: Instant,
 
     // Strategy Performance
@@ -81,7 +82,8 @@ impl SpotGridStrategy {
             active_orders: HashMap::new(),
             trade_count: 0,
             state: StrategyState::Initializing,
-            start_price: None,
+            initial_entry_price: None,
+            trigger_reference_price: None,
             start_time: Instant::now(),
             realized_pnl: 0.0,
             total_fees: 0.0,
@@ -356,7 +358,7 @@ impl SpotGridStrategy {
         if let Some(_trigger) = self.config.trigger_price {
             // Passive Wait Mode
             info!("[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state.");
-            self.start_price = Some(market_info.last_price);
+            self.trigger_reference_price = Some(market_info.last_price);
             self.state = StrategyState::WaitingForTrigger;
         } else {
             // No Trigger, Assets OK -> Running
@@ -597,9 +599,9 @@ impl Strategy for SpotGridStrategy {
                     // Directional Trigger Logic
                     // Requires start_price to be set during initialization
 
-                    let start = self
-                        .initial_entry_price
-                        .expect("Start price must be set when in WaitingForTrigger state");
+                    let start = self.trigger_reference_price.expect(
+                        "Trigger reference price must be set when in WaitingForTrigger state",
+                    );
 
                     if common::check_trigger(price, trigger, start) {
                         info!(

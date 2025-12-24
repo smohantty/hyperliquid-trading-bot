@@ -279,7 +279,7 @@ impl PerpGridStrategy {
                     "[ORDER_REQUEST] [PERP_GRID] REBALANCING: LIMIT {} {} {} @ {}",
                     side, target_size, self.config.symbol, activation_price
                 );
-                self.initial_entry_price = Some(activation_price);
+
                 ctx.place_order(OrderRequest::Limit {
                     symbol: self.config.symbol.clone(),
                     side,

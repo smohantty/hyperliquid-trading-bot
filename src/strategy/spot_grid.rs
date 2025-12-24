@@ -815,7 +815,7 @@ mod tests {
             StrategyState::WaitingForTrigger => (),
             _ => panic!("Expected WaitingForTrigger, got {:?}", strategy.state),
         }
-        assert_eq!(strategy.start_price, Some(100.0));
+        assert_eq!(strategy.trigger_reference_price, Some(100.0));
 
         // Tick 2: Price increase but below trigger
         strategy.on_tick(104.0, &mut ctx).unwrap();

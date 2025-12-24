@@ -290,6 +290,7 @@ impl PerpGridStrategy {
             }
         }
 
+        self.start_price = Some(initial_price);
         self.state = StrategyState::Running;
         if let Err(e) = self.refresh_orders(ctx) {
             warn!("[PERP_GRID] Failed to refresh orders: {}", e);
@@ -561,6 +562,7 @@ impl Strategy for PerpGridStrategy {
                         }
                     }
 
+                    self.start_price = Some(fill.price);
                     self.state = StrategyState::Running;
                     self.refresh_orders(ctx)?;
                     return Ok(());
@@ -722,6 +724,7 @@ impl Strategy for PerpGridStrategy {
             grid_spacing_pct,
             roundtrips: total_roundtrips,
             margin_balance: ctx.get_perp_available("USDC"),
+            start_price: self.start_price,
         })
     }
 

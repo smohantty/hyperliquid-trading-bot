@@ -99,6 +99,7 @@ pub struct PerpGridSummary {
 
     // Wallet
     pub margin_balance: f64,
+    pub start_price: Option<f64>,
 }
 
 // ============================================================

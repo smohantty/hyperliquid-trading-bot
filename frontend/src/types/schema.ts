@@ -61,6 +61,7 @@ export interface PerpGridSummary {
     grid_spacing_pct: [number, number]; // (min%, max%) - same for geometric, different for arithmetic
     roundtrips: number;
     margin_balance: number;
+    start_price?: number;
 }
 
 // Union type for any strategy summary

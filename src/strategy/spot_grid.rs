@@ -361,6 +361,7 @@ impl SpotGridStrategy {
         } else {
             // No Trigger, Assets OK -> Running
             info!("[SPOT_GRID] Assets verified. Starting Grid.");
+            self.start_price = Some(market_info.last_price);
             self.state = StrategyState::Running;
         }
 
@@ -446,6 +447,7 @@ impl SpotGridStrategy {
             }
         }
 
+        self.start_price = Some(fill.price);
         self.state = StrategyState::Running;
         self.refresh_orders(ctx);
         Ok(())
@@ -604,6 +606,7 @@ impl Strategy for SpotGridStrategy {
                             "[SPOT_GRID] Price {} crossed trigger {}. Starting.",
                             price, trigger
                         );
+                        self.start_price = Some(price);
                         self.state = StrategyState::Running;
                         self.refresh_orders(ctx);
                     }
@@ -716,6 +719,7 @@ impl Strategy for SpotGridStrategy {
             realized_pnl: self.realized_pnl,
             unrealized_pnl,
             total_fees: self.total_fees,
+            start_price: self.start_price,
             grid_count: self.zones.len() as u32,
             range_low: self.config.lower_price,
             range_high: self.config.upper_price,

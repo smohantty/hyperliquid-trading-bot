@@ -32,6 +32,7 @@ export interface SpotGridSummary {
     realized_pnl: number;
     unrealized_pnl: number;
     total_fees: number;
+    start_price?: number;
     grid_count: number;
     range_low: number;
     range_high: number;

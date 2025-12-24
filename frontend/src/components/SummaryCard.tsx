@@ -109,6 +109,11 @@ const SummaryCard: React.FC = () => {
                 <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)' }}>
                     <StatItem label="Position" value={Math.abs(perpData.position_size).toFixed(4)} subValue={perpData.position_side} valueColor={positionColor} />
                     <StatItem label="Avg Entry" value={`$${perpData.avg_entry_price.toFixed(2)}`} />
+                    <StatItem
+                        label="Start Price"
+                        value={s.start_price ? `$${s.start_price.toFixed(2)}` : '--'}
+                        tooltip="Reference price when strategy started"
+                    />
                     <StatItem label="Margin" value={`$${perpData.margin_balance.toFixed(2)}`} />
                     <StatItem label="Fees" value={`$${s.total_fees.toFixed(2)}`} valueColor="var(--color-sell)" isLast />
                 </div>
@@ -218,6 +223,11 @@ const SummaryCard: React.FC = () => {
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)' }}>
                 <StatItem label="Position" value={spotData.position_size.toFixed(4)} />
                 <StatItem label="Avg Entry" value={`$${spotData.avg_entry_price.toFixed(4)}`} />
+                <StatItem
+                    label="Start Price"
+                    value={s.start_price ? `$${s.start_price.toFixed(4)}` : '--'}
+                    tooltip="Reference price when strategy started"
+                />
                 <StatItem label="Quote" value={`$${spotData.quote_balance.toFixed(2)}`} />
                 <StatItem label="Fees" value={`$${s.total_fees.toFixed(2)}`} valueColor="var(--color-sell)" isLast />
             </div>
@@ -280,14 +290,21 @@ const StatItem: React.FC<{
     subValue?: string;
     valueColor?: string;
     isLast?: boolean;
-}> = ({ label, value, subValue, valueColor, isLast }) => (
+    tooltip?: string;
+}> = ({ label, value, subValue, valueColor, isLast, tooltip }) => (
     <div style={{
         flex: 1,
         padding: '16px 20px',
         borderRight: isLast ? 'none' : '1px solid var(--border-color)'
     }}>
-        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '6px', textTransform: 'uppercase' }}>
-            {label}
+        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginBottom: '6px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {tooltip ? (
+                <Tooltip content={tooltip}>
+                    <span style={{ cursor: 'help', borderBottom: '1px dotted var(--text-tertiary)' }}>{label}</span>
+                </Tooltip>
+            ) : (
+                label
+            )}
         </div>
         <div style={{ fontSize: '14px', fontWeight: 500, color: valueColor || 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}>
             {value}

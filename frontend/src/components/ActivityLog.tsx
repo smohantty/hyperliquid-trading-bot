@@ -45,7 +45,7 @@ const ActivityLog: React.FC = () => {
                 <div style={{
                     display: 'grid',
                     gridTemplateColumns: '70px 50px 1fr 70px',
-                    padding: '8px 16px',
+                    padding: '10px 16px',
                     fontSize: '9px',
                     color: 'var(--text-tertiary)',
                     textTransform: 'uppercase',
@@ -56,7 +56,13 @@ const ActivityLog: React.FC = () => {
                     alignItems: 'center'
                 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '10px', opacity: 0 }}>●</span>
+                        <span style={{
+                            width: '10px',
+                            display: 'inline-block',
+                            textAlign: 'center',
+                            fontSize: '10px',
+                            opacity: 0
+                        }}>●</span>
                         <span>Status</span>
                     </div>
                     <span>Side</span>

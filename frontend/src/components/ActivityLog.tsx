@@ -28,8 +28,8 @@ const ActivityLog: React.FC = () => {
             <div className="card-header">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--text-secondary)' }}>
-                        <path d="M12 8v4l3 3"/>
-                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 8v4l3 3" />
+                        <circle cx="12" cy="12" r="10" />
                     </svg>
                     <span className="card-header-title">Activity</span>
                 </div>
@@ -44,7 +44,7 @@ const ActivityLog: React.FC = () => {
             {orderHistory.length > 0 && (
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '70px 50px 1fr 70px',
+                    gridTemplateColumns: '70px 50px 65px 1fr 70px',
                     padding: '10px 16px',
                     fontSize: '9px',
                     color: 'var(--text-tertiary)',
@@ -66,11 +66,10 @@ const ActivityLog: React.FC = () => {
                         <span>Status</span>
                     </div>
                     <span>Side</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <span>Size</span>
-                        <span style={{ color: 'var(--text-muted)' }}>@</span>
-                        <span>Price</span>
-                    </div>
+
+                    <span>Size</span>
+                    <span>Price</span>
+
                     <span style={{ textAlign: 'right' }}>Fee</span>
                 </div>
             )}
@@ -103,8 +102,8 @@ const ActivityLog: React.FC = () => {
                             justifyContent: 'center'
                         }}>
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2">
-                                <path d="M12 8v4l3 3"/>
-                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 8v4l3 3" />
+                                <circle cx="12" cy="12" r="10" />
                             </svg>
                         </div>
                         <span style={{
@@ -184,7 +183,7 @@ const OrderEventRow: React.FC<{
     return (
         <div style={{
             display: 'grid',
-            gridTemplateColumns: '70px 50px 1fr 70px',
+            gridTemplateColumns: '70px 50px 65px 1fr 70px',
             alignItems: 'center',
             padding: '10px 16px',
             fontSize: '12px',
@@ -193,12 +192,12 @@ const OrderEventRow: React.FC<{
             animation: isFirst ? 'fadeIn 0.3s ease-out' : 'none',
             transition: 'background var(--transition-fast)'
         }}
-        onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'var(--bg-hover)';
-        }}
-        onMouseLeave={(e) => {
-            e.currentTarget.style.background = isFirst ? 'rgba(0, 240, 192, 0.02)' : 'transparent';
-        }}
+            onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--bg-hover)';
+            }}
+            onMouseLeave={(e) => {
+                e.currentTarget.style.background = isFirst ? 'rgba(0, 240, 192, 0.02)' : 'transparent';
+            }}
         >
             {/* Status - First Column */}
             <div style={{
@@ -231,24 +230,26 @@ const OrderEventRow: React.FC<{
                 {order.side}
             </span>
 
-            {/* Size @ Price - Third Column */}
-            <div style={{
+            {/* Size - Third Column */}
+            <span style={{
                 fontFamily: 'var(--font-mono)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
+                color: 'var(--text-primary)',
+                fontWeight: 500,
                 fontSize: '11px'
             }}>
-                <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                    {order.size.toFixed(szDecimals)}
-                </span>
-                <span style={{ color: 'var(--text-muted)' }}>@</span>
-                <span style={{ color: 'var(--text-secondary)' }}>
-                    ${order.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                </span>
-            </div>
+                {order.size.toFixed(szDecimals)}
+            </span>
 
-            {/* Fee - Fourth Column */}
+            {/* Price - Fourth Column */}
+            <span style={{
+                color: 'var(--text-secondary)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '11px'
+            }}>
+                ${order.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+            </span>
+
+            {/* Fee - Fifth Column */}
             <span style={{
                 color: isFilled && order.fee > 0 ? 'var(--color-sell)' : 'var(--text-muted)',
                 fontSize: '11px',

@@ -136,7 +136,7 @@ async fn main() -> Result<()> {
     // Initialize Telegram Reporter
     let mut reporter_handle = None;
     if let Some(telegram_config) = broadcast_config.telegram {
-        match TelegramReporter::new(broadcaster.subscribe(), telegram_config) {
+        match TelegramReporter::new(broadcaster.subscribe(), telegram_config, config.clone()) {
             Ok(reporter) => {
                 info!("Telegram Reporter initialized. Spawning background task...");
                 reporter_handle = Some(tokio::spawn(reporter.run()));

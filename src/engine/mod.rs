@@ -836,22 +836,6 @@ impl Engine {
                     );
                 }
 
-                let fill_tag = if let Some(c) = cloid.as_ref() {
-                    if let Some(pending) = runtime.pending_orders.get(c) {
-                        if pending.filled_size + amount >= pending.target_size * 0.9999 {
-                            "[ORDER_FILL]"
-                        } else {
-                            "[ORDER_FILL_PARTIAL]"
-                        }
-                    } else {
-                        "[ORDER_FILL]"
-                    }
-                } else {
-                    "[ORDER_FILL]"
-                };
-
-                info!("{} {} {} @ {} (Fee: {})", fill_tag, side, amount, px, fee);
-
                 // Broadcast Fill Event
                 self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                     oid: fill.oid,
@@ -878,7 +862,9 @@ impl Engine {
                         pending.filled_size = new_total_size;
                         pending.accumulated_fees += fee;
 
-                        if pending.filled_size >= pending.target_size * 0.9999 {
+                        let is_fully_filled = pending.filled_size >= pending.target_size * 0.9999;
+
+                        if is_fully_filled {
                             info!(
                                 "[ORDER_FILLED] Order {} fully filled. Price: {}, Size: {}, Fee: {}. Notifying strategy.",
                                 c,
@@ -910,9 +896,19 @@ impl Engine {
                                 let grid_state = strategy.get_grid_state(&runtime.ctx);
                                 self.broadcaster.send(WSEvent::GridState(grid_state));
                             }
+                            runtime.completed_cloids.insert(c);
+                        } else {
+                            // Partial Fill - Log but don't notify strategy yet (waiting for full fill)
+                            info!(
+                                "[ORDER_FILL_PARTIAL] {} {} {} @ {} (Fee: {})",
+                                c, side, amount, px, fee
+                            );
                         }
                     } else {
-                        info!("Fill for untracked cloid {}. Forwarding immediately.", c);
+                        info!(
+                            "[ORDER_FILL] Untracked {} {} {} @ {} (Fee: {})",
+                            c, side, amount, px, fee
+                        );
                         if let Err(e) = strategy.on_order_filled(
                             &OrderFill {
                                 side,
@@ -933,6 +929,10 @@ impl Engine {
                         }
                     }
                 } else {
+                    info!(
+                        "[ORDER_FILL] NoCloid {} {} @ {} (Fee: {})",
+                        side, amount, px, fee
+                    );
                     if let Err(e) = strategy.on_order_filled(
                         &OrderFill {
                             side,

@@ -34,5 +34,19 @@
     "typescript": "~5.4.0",
     "typescript-eslint": "^8.0.0",
     "vite": "^5.2.0"
+  },
+  "build": {
+    "appId": "com.hyperliquid.dashboard",
+    "productName": "Hyperliquid Dashboard",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "artifactName": "${name}-${version}.${ext}",
+    "linux": {
+      "target": "AppImage",
+      "category": "Finance"
+    }
   }
 }

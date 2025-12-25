@@ -26,6 +26,11 @@ impl Cloid {
             .ok()
             .map(|v| Self(Uuid::from_u128(v)))
     }
+
+    /// Create from UUID
+    pub fn from_uuid(u: Uuid) -> Self {
+        Self(u)
+    }
 }
 
 impl Default for Cloid {

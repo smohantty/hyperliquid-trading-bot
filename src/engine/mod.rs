@@ -10,7 +10,7 @@ use ethers::types::H160;
 use hyperliquid_rust_sdk::{BaseUrl, ExchangeClient, InfoClient};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 // Updated imports based on documentation discovery
 use hyperliquid_rust_sdk::{ClientLimit, ClientOrder, ClientOrderRequest, UserData};
@@ -21,6 +21,7 @@ struct PendingOrder {
     weighted_avg_px: f64,
     accumulated_fees: f64,
     reduce_only: bool,
+    oid: Option<u64>,
 }
 
 struct EngineRuntime {
@@ -301,6 +302,7 @@ impl Engine {
         let mut balance_refresh_timer = tokio::time::interval(std::time::Duration::from_secs(30));
         let mut status_summary_timer =
             tokio::time::interval(std::time::Duration::from_millis(1000)); // 1Hz status update
+        let mut reconciliation_timer = tokio::time::interval(std::time::Duration::from_secs(60));
 
         // Broadcast Config
         let mut config_json = serde_json::to_value(&self.config).unwrap_or(serde_json::Value::Null);
@@ -346,6 +348,9 @@ impl Engine {
                  }
                  Some(message) = receiver.recv() => {
                      self.handle_message(message, &mut runtime, &mut strategy, &exchange_client, &string_coin).await?;
+                 }
+                 _ = reconciliation_timer.tick() => {
+                     self.reconcile_orders(&mut info_client, user_address, &mut runtime, &mut strategy).await;
                  }
             }
         }
@@ -676,6 +681,7 @@ impl Engine {
                                             weighted_avg_px: 0.0,
                                             accumulated_fees: 0.0,
                                             reduce_only,
+                                            oid: Some(r.oid),
                                         },
                                     );
 
@@ -955,6 +961,118 @@ impl Engine {
                         // Broadcast grid state after fill
                         let grid_state = strategy.get_grid_state(&runtime.ctx);
                         self.broadcaster.send(WSEvent::GridState(grid_state));
+                    }
+                }
+            }
+        }
+    }
+
+    async fn reconcile_orders(
+        &self,
+        info_client: &mut InfoClient,
+        user_address: H160,
+        runtime: &mut EngineRuntime,
+        strategy: &mut Box<dyn Strategy>,
+    ) {
+        info!("Starting Order Reconciliation...");
+
+        let open_orders = match info_client.open_orders(user_address).await {
+            Ok(orders) => orders,
+            Err(e) => {
+                error!("Reconciliation: Failed to fetch open orders: {}", e);
+                return;
+            }
+        };
+
+        // Build Set of Exchange OIDs
+        let exchange_oids: HashSet<u64> = open_orders.iter().map(|o| o.oid).collect();
+
+        // Check Local Pending Orders
+        // Collect to avoid borrow issues
+        let pending_entries: Vec<(Cloid, Option<u64>)> = runtime
+            .pending_orders
+            .iter()
+            .map(|(k, v)| (*k, v.oid))
+            .collect();
+
+        for (cloid, maybe_oid) in pending_entries {
+            if let Some(oid) = maybe_oid {
+                // If local pending order (with known OID) is NOT in exchange open orders...
+                if !exchange_oids.contains(&oid) {
+                    // Check Idempotency (Race Condition Guard)
+                    if runtime.completed_cloids.contains(&cloid) {
+                        continue;
+                    }
+
+                    info!("Reconciliation: Order {} (OID {}) missing from exchange. Querying status...", cloid, oid);
+
+                    // Query Status via REST
+                    match info_client.query_order_by_oid(user_address, oid).await {
+                        Ok(response) => {
+                            if let Some(order_state) = response.order {
+                                let status = order_state.status.as_str();
+                                if status == "filled" {
+                                    let amount: f64 = order_state.order.sz.parse().unwrap_or(0.0);
+                                    let px: f64 = order_state.order.limit_px.parse().unwrap_or(0.0);
+                                    let side = if order_state.order.side == "B" {
+                                        OrderSide::Buy
+                                    } else {
+                                        OrderSide::Sell
+                                    };
+                                    let reduce_only = order_state.order.reduce_only;
+
+                                    info!("[RECONCILE_FILLED] {} {} @ {}", side, amount, px);
+
+                                    // Update State
+                                    runtime.pending_orders.remove(&cloid);
+                                    runtime.completed_cloids.insert(cloid);
+
+                                    if let Err(e) = strategy.on_order_filled(
+                                        &OrderFill {
+                                            side,
+                                            size: amount,
+                                            price: px,
+                                            fee: 0.0,
+                                            cloid: Some(cloid),
+                                            reduce_only: Some(reduce_only),
+                                            raw_dir: None,
+                                        },
+                                        &mut runtime.ctx,
+                                    ) {
+                                        error!("Strategy on_order_filled error (Reconcile): {}", e);
+                                    } else {
+                                        let grid_state = strategy.get_grid_state(&runtime.ctx);
+                                        self.broadcaster.send(WSEvent::GridState(grid_state));
+                                    }
+                                } else if status == "canceled"
+                                    || status == "rejected"
+                                    || status == "margin"
+                                {
+                                    info!("[RECONCILE_FAILED] Order {} was {}", cloid, status);
+                                    runtime.pending_orders.remove(&cloid);
+                                    runtime.completed_cloids.insert(cloid);
+                                    let _ = strategy.on_order_failed(cloid, &mut runtime.ctx);
+                                } else {
+                                    info!(
+                                        "Reconciliation: Order {} status is {}. Waiting.",
+                                        cloid, status
+                                    );
+                                }
+                            } else {
+                                warn!(
+                                    "Reconciliation: Order {} not found by query. Assuming failed.",
+                                    cloid
+                                );
+                                runtime.pending_orders.remove(&cloid);
+                                let _ = strategy.on_order_failed(cloid, &mut runtime.ctx);
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "Reconciliation: Failed to query status for {}: {}",
+                                cloid, e
+                            );
+                        }
                     }
                 }
             }

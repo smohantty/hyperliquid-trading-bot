@@ -5,9 +5,11 @@ use crate::engine::context::{MarketInfo, StrategyContext};
 use crate::model::{Cloid, OrderFill, OrderSide};
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
-use ethers::signers::{LocalWallet, Signer};
+use ethers::signers::LocalWallet;
+use ethers::types::H160;
 use hyperliquid_rust_sdk::{BaseUrl, ExchangeClient, InfoClient};
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use tracing::{debug, error, info};
 
 // Updated imports based on documentation discovery
@@ -85,6 +87,11 @@ impl Engine {
             BaseUrl::Testnet
         };
         info!("Connecting to ExchangeClient...");
+        info!(
+            "Using Agent Wallet to trade for Account: {}",
+            self.exchange_config.master_account_address
+        );
+
         ExchangeClient::new(None, wallet, Some(base_url), None, None)
             .await
             .map_err(|e| anyhow!("Failed to connect ExchangeClient: {}", e))
@@ -206,7 +213,8 @@ impl Engine {
         let wallet: LocalWallet = private_key
             .parse()
             .map_err(|e| anyhow!("Invalid private key: {}", e))?;
-        let user_address = wallet.address();
+        let user_address = H160::from_str(&self.exchange_config.master_account_address)
+            .map_err(|e| anyhow!("Invalid account address: {}", e))?;
 
         // 1. Setup Clients
         let mut info_client = self.setup_info_client().await?;

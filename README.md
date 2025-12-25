@@ -19,7 +19,8 @@ An advanced, event-driven trading bot for the Hyperliquid exchange, written in R
 ### Prerequisites
 *   Rust (latest stable)
 *   A Hyperliquid Account (Mainnet or Testnet)
-*   Wallet Private Key (for signing transactions)
+*   A Hyperliquid Account (Mainnet or Testnet)
+*   **Wallet Configuration File**: A JSON file containing your Agent Private Key and Master Account Address.
 
 ### Installation
 1.  Clone the repository:
@@ -34,10 +35,21 @@ An advanced, event-driven trading bot for the Hyperliquid exchange, written in R
     ```
 
 3.  Configure Environment:
-    Create a `.env` file in the root directory:
+    
+    a. Create a `wallet_config.json` file (keep this secure!):
+    ```json
+    {
+      "master_account_address": "0xMasterWalletAddress...",
+      "agent_private_key": {
+          "mainnet": "0xMainnetAgentPrivateKey...",
+          "testnet": "0xTestnetAgentPrivateKey..."
+      }
+    }
+    ```
+
+    b. Create a `.env` file in the root directory:
     ```env
-    WALLET_PRIVATE_KEY=0x...
-    SERVICE_ADDRESS=0x...
+    HYPERLIQUID_WALLET_CONFIG_FILE=./wallet_config.json
     ```
 
 ### Running the Bot

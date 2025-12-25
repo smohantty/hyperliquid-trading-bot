@@ -7,3 +7,5 @@ grid_type = "geometric"
 grid_count = 20
 total_investment = 8000.0
 grid_bias = "short"
+trigger_price = 88500.0
+

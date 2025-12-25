@@ -212,15 +212,7 @@ impl PerpGridStrategy {
         );
 
         if total_position_required.abs() > 0.0 {
-            if let Some(trigger) = self.config.trigger_price {
-                info!(
-                    "[PERP_GRID] Assets required ({}), but waiting for trigger price {}",
-                    total_position_required, trigger
-                );
-                self.state = StrategyState::WaitingForTrigger;
-                self.trigger_reference_price = Some(initial_price);
-                return Ok(());
-            }
+            // Trigger Logic moved to activation block
 
             // Acquire Immediately
             info!(
@@ -238,36 +230,54 @@ impl PerpGridStrategy {
                     OrderSide::Sell
                 };
 
-                let raw_price = if side.is_buy() {
-                    // Long Bias: Find highest grid level BELOW market
-                    let grid_price = self
-                        .zones
-                        .iter()
-                        .map(|z| z.lower_price)
-                        .filter(|&p| p < market_price)
-                        .max_by(|a, b| a.partial_cmp(b).unwrap())
-                        .unwrap_or(market_price);
+                let price_to_use = if let Some(trigger) = self.config.trigger_price {
+                    let is_safe_limit = match side {
+                        OrderSide::Buy => trigger < market_price,
+                        OrderSide::Sell => trigger > market_price,
+                    };
 
-                    // Cap spread at 0.1% (0.001)
-                    // If grid level is too far (e.g. 1% away), bring it closer to 0.1% spread
-                    let limit_price = market_price * (1.0 - 0.001);
-                    grid_price.max(limit_price)
+                    if !is_safe_limit {
+                        let msg = format!(
+                            "Invalid Trigger Price! Side: {}, Trigger: {}, Market: {}. Bot requires a resting limit order (Buy < Market or Sell > Market).",
+                            side, trigger, market_price
+                        );
+                        error!("[PERP_GRID] {}", msg);
+                        return Err(anyhow!(msg));
+                    }
+                    info!(
+                        "[PERP_GRID] Using Trigger Price {} for initial entry.",
+                        trigger
+                    );
+                    trigger
                 } else {
-                    // Short Bias: Find lowest grid level ABOVE market
-                    let grid_price = self
-                        .zones
-                        .iter()
-                        .map(|z| z.upper_price)
-                        .filter(|&p| p > market_price)
-                        .min_by(|a, b| a.partial_cmp(b).unwrap())
-                        .unwrap_or(market_price);
+                    let raw_price = if side.is_buy() {
+                        let grid_price = self
+                            .zones
+                            .iter()
+                            .map(|z| z.lower_price)
+                            .filter(|&p| p < market_price)
+                            .max_by(|a, b| a.partial_cmp(b).unwrap())
+                            .unwrap_or(market_price);
 
-                    // Cap spread at 0.1% (0.001)
-                    let limit_price = market_price * (1.0 + 0.001);
-                    grid_price.min(limit_price)
+                        let limit_price = market_price * (1.0 - 0.001);
+                        grid_price.max(limit_price)
+                    } else {
+                        let grid_price = self
+                            .zones
+                            .iter()
+                            .map(|z| z.upper_price)
+                            .filter(|&p| p > market_price)
+                            .min_by(|a, b| a.partial_cmp(b).unwrap())
+                            .unwrap_or(market_price);
+
+                        let limit_price = market_price * (1.0 + 0.001);
+                        grid_price.min(limit_price)
+                    };
+                    raw_price
                 };
+
                 (
-                    market_info.round_price(raw_price),
+                    market_info.round_price(price_to_use),
                     market_info.round_size(total_position_required.abs()),
                     side,
                 )

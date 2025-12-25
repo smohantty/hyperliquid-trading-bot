@@ -786,14 +786,6 @@ impl Engine {
         strategy: &mut Box<dyn Strategy>,
         coin: &str,
     ) {
-        let event_type = match &user_events_data {
-            UserData::Fills(f) => format!("Fills ({})", f.len()),
-            UserData::Funding(_) => "Funding".to_string(),
-            UserData::Liquidation(_) => "Liquidation".to_string(),
-            UserData::NonUserCancel(c) => format!("NonUserCancel ({})", c.len()),
-        };
-        debug!("User Event: {}", event_type);
-
         if let UserData::Fills(fills) = user_events_data {
             for fill in fills {
                 if fill.coin != coin {
@@ -844,16 +836,21 @@ impl Engine {
                     );
                 }
 
-                info!(
-                    "[ORDER_FILL] {} {} {} @ {} (Fee: {})",
-                    cloid
-                        .map(|c| c.to_string())
-                        .unwrap_or_else(|| "no-cloid".to_string()),
-                    side,
-                    amount,
-                    px,
-                    fee
-                );
+                let fill_tag = if let Some(c) = cloid.as_ref() {
+                    if let Some(pending) = runtime.pending_orders.get(c) {
+                        if pending.filled_size + amount >= pending.target_size * 0.9999 {
+                            "[ORDER_FILL]"
+                        } else {
+                            "[ORDER_FILL_PARTIAL]"
+                        }
+                    } else {
+                        "[ORDER_FILL]"
+                    }
+                } else {
+                    "[ORDER_FILL]"
+                };
+
+                info!("{} {} {} @ {} (Fee: {})", fill_tag, side, amount, px, fee);
 
                 // Broadcast Fill Event
                 self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
@@ -881,13 +878,14 @@ impl Engine {
                         pending.filled_size = new_total_size;
                         pending.accumulated_fees += fee;
 
-                        info!(
-                            "Order progress for {}: {}/{} filled at avg px {}",
-                            c, pending.filled_size, pending.target_size, pending.weighted_avg_px
-                        );
-
                         if pending.filled_size >= pending.target_size * 0.9999 {
-                            info!("Order {} fully filled. Notifying strategy.", c);
+                            info!(
+                                "[ORDER_FILLED] Order {} fully filled. Price: {}, Size: {}, Fee: {}. Notifying strategy.",
+                                c,
+                                pending.weighted_avg_px,
+                                pending.filled_size,
+                                pending.accumulated_fees
+                            );
                             let final_px = pending.weighted_avg_px;
                             let final_sz = pending.filled_size;
                             let final_fee = pending.accumulated_fees;

@@ -815,28 +815,14 @@ impl Engine {
                 // Parse cloid from fill using Cloid::from_hex_str
                 let cloid: Option<Cloid> = fill.cloid.as_ref().and_then(|s| Cloid::from_hex_str(s));
 
-                // Debug: Log raw fill fields to understand side vs dir semantics
-                // - side: Order book side the order was on ("A" = Ask/Sell, "B" = Bid/Buy)
-                // - dir: Trade direction / position impact ("Open Long", "Close Long", "Open Short", "Close Short", or "Buy"/"Sell" for spot)
-                // - start_position: Position size before this fill
-                debug!(
-                    "[FILL_DEBUG] coin={} | side='{}' | dir='{}' | start_position='{}' | sz={} | px={} | cloid={:?}",
-                    fill.coin, fill.side, fill.dir, fill.start_position, amount, px, cloid
-                );
-
-                // Determine OrderSide from side field:
                 // - 'A' (Ask) = Sell order filled
                 // - 'B' (Bid) = Buy order filled
-                // The raw_dir is passed through for strategies that need perp-specific context
                 let side = if fill.side.to_uppercase().starts_with('B') {
                     OrderSide::Buy
                 } else {
                     OrderSide::Sell
                 };
-                debug!(
-                    "[FILL_DEBUG] Parsed side='{}' -> OrderSide::{}, raw_dir='{}'",
-                    fill.side, side, fill.dir
-                );
+
                 let fee: f64 = fill.fee.parse().unwrap_or(0.0);
 
                 // Audit Log: FILL

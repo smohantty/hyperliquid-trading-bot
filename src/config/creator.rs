@@ -184,7 +184,7 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         .with_prompt("Total Investment (USDC)")
         .interact_text()?;
 
-    let bias_types = vec!["Neutral", "Long", "Short"];
+    let bias_types = vec!["Long", "Short"];
     let bias_sel = Select::with_theme(theme)
         .with_prompt("Grid Bias")
         .default(0)
@@ -192,10 +192,9 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         .interact()?;
 
     let grid_bias = match bias_sel {
-        0 => GridBias::Neutral,
-        1 => GridBias::Long,
-        2 => GridBias::Short,
-        _ => GridBias::Neutral,
+        0 => GridBias::Long,
+        1 => GridBias::Short,
+        _ => GridBias::Long,
     };
 
     let has_trigger = Confirm::with_theme(theme)

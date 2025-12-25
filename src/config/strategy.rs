@@ -177,7 +177,7 @@ pub fn print_strategy_help() {
     println!("     - grid_count (u32): Number of grid levels.");
     println!(
         "     - total_investment (f64): Total cost basis in USDC.
-     - grid_bias (String): 'long', 'short', or 'neutral'.
+     - grid_bias (String): 'long' or 'short'.
      - trigger_price (Option<f64>): Price to trigger strategy start (optional)."
     );
     println!();
@@ -281,7 +281,7 @@ mod tests {
             grid_type: GridType::Arithmetic,
             grid_count: 5,
             total_investment: 1000.0,
-            grid_bias: GridBias::Neutral,
+            grid_bias: GridBias::Long,
             trigger_price: None,
         });
         assert!(config.validate().is_err());
@@ -296,7 +296,7 @@ mod tests {
             grid_type: GridType::Arithmetic,
             grid_count: 5,
             total_investment: 1000.0,
-            grid_bias: GridBias::Neutral,
+            grid_bias: GridBias::Long,
             trigger_price: None,
         });
         assert!(config2.validate().is_err());
@@ -324,7 +324,7 @@ mod tests {
             grid_type: GridType::Arithmetic,
             grid_count: 10,
             total_investment: 1000.0,
-            grid_bias: GridBias::Neutral,
+            grid_bias: GridBias::Long,
             trigger_price: None,
         });
         assert!(perp.validate().is_ok());

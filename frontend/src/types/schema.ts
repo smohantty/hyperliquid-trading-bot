@@ -15,6 +15,7 @@ export interface StrategyConfig {
     leverage?: number;
     is_isolated?: boolean;
     sz_decimals?: number;
+    grid_bias?: 'long' | 'short';
 }
 
 export interface SystemInfo {
@@ -57,7 +58,7 @@ export interface PerpGridSummary {
     unrealized_pnl: number;
     total_fees: number;
     leverage: number;
-    grid_bias: 'Long' | 'Short' | 'Neutral';
+    grid_bias: 'Long' | 'Short';
     grid_count: number;
     range_low: number;
     range_high: number;

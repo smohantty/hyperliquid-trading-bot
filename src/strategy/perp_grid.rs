@@ -174,16 +174,6 @@ impl PerpGridStrategy {
                         (OrderSide::Sell, ZoneMode::Short) // Zone at/above → open short
                     }
                 }
-                GridBias::Neutral => {
-                    // Neutral bias: use zone midpoint for classification
-                    // Zone center above price → short mode
-                    // Zone center at/below price → long mode
-                    if mid_price > initial_price {
-                        (OrderSide::Sell, ZoneMode::Short) // Zone above center → open short
-                    } else {
-                        (OrderSide::Buy, ZoneMode::Long) // Zone at/below center → open long
-                    }
-                }
             };
 
             if mode == ZoneMode::Long && pending_side.is_sell() {

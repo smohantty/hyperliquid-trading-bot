@@ -12,7 +12,6 @@ pub enum GridType {
 pub enum GridBias {
     Long,
     Short,
-    Neutral,
 }
 
 /// The operational mode of a grid zone - determines position direction

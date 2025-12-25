@@ -65,13 +65,13 @@ const ConfigPanel: React.FC = () => {
                         />
                         <ConfigCell
                             label="Grid Bias"
-                            value={config.grid_bias?.toUpperCase() || 'NEUTRAL'}
+                            value={config.grid_bias?.toUpperCase() || '-'}
                             icon="trend"
                             highlight
                             highlightColor={
                                 config.grid_bias === 'long' ? 'var(--color-buy)' :
                                     config.grid_bias === 'short' ? 'var(--color-sell)' :
-                                        'var(--color-warning)'
+                                        'var(--text-primary)'
                             }
                         />
                         <ConfigCell

@@ -11,6 +11,10 @@ pub enum WSEvent {
     #[serde(rename = "config")]
     Config(serde_json::Value),
 
+    /// System information (network, etc.)
+    #[serde(rename = "info")]
+    Info(SystemInfo),
+
     /// Spot Grid strategy summary (high-level metrics)
     #[serde(rename = "spot_grid_summary")]
     SpotGridSummary(SpotGridSummary),
@@ -34,6 +38,12 @@ pub enum WSEvent {
     /// Error notification
     #[serde(rename = "error")]
     Error(String),
+}
+
+/// System information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemInfo {
+    pub network: String,
 }
 
 // ============================================================

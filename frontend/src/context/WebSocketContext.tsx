@@ -5,7 +5,8 @@ import {
     type PerpGridSummary,
     type GridState,
     type WebSocketEvent,
-    type OrderEvent
+    type OrderEvent,
+    type SystemInfo
 } from '../types/schema';
 
 // Union type for summaries
@@ -22,6 +23,7 @@ interface WebSocketContextType {
     lastTickTime: number | null;
     orderHistory: OrderEvent[];
     connectionStatus: 'connecting' | 'connected' | 'disconnected';
+    systemInfo: SystemInfo | null;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
@@ -35,6 +37,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [lastPrice, setLastPrice] = useState<number | null>(null);
     const [lastTickTime, setLastTickTime] = useState<number | null>(null);
     const [orderHistory, setOrderHistory] = useState<OrderEvent[]>([]);
+    const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
 
     const wsRef = useRef<WebSocket | null>(null);
     const reconnectTimeoutRef = useRef<number | null>(null);
@@ -80,6 +83,9 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                     switch (message.event_type) {
                         case 'config':
                             setConfig(message.data);
+                            break;
+                        case 'info':
+                            setSystemInfo(message.data);
                             break;
                         case 'spot_grid_summary':
                             setSummary({ type: 'spot_grid', data: message.data });
@@ -136,7 +142,8 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             gridState,
             lastPrice,
             lastTickTime,
-            orderHistory
+            orderHistory,
+            systemInfo
         }}>
             {children}
         </WebSocketContext.Provider>

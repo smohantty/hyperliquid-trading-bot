@@ -17,7 +17,7 @@ enum CachedSummary {
 }
 
 impl CachedSummary {
-    fn format_status(&self, config: &StrategyConfig) -> String {
+    fn format_status(&self, config: &StrategyConfig, network: &str) -> String {
         match self {
             CachedSummary::SpotGrid(s) => {
                 let spacing = format_spacing(s.grid_spacing_pct);
@@ -44,7 +44,7 @@ impl CachedSummary {
                 };
 
                 format!(
-                    "<b>📊 SPOT GRID: {}</b>\n\
+                    "<b>📊 SPOT GRID: {} ({})</b>\n\
                      ⏱️ Running for {}\n\
                      🔄 Matched Trades: <code>{}</code>\n\n\
                      <b>💰 PROFIT & LOSS</b>\n\
@@ -63,6 +63,7 @@ impl CachedSummary {
                      Trigger: <code>{}</code>\n\
                      Invest: <code>${:.2}</code>",
                     s.symbol,
+                    network.to_uppercase(),
                     s.uptime,
                     s.roundtrips,
                     pnl_emoji,
@@ -122,7 +123,7 @@ impl CachedSummary {
                 let margin_mode = if is_isolated { "Isolated" } else { "Cross" };
 
                 format!(
-                    "<b>📊 PERP GRID: {}</b>\n\
+                    "<b>📊 PERP GRID: {} ({})</b>\n\
                      {} <b>{}</b> ({}x)\n\
                      ⏱️ Running for {}\n\
                      🔄 Matched Trades: <code>{}</code>\n\n\
@@ -144,6 +145,7 @@ impl CachedSummary {
                      Mode: <code>{}</code>\n\
                      Invest: <code>${:.2}</code>",
                     s.symbol,
+                    network.to_uppercase(),
                     bias_emoji,
                     s.grid_bias,
                     s.leverage,
@@ -247,6 +249,9 @@ impl TelegramReporter {
         let last_summary: Arc<Mutex<Option<CachedSummary>>> = Arc::new(Mutex::new(None));
         let last_summary_evt = last_summary.clone();
 
+        let network_info: Arc<Mutex<String>> = Arc::new(Mutex::new("Unknown".to_string()));
+        let network_info_evt = network_info.clone();
+
         // Spawn Command Handler (REPL)
         let bot_repl = bot.clone();
         let strategy_config_repl = strategy_config.clone();
@@ -255,14 +260,16 @@ impl TelegramReporter {
             let handler = Update::filter_message().endpoint(move |bot: Bot, msg: Message| {
                 let summary_lock = last_summary.clone();
                 let config = strategy_config_repl.clone();
+                let network_lock = network_info.clone();
 
                 async move {
                     if let Some(text) = msg.text() {
                         if text == "/status" {
                             let summary = summary_lock.lock().await;
+                            let network = network_lock.lock().await;
 
                             if let Some(s) = &*summary {
-                                bot.send_message(msg.chat.id, s.format_status(&config))
+                                bot.send_message(msg.chat.id, s.format_status(&config, &network))
                                     .parse_mode(teloxide::types::ParseMode::Html)
                                     .await?;
                             } else {
@@ -287,6 +294,10 @@ impl TelegramReporter {
         while let Some(msg) = stream.next().await {
             match msg {
                 Ok(event) => match event {
+                    WSEvent::Info(info) => {
+                        let mut lock = network_info_evt.lock().await;
+                        *lock = info.network;
+                    }
                     WSEvent::SpotGridSummary(s) => {
                         let mut lock = last_summary_evt.lock().await;
                         *lock = Some(CachedSummary::SpotGrid(s));

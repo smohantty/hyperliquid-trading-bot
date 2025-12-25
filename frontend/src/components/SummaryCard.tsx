@@ -3,7 +3,7 @@ import { useBotStore } from '../context/WebSocketContext';
 import Tooltip from './Tooltip';
 
 const SummaryCard: React.FC = () => {
-    const { summary, lastTickTime, connectionStatus } = useBotStore();
+    const { summary, lastTickTime, connectionStatus, systemInfo } = useBotStore();
 
     if (!summary) {
         return (
@@ -25,6 +25,12 @@ const SummaryCard: React.FC = () => {
     const timeStr = lastTickTime ? new Date(lastTickTime).toLocaleTimeString() : '--:--:--';
     const isPerp = summary.type === 'perp_grid';
     const s = summary.data;
+
+    // Network Badge Logic
+    const networkBadge = systemInfo ? {
+        text: systemInfo.network === 'mainnet' ? 'MAINNET' : 'TESTNET',
+        className: systemInfo.network === 'mainnet' ? 'badge-buy' : 'badge-neutral'
+    } : null;
 
     const totalPnl = s.realized_pnl + s.unrealized_pnl - s.total_fees;
     const pnlColor = totalPnl >= 0 ? 'var(--color-buy)' : 'var(--color-sell)';
@@ -71,6 +77,11 @@ const SummaryCard: React.FC = () => {
                         <span className={`badge ${biasClass}`}>
                             {perpData.grid_bias.toUpperCase()}
                         </span>
+                        {networkBadge && (
+                            <span className={`badge ${networkBadge.className}`}>
+                                {networkBadge.text}
+                            </span>
+                        )}
                         <ConnectionStatus status={connectionStatus} />
                     </div>
                     <span style={{
@@ -355,6 +366,11 @@ const SummaryCard: React.FC = () => {
                     <span className="badge badge-muted">
                         SPOT
                     </span>
+                    {networkBadge && (
+                        <span className={`badge ${networkBadge.className}`}>
+                            {networkBadge.text}
+                        </span>
+                    )}
                     <ConnectionStatus status={connectionStatus} />
                 </div>
                 <span style={{

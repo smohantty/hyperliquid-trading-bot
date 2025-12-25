@@ -14,6 +14,7 @@ use tokio_tungstenite::tungstenite::Message;
 pub struct StatusBroadcaster {
     sender: broadcast::Sender<WSEvent>,
     last_config: Arc<Mutex<Option<WSEvent>>>,
+    last_info: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
     order_history: Arc<Mutex<VecDeque<WSEvent>>>,
@@ -23,6 +24,7 @@ impl StatusBroadcaster {
     pub fn new(config: Option<WebsocketConfig>) -> Self {
         let (sender, _) = broadcast::channel(100);
         let last_config = Arc::new(Mutex::new(None));
+        let last_info = Arc::new(Mutex::new(None));
         let last_summary = Arc::new(Mutex::new(None));
         let last_grid_state = Arc::new(Mutex::new(None));
         let order_history = Arc::new(Mutex::new(VecDeque::with_capacity(50)));
@@ -30,6 +32,7 @@ impl StatusBroadcaster {
         if let Some(conf) = config {
             let sender_clone = sender.clone();
             let config_clone = last_config.clone();
+            let info_clone = last_info.clone();
             let summary_clone = last_summary.clone();
             let grid_state_clone = last_grid_state.clone();
             let history_clone = order_history.clone();
@@ -40,6 +43,7 @@ impl StatusBroadcaster {
                     conf.port,
                     sender_clone,
                     config_clone,
+                    info_clone,
                     summary_clone,
                     grid_state_clone,
                     history_clone,
@@ -54,6 +58,7 @@ impl StatusBroadcaster {
         Self {
             sender,
             last_config,
+            last_info,
             last_summary,
             last_grid_state,
             order_history,
@@ -65,6 +70,10 @@ impl StatusBroadcaster {
         match &event {
             WSEvent::Config(_) => {
                 let mut lock = self.last_config.lock().unwrap();
+                *lock = Some(event.clone());
+            }
+            WSEvent::Info(_) => {
+                let mut lock = self.last_info.lock().unwrap();
                 *lock = Some(event.clone());
             }
             // Cache strategy summaries (either spot or perp)
@@ -102,6 +111,7 @@ async fn run_server(
     port: u16,
     sender: broadcast::Sender<WSEvent>,
     last_config: Arc<Mutex<Option<WSEvent>>>,
+    last_info: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
     order_history: Arc<Mutex<VecDeque<WSEvent>>>,
@@ -113,6 +123,7 @@ async fn run_server(
     while let Ok((stream, peer_addr)) = listener.accept().await {
         let sender_clone = sender.clone();
         let config_clone = last_config.clone();
+        let info_clone = last_info.clone();
         let summary_clone = last_summary.clone();
         let grid_state_clone = last_grid_state.clone();
         let history_clone = order_history.clone();
@@ -123,6 +134,7 @@ async fn run_server(
                 peer_addr,
                 sender_clone,
                 config_clone,
+                info_clone,
                 summary_clone,
                 grid_state_clone,
                 history_clone,
@@ -142,6 +154,7 @@ async fn handle_connection(
     peer_addr: SocketAddr,
     sender: broadcast::Sender<WSEvent>,
     last_config: Arc<Mutex<Option<WSEvent>>>,
+    last_info: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
     order_history: Arc<Mutex<VecDeque<WSEvent>>>,
@@ -159,6 +172,12 @@ async fn handle_connection(
     {
         let config_opt = last_config.lock().unwrap().clone();
         if let Some(event) = config_opt {
+            let json_str = serde_json::to_string(&event)?;
+            ws_sender.send(Message::Text(json_str)).await?;
+        }
+
+        let info_opt = last_info.lock().unwrap().clone();
+        if let Some(event) = info_opt {
             let json_str = serde_json::to_string(&event)?;
             ws_sender.send(Message::Text(json_str)).await?;
         }

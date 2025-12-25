@@ -39,12 +39,32 @@ const MetricCard: React.FC<{
 );
 
 const HeaderMetrics: React.FC = () => {
-    const { summary, lastTickTime } = useBotStore();
+    const { summary, lastTickTime, systemInfo } = useBotStore();
+
+    // Determine network badge color
+    const networkBadge = systemInfo ? {
+        text: systemInfo.network === 'mainnet' ? 'MAINNET' : 'TESTNET',
+        color: systemInfo.network === 'mainnet' ? 'var(--accent-primary)' : 'var(--color-sell)'
+    } : null;
 
     if (!summary) {
         return (
             <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                 Waiting for strategy data...
+                {networkBadge && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                        <span style={{
+                            background: networkBadge.color,
+                            color: '#000',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '0.8rem',
+                            fontWeight: 'bold'
+                        }}>
+                            {networkBadge.text}
+                        </span>
+                    </div>
+                )}
             </div>
         );
     }
@@ -64,7 +84,7 @@ const HeaderMetrics: React.FC = () => {
                     value={`$${s.price.toFixed(4)}`}
                     color="var(--accent-primary)"
                     subValue={`${s.symbol} • ${timeStr}`}
-                    badge={{ text: 'SPOT', color: 'var(--accent-primary)' }}
+                    badge={networkBadge || { text: 'SPOT', color: 'var(--accent-primary)' }}
                 />
                 <MetricCard
                     label="TOTAL PnL"
@@ -108,7 +128,7 @@ const HeaderMetrics: React.FC = () => {
                 value={`$${s.price.toFixed(4)}`}
                 color="var(--accent-primary)"
                 subValue={`${s.symbol} • ${timeStr}`}
-                badge={{ text: `PERP ${s.leverage}x`, color: biasColor }}
+                badge={networkBadge || { text: `PERP ${s.leverage}x`, color: biasColor }}
             />
             <MetricCard
                 label="TOTAL PnL"

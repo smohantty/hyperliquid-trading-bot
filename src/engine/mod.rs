@@ -313,6 +313,10 @@ impl Engine {
             }
         }
         self.broadcaster.send(WSEvent::Config(config_json));
+        self.broadcaster
+            .send(WSEvent::Info(crate::broadcast::types::SystemInfo {
+                network: self.exchange_config.network.clone(),
+            }));
 
         info!("Starting Event Loop...");
         loop {

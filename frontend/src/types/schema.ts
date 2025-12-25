@@ -14,8 +14,11 @@ export interface StrategyConfig {
     // Perp specific
     leverage?: number;
     is_isolated?: boolean;
-    grid_bias?: 'long' | 'short' | 'neutral';
     sz_decimals?: number;
+}
+
+export interface SystemInfo {
+    network: string;
 }
 
 // ============================================================
@@ -119,6 +122,7 @@ export interface MarketEvent {
 
 export type WebSocketEvent =
     | { event_type: 'config'; data: StrategyConfig }
+    | { event_type: 'info'; data: SystemInfo }
     | { event_type: 'spot_grid_summary'; data: SpotGridSummary }
     | { event_type: 'perp_grid_summary'; data: PerpGridSummary }
     | { event_type: 'grid_state'; data: GridState }

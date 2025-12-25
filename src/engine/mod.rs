@@ -543,7 +543,7 @@ impl Engine {
         coin: &str,
         mid_price: f64,
     ) {
-        info!("Processing Bulk Orders: {} orders", order_reqs.len());
+        info!("[BULK_ORDER] {} orders", order_reqs.len());
 
         let target_symbol = self.config.symbol();
         let mut sdk_reqs = Vec::with_capacity(order_reqs.len());
@@ -683,10 +683,7 @@ impl Engine {
                             hyperliquid_rust_sdk::ExchangeDataStatus::Filled(f) => {
                                 let amount: f64 = f.total_sz.parse().unwrap_or(0.0);
                                 let px: f64 = f.avg_px.parse().unwrap_or(0.0);
-                                info!(
-                                    "[ORDER_FILLED_MARKET] Order fully filled. Price: {}, Size: {}",
-                                    px, amount
-                                );
+                                info!("[ORDER_FILLED_MARKET] {} {} @ {}", side, amount, px);
 
                                 if let Some(c) = cloid {
                                     // Broadcast Filled
@@ -862,10 +859,10 @@ impl Engine {
 
                         if is_fully_filled {
                             info!(
-                                "[ORDER_FILLED] Order {} fully filled. Price: {}, Size: {}, Fee: {}. Notifying strategy.",
-                                c,
-                                pending.weighted_avg_px,
+                                "[ORDER_FILLED] {} {} @ {} (Fee: {}).",
+                                side,
                                 pending.filled_size,
+                                pending.weighted_avg_px,
                                 pending.accumulated_fees
                             );
                             let final_px = pending.weighted_avg_px;
@@ -896,14 +893,14 @@ impl Engine {
                         } else {
                             // Partial Fill - Log but don't notify strategy yet (waiting for full fill)
                             info!(
-                                "[ORDER_FILL_PARTIAL] {} {} {} @ {} (Fee: {})",
-                                c, side, amount, px, fee
+                                "[ORDER_FILL_PARTIAL] {} {} @ {} (Fee: {})",
+                                side, amount, px, fee
                             );
                         }
                     } else {
                         info!(
-                            "[ORDER_FILL] Untracked {} {} {} @ {} (Fee: {})",
-                            c, side, amount, px, fee
+                            "[ORDER_FILL_UNTRACKED] {} {} @ {} (Fee: {})",
+                            side, amount, px, fee
                         );
                         if let Err(e) = strategy.on_order_filled(
                             &OrderFill {
@@ -926,7 +923,7 @@ impl Engine {
                     }
                 } else {
                     info!(
-                        "[ORDER_FILL] NoCloid {} {} @ {} (Fee: {})",
+                        "[ORDER_FILL_NOCLID] {} {} @ {} (Fee: {})",
                         side, amount, px, fee
                     );
                     if let Err(e) = strategy.on_order_filled(

@@ -46,11 +46,11 @@ async fn main() -> Result<()> {
                 .add_directive("hyperliquid_trading_bot=debug".parse().unwrap()),
         );
 
-    // File Layer (JSON)
+    // File Layer (Simple Text)
     let file_layer = tracing_subscriber::fmt::layer()
         .with_ansi(false)
         .with_writer(non_blocking)
-        .json()
+        .with_target(false)
         .with_filter(tracing_subscriber::EnvFilter::new(
             "info,hyperliquid_trading_bot=debug",
         ));

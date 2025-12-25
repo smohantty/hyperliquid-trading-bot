@@ -436,10 +436,31 @@ impl Engine {
         // Call Strategy
         strategy.on_tick(mid_price, &mut runtime.ctx)?;
 
-        // Execute Order Queue
+        // Execute Order Queue & Cancellation Queue
+        let mut orders_to_place = Vec::new();
+        let mut cancels_to_process = Vec::new();
+
         while let Some(order_req) = runtime.ctx.order_queue.pop() {
-            self.process_order_request(
-                order_req,
+            match order_req {
+                crate::model::OrderRequest::Cancel { cloid } => {
+                    cancels_to_process.push(cloid);
+                }
+                _ => orders_to_place.push(order_req),
+            }
+        }
+
+        while let Some(cloid) = runtime.ctx.cancellation_queue.pop() {
+            cancels_to_process.push(cloid);
+        }
+
+        if !cancels_to_process.is_empty() {
+            self.process_bulk_cancels(cancels_to_process, exchange_client, coin)
+                .await;
+        }
+
+        if !orders_to_place.is_empty() {
+            self.process_bulk_orders(
+                orders_to_place,
                 runtime,
                 strategy,
                 exchange_client,
@@ -449,18 +470,24 @@ impl Engine {
             .await;
         }
 
-        // Execute Cancellation Queue
-        while let Some(cloid_to_cancel) = runtime.ctx.cancellation_queue.pop() {
-            info!(
-                "Processing Cancellation Request for cloid: {}",
-                cloid_to_cancel
-            );
+        Ok(())
+    }
 
+    async fn process_bulk_cancels(
+        &self,
+        cloids: Vec<Cloid>,
+        exchange_client: &ExchangeClient,
+        coin: &str,
+    ) {
+        info!("Processing Batch Cancellations: {} orders", cloids.len());
+
+        let mut cancel_reqs = Vec::with_capacity(cloids.len());
+        for cloid in &cloids {
             // Broadcast Order Update (Cancel Sent)
             self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                 oid: 0,
-                cloid: Some(cloid_to_cancel.to_string()),
-                side: "UNKNOWN".to_string(), // We don't track side for cancels effectively here without lookup
+                cloid: Some(cloid.to_string()),
+                side: "UNKNOWN".to_string(),
                 price: 0.0,
                 size: 0.0,
                 status: "CANCELLING".to_string(),
@@ -468,276 +495,289 @@ impl Engine {
                 is_taker: false,
             }));
 
-            let cancel_req = hyperliquid_rust_sdk::ClientCancelRequestCloid {
+            cancel_reqs.push(hyperliquid_rust_sdk::ClientCancelRequestCloid {
                 asset: coin.to_string(),
-                cloid: cloid_to_cancel.as_uuid(),
-            };
-            match exchange_client.cancel_by_cloid(cancel_req, None).await {
-                Ok(res) => info!("Cancel successful: {:?}", res),
-                Err(e) => error!("Failed to cancel order {}: {:?}", cloid_to_cancel, e),
-            }
+                cloid: cloid.as_uuid(),
+            });
         }
 
-        Ok(())
+        match exchange_client
+            .bulk_cancel_by_cloid(cancel_reqs, None)
+            .await
+        {
+            Ok(hyperliquid_rust_sdk::ExchangeResponseStatus::Ok(exchange_res)) => {
+                if let Some(data) = &exchange_res.data {
+                    for (i, status) in data.statuses.iter().enumerate() {
+                        let cloid = cloids.get(i);
+                        match status {
+                            hyperliquid_rust_sdk::ExchangeDataStatus::Success => {
+                                info!("Cancel successful for {:?}", cloid);
+                            }
+                            hyperliquid_rust_sdk::ExchangeDataStatus::Error(e) => {
+                                error!("Failed to cancel order {:?}: {}", cloid, e);
+                            }
+                            _ => {
+                                info!("Cancel status for {:?}: {:?}", cloid, status);
+                            }
+                        }
+                    }
+                } else {
+                    info!("Bulk cancel response: {:?}", exchange_res);
+                }
+            }
+            Ok(hyperliquid_rust_sdk::ExchangeResponseStatus::Err(e)) => {
+                error!("Bulk cancel level error: {}", e);
+            }
+            Err(e) => {
+                error!("Failed to execute bulk cancel: {:?}", e);
+            }
+        }
     }
 
-    async fn process_order_request(
+    async fn process_bulk_orders(
         &self,
-        order_req: crate::model::OrderRequest,
+        order_reqs: Vec<crate::model::OrderRequest>,
         runtime: &mut EngineRuntime,
         strategy: &mut Box<dyn Strategy>,
         exchange_client: &ExchangeClient,
         coin: &str,
         mid_price: f64,
     ) {
-        let req_summary = match &order_req {
-            crate::model::OrderRequest::Limit {
-                symbol,
-                side,
-                price,
-                sz,
-                reduce_only,
-                ..
-            } => {
-                format!(
+        info!("Processing Bulk Orders: {} orders", order_reqs.len());
+
+        let target_symbol = self.config.symbol();
+        let mut sdk_reqs = Vec::with_capacity(order_reqs.len());
+        let mut order_contexts = Vec::with_capacity(order_reqs.len());
+
+        for order_req in order_reqs {
+            let req_summary = match &order_req {
+                crate::model::OrderRequest::Limit {
+                    symbol,
+                    side,
+                    price,
+                    sz,
+                    reduce_only,
+                    ..
+                } => format!(
                     "LIMIT {} {} {} @ {}{}",
                     side,
                     sz,
                     symbol,
                     price,
                     if *reduce_only { " (RO)" } else { "" }
-                )
-            }
-            crate::model::OrderRequest::Market {
-                symbol, side, sz, ..
-            } => {
-                format!("MARKET {} {} {}", side, sz, symbol)
-            }
-            crate::model::OrderRequest::Cancel { cloid } => format!("CANCEL {}", cloid),
-        };
-        info!("[ORDER_PROCESSING] {}", req_summary);
+                ),
+                crate::model::OrderRequest::Market {
+                    symbol, side, sz, ..
+                } => format!("MARKET {} {} {}", side, sz, symbol),
+                _ => continue, // Cancels handled separately
+            };
 
-        match order_req {
-            crate::model::OrderRequest::Cancel { cloid } => {
-                self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
-                    oid: 0,
-                    cloid: Some(cloid.to_string()),
-                    side: "UNKNOWN".to_string(),
-                    price: 0.0,
-                    size: 0.0,
-                    status: "CANCELLING".to_string(),
-                    fee: 0.0,
-                    is_taker: false,
-                }));
-                // Handled via separate cancellation logic usually, but keep fallback
-                info!(
-                    "Processing Cancel variant in Order Queue for cloid: {}",
-                    cloid
-                );
-                let cancel_req = hyperliquid_rust_sdk::ClientCancelRequestCloid {
-                    asset: coin.to_string(),
-                    cloid: cloid.as_uuid(),
-                };
-                match exchange_client.cancel_by_cloid(cancel_req, None).await {
-                    Ok(res) => info!("Cancel successful: {:?}", res),
-                    Err(e) => error!("Failed to cancel order {}: {:?}", cloid, e),
-                }
-                return;
-            }
-            _ => {}
-        }
-
-        let target_symbol = self.config.symbol();
-        let (side, limit_px, sz, reduce_only, order_type, cloid, target_sz) = match order_req {
-            crate::model::OrderRequest::Limit {
-                symbol: _,
-                side,
-                price,
-                sz,
-                reduce_only,
-                cloid,
-            } => (
-                side,
-                price,
-                sz,
-                reduce_only,
-                ClientOrder::Limit(ClientLimit {
-                    tif: "Gtc".to_string(),
-                }),
-                cloid,
-                sz,
-            ),
-            crate::model::OrderRequest::Market {
-                symbol: _,
-                side,
-                sz,
-                cloid,
-            } => {
-                let aggressive_price = if side.is_buy() {
-                    mid_price * 1.1
-                } else {
-                    mid_price * 0.9
-                };
-                let market_info = runtime.ctx.market_info(target_symbol).unwrap();
-                let rounded_aggressive_price = market_info.round_price(aggressive_price);
-
-                (
+            let (side, limit_px, sz, reduce_only, order_type, cloid, target_sz) = match order_req {
+                crate::model::OrderRequest::Limit {
+                    symbol: _,
                     side,
-                    rounded_aggressive_price,
+                    price,
                     sz,
-                    false,
+                    reduce_only,
+                    cloid,
+                } => (
+                    side,
+                    price,
+                    sz,
+                    reduce_only,
                     ClientOrder::Limit(ClientLimit {
-                        tif: "Ioc".to_string(),
+                        tif: "Gtc".to_string(),
                     }),
                     cloid,
                     sz,
-                )
-            }
-            _ => unreachable!("Cancel already handled"),
-        };
+                ),
+                crate::model::OrderRequest::Market {
+                    symbol: _,
+                    side,
+                    sz,
+                    cloid,
+                } => {
+                    let aggressive_price = if side.is_buy() {
+                        mid_price * 1.05 // 5% slippage allowance
+                    } else {
+                        mid_price * 0.95
+                    };
+                    let market_info = runtime.ctx.market_info(target_symbol).unwrap();
+                    let rounded_aggressive_price = market_info.round_price(aggressive_price);
 
-        let sdk_req = ClientOrderRequest {
-            asset: coin.to_string(),
-            is_buy: side.is_buy(),
-            limit_px,
-            sz,
-            reduce_only,
-            order_type,
-            cloid: cloid.map(|c| c.as_uuid()),
-        };
+                    (
+                        side,
+                        rounded_aggressive_price,
+                        sz,
+                        false,
+                        ClientOrder::Limit(ClientLimit {
+                            tif: "Ioc".to_string(),
+                        }),
+                        cloid,
+                        sz,
+                    )
+                }
+                _ => continue,
+            };
 
-        // Audit Log: REQ
-        if let Some(logger) = &self.audit_logger {
-            logger.log_req(
-                target_symbol,
-                &side.to_string(),
+            let sdk_req = ClientOrderRequest {
+                asset: coin.to_string(),
+                is_buy: side.is_buy(),
                 limit_px,
                 sz,
                 reduce_only,
-                cloid.map(|c| c.to_string()),
+                order_type,
+                cloid: cloid.map(|c| c.as_uuid()),
+            };
+
+            // Audit Log: REQ
+            if let Some(logger) = &self.audit_logger {
+                logger.log_req(
+                    target_symbol,
+                    &side.to_string(),
+                    limit_px,
+                    sz,
+                    reduce_only,
+                    cloid.map(|c| c.to_string()),
+                );
+            }
+
+            info!(
+                "[ORDER_SENT] {} -> Exchange ({})",
+                cloid
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "no-cloid".to_string()),
+                req_summary
             );
+
+            sdk_reqs.push(sdk_req);
+            order_contexts.push((cloid, side, target_sz, reduce_only, limit_px));
         }
 
-        info!(
-            "[ORDER_SENT] {} -> Exchange ({})",
-            cloid
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "no-cloid".to_string()),
-            req_summary
-        );
-        match exchange_client.order(sdk_req, None).await {
-            Ok(res) => {
-                let mut immediate_fill = None;
-                let status_msg = match res {
-                    hyperliquid_rust_sdk::ExchangeResponseStatus::Ok(exchange_res) => {
-                        if let Some(data) = &exchange_res.data {
-                            data.statuses
-                                .iter()
-                                .map(|s| match s {
-                                    hyperliquid_rust_sdk::ExchangeDataStatus::Resting(r) => {
-                                        format!("Resting (oid: {})", r.oid)
+        if sdk_reqs.is_empty() {
+            return;
+        }
+
+        match exchange_client.bulk_order(sdk_reqs, None).await {
+            Ok(hyperliquid_rust_sdk::ExchangeResponseStatus::Ok(exchange_res)) => {
+                if let Some(data) = &exchange_res.data {
+                    for (i, status) in data.statuses.iter().enumerate() {
+                        let (cloid, side, target_sz, reduce_only, limit_px) = order_contexts[i];
+
+                        match status {
+                            hyperliquid_rust_sdk::ExchangeDataStatus::Resting(r) => {
+                                info!("Resting (oid: {}) for {:?}", r.oid, cloid);
+                                if let Some(c) = cloid {
+                                    runtime.pending_orders.insert(
+                                        c,
+                                        PendingOrder {
+                                            target_size: target_sz,
+                                            filled_size: 0.0,
+                                            weighted_avg_px: 0.0,
+                                            accumulated_fees: 0.0,
+                                            reduce_only,
+                                        },
+                                    );
+
+                                    // Broadcast Placing/Resting confirmed
+                                    self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                                        oid: r.oid,
+                                        cloid: Some(c.to_string()),
+                                        side: side.to_string(),
+                                        price: limit_px,
+                                        size: target_sz,
+                                        status: "OPEN".to_string(),
+                                        fee: 0.0,
+                                        is_taker: false,
+                                    }));
+                                }
+                            }
+                            hyperliquid_rust_sdk::ExchangeDataStatus::Filled(f) => {
+                                let amount: f64 = f.total_sz.parse().unwrap_or(0.0);
+                                let px: f64 = f.avg_px.parse().unwrap_or(0.0);
+                                info!("Filled (oid: {}) for {:?}", f.oid, cloid);
+
+                                if let Some(c) = cloid {
+                                    // Broadcast Filled
+                                    self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                                        oid: f.oid,
+                                        cloid: Some(c.to_string()),
+                                        side: side.to_string(),
+                                        price: px,
+                                        size: amount,
+                                        status: "FILLED".to_string(),
+                                        fee: 0.0,
+                                        is_taker: true,
+                                    }));
+
+                                    if let Err(e) = strategy.on_order_filled(
+                                        &OrderFill {
+                                            side,
+                                            size: amount,
+                                            price: px,
+                                            fee: 0.0,
+                                            cloid: Some(c),
+                                            reduce_only: Some(reduce_only),
+                                            raw_dir: None,
+                                        },
+                                        &mut runtime.ctx,
+                                    ) {
+                                        error!("Strategy on_order_filled error: {}", e);
+                                    } else {
+                                        let grid_state = strategy.get_grid_state(&runtime.ctx);
+                                        self.broadcaster.send(WSEvent::GridState(grid_state));
                                     }
-                                    hyperliquid_rust_sdk::ExchangeDataStatus::Filled(f) => {
-                                        immediate_fill =
-                                            Some((f.total_sz.clone(), f.avg_px.clone()));
-                                        format!("Filled (oid: {})", f.oid)
+                                    runtime.completed_cloids.insert(c);
+                                }
+                            }
+                            hyperliquid_rust_sdk::ExchangeDataStatus::Error(e) => {
+                                error!("Order Error for {:?}: {}", cloid, e);
+                                if let Some(c) = cloid {
+                                    self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
+                                        oid: 0,
+                                        cloid: Some(c.to_string()),
+                                        side: "UNKNOWN".to_string(),
+                                        price: 0.0,
+                                        size: 0.0,
+                                        status: "FAILED".to_string(),
+                                        fee: 0.0,
+                                        is_taker: false,
+                                    }));
+                                    if let Err(strategy_err) =
+                                        strategy.on_order_failed(c, &mut runtime.ctx)
+                                    {
+                                        error!("Strategy on_order_failed error: {}", strategy_err);
                                     }
-                                    hyperliquid_rust_sdk::ExchangeDataStatus::Error(e) => {
-                                        format!("Error: {}", e)
-                                    }
-                                    _ => format!("{:?}", s),
-                                })
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        } else {
-                            format!("{:?}", exchange_res)
+                                }
+                            }
+                            _ => {
+                                info!("Unknown status for {:?}: {:?}", cloid, status);
+                            }
                         }
-                    }
-                    hyperliquid_rust_sdk::ExchangeResponseStatus::Err(e) => format!("Error: {}", e),
-                };
-
-                info!("Response: {}", status_msg);
-
-                if let Some((total_sz_str, avg_px_str)) = immediate_fill {
-                    if let Some(c) = cloid {
-                        let amount: f64 = total_sz_str.parse().unwrap_or(0.0);
-                        let px: f64 = avg_px_str.parse().unwrap_or(0.0);
-                        info!("Immediate Fill detected for {}. Notifying strategy.", c);
-
-                        // Broadcast Filled
-                        self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
-                            oid: 0,
-                            cloid: Some(c.to_string()),
-                            side: side.to_string(),
-                            price: px,
-                            size: amount,
-                            status: "FILLED".to_string(),
-                            fee: 0.0, // Fee not always available immediately in response
-                            is_taker: true,
-                        }));
-
-                        if let Err(e) = strategy.on_order_filled(
-                            &OrderFill {
-                                side,
-                                size: amount,
-                                price: px,
-                                fee: 0.0,
-                                cloid: Some(c),
-                                reduce_only: Some(reduce_only),
-                                raw_dir: None, // Immediate fill from order response, no dir available
-                            },
-                            &mut runtime.ctx,
-                        ) {
-                            error!("Strategy on_order_filled error: {}", e);
-                        } else {
-                            // Broadcast grid state after fill
-                            let grid_state = strategy.get_grid_state(&runtime.ctx);
-                            self.broadcaster.send(WSEvent::GridState(grid_state));
-                        }
-                        runtime.completed_cloids.insert(c);
                     }
                 } else {
+                    info!("Bulk order raw response: {:?}", exchange_res);
+                }
+            }
+            Ok(hyperliquid_rust_sdk::ExchangeResponseStatus::Err(e)) => {
+                error!("Bulk order level error: {}", e);
+                // Fail all
+                for (cloid, _, _, _, _) in order_contexts {
                     if let Some(c) = cloid {
-                        runtime.pending_orders.insert(
-                            c,
-                            PendingOrder {
-                                target_size: target_sz,
-                                filled_size: 0.0,
-                                weighted_avg_px: 0.0,
-                                accumulated_fees: 0.0,
-                                reduce_only,
-                            },
-                        );
-
-                        // Broadcast Placing/Resting confirmed
-                        self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
-                            oid: 0,
-                            cloid: Some(c.to_string()),
-                            side: side.to_string(),
-                            price: limit_px,
-                            size: target_sz,
-                            status: "OPEN".to_string(),
-                            fee: 0.0,
-                            is_taker: false,
-                        }));
+                        if let Err(strategy_err) = strategy.on_order_failed(c, &mut runtime.ctx) {
+                            error!("Strategy on_order_failed error: {}", strategy_err);
+                        }
                     }
                 }
             }
             Err(e) => {
-                error!("Failed to place order: {:?}", e);
-                if let Some(c) = cloid {
-                    self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
-                        oid: 0,
-                        cloid: Some(c.to_string()),
-                        side: "UNKNOWN".to_string(),
-                        price: 0.0,
-                        size: 0.0,
-                        status: "FAILED".to_string(),
-                        fee: 0.0,
-                        is_taker: false,
-                    }));
-                    if let Err(strategy_err) = strategy.on_order_failed(c, &mut runtime.ctx) {
-                        error!("Strategy on_order_failed error: {}", strategy_err);
+                error!("Failed to place bulk orders: {:?}", e);
+                // Fail all
+                for (cloid, _, _, _, _) in order_contexts {
+                    if let Some(c) = cloid {
+                        if let Err(strategy_err) = strategy.on_order_failed(c, &mut runtime.ctx) {
+                            error!("Strategy on_order_failed error: {}", strategy_err);
+                        }
                     }
                 }
             }

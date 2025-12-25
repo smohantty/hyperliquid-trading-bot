@@ -59,6 +59,54 @@ stateDiagram-v2
     }
 ```
 
+## GridZone Architecture
+
+Unlike some grid implementations that track a global "grid index", this bot uses an **Independent Zone Model**. The price range is sliced into $N-1$ distinct **Zones**. Each zone acts as an independent mini-strategy responsible for buying low and selling high within its specific price slice.
+
+### How a Zone Works
+Each zone has a fixed `lower_price` and `upper_price`.
+1.  **State A (Waiting to Buy)**: The bot holds Quote asset (USDC). It places a buy order at `lower_price`.
+2.  **State B (Waiting to Sell)**: The bot holds Base asset (e.g., HYPE). It places a sell order at `upper_price`.
+
+When an order fills, the zone simply transitions to the other state. It does **not** know or care about what adjacent zones are doing.
+
+### Visualization
+
+```mermaid
+graph TD
+    subgraph Zone2 [Zone 2: 105 - 110]
+        Z2_State[Current: Waiting to BUY]
+        Z2_Action[Order: Buy @ 105]
+    end
+
+    subgraph Zone1 [Zone 1: 100 - 105]
+        Z1_State[Current: Waiting to SELL]
+        Z1_Action[Order: Sell @ 105]
+    end
+
+    subgraph Zone0 [Zone 0: 95 - 100]
+        Z0_State[Current: Waiting to BUY]
+        Z0_Action[Order: Buy @ 95]
+    end
+
+    Price((Current Price: 102))
+
+    Price -.- Zone2
+    Price -.- Zone1
+    Price -.- Zone0
+
+    style Z1_State fill:#d4edda,stroke:#28a745,color:#155724
+    style Z0_State fill:#fff3cd,stroke:#ffc107,color:#856404
+    style Z2_State fill:#fff3cd,stroke:#ffc107,color:#856404
+```
+
+In the example above:
+*   **Zone 2 (105-110)**: Price is below it, so it's waiting for price to drop to 105 to Buy.
+*   **Zone 1 (100-105)**: Price is inside it. We previously bought at 100, so now we are waiting to Sell at 105.
+*   **Zone 0 (95-100)**: Price is above it, so it's waiting for price to drop to 95 to Buy.
+
+This isolation ensures that even if one zone gets stuck or fails, others continue trading.
+
 ### 1. Pre-Flight Validations
 Before placing any orders, the bot performs two critical checks:
 

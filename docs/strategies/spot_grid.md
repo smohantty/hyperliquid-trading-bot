@@ -16,22 +16,47 @@ A classic mean-reversion strategy that buys low and sells high within a defined 
 
 ## Logic & State Machine
 
-The strategy operates as a state machine to ensure correct asset allocation before the grid starts:
+The strategy operates as a state machine to ensure correct asset allocation before the grid starts. It handles both "Passive Start" (wait for price) and "Active Acquisition" (rebalance portfolio).
+
+### Initialization Flows
+
+1.  **Immediate Start**: No `trigger_price` set, assets are sufficient.
+    *   `Initializing` -> `Running`
+2.  **Trigger Wait**: Assets sufficient, `trigger_price` set.
+    *   `Initializing` -> `WaitingForTrigger` -> (Price hits Trigger) -> `Running`
+3.  **Rebalancing (Active Acquisition)**: Assets are insufficient.
+    *   `Initializing` -> `AcquiringAssets` (Place Limit Order) -> (Order Filled) -> `Running`
+
+> [!NOTE]
+> **Trigger with Deficit**: If a deficit is detected, the bot **immediately** enters `AcquiringAssets` using the `trigger_price` (or current price) as the limit price. It does **not** passively wait for the trigger if it needs to buy/sell assets first.
+
+### State Diagram
 
 ```mermaid
 stateDiagram-v2
     [*] --> Initializing
     
-    Initializing --> WaitingForTrigger: trigger_price set & not hit
-    Initializing --> Rebalancing: rebalance needed
-    Initializing --> Running: balances sufficient
+    state Initializing {
+        [*] --> CheckRequirements
+        CheckRequirements --> Deficit : Insufficient Assets
+        CheckRequirements --> Sufficient : Assets OK
+    }
+
+    %% Path 1: Active Rebalancing
+    Deficit --> AcquiringAssets : Place Rebalance Order
+    AcquiringAssets --> Running : Order Filled
     
-    WaitingForTrigger --> Rebalancing: trigger hit & rebalance needed
-    WaitingForTrigger --> Running: trigger hit & balances sufficient
+    %% Path 2: Passive Trigger
+    Sufficient --> WaitingForTrigger : Trigger Defined
+    WaitingForTrigger --> Running : Trigger Price Hit
     
-    Rebalancing --> Running: Rebalance Order Filled
+    %% Path 3: Direct Start
+    Sufficient --> Running : No Trigger
     
-    Running --> Running: Grid Logic (Refresh Orders)
+    state Running {
+        [*] --> GridLogic
+        GridLogic --> RefreshOrders
+    }
 ```
 
 ### 1. Pre-Flight Validations

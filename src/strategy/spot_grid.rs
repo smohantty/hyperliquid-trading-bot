@@ -679,6 +679,17 @@ impl Strategy for SpotGridStrategy {
 
     fn on_order_failed(&mut self, cloid: Cloid, _ctx: &mut StrategyContext) -> Result<()> {
         log::warn!("[SPOT_GRID] Order failed callback for cloid: {}", cloid);
+        if let Some(zone_idx) = self.active_orders.remove(&cloid) {
+            if let Some(zone) = self.zones.get_mut(zone_idx) {
+                if zone.order_id == Some(cloid) {
+                    log::info!(
+                        "[SPOT_GRID] Clearing failed order state for Zone {}",
+                        zone_idx
+                    );
+                    zone.order_id = None;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -1237,5 +1248,67 @@ mod tests {
         // After sell fill, inventory should be 95
         assert_eq!(strategy.inventory, 95.0);
         assert_eq!(strategy.state, StrategyState::Running);
+    }
+
+    #[test]
+    fn test_spot_grid_order_failure_recovery() {
+        // Scenario: Order Fails -> Zone State Cleared -> Retry on next Tick
+        let config = SpotGridConfig {
+            symbol: "HYPE/USDC".to_string(),
+            upper_price: 110.0,
+            lower_price: 90.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: 5,
+            total_investment: 1000.0,
+            trigger_price: None,
+        };
+
+        let mut strategy = SpotGridStrategy::new(config);
+        let mut markets = HashMap::new();
+        markets.insert(
+            "HYPE/USDC".to_string(),
+            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
+        );
+        let mut ctx = StrategyContext::new(markets);
+        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0);
+        ctx.update_spot_balance("USDC".to_string(), 1000.0, 1000.0);
+
+        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
+            info.last_price = 100.0;
+        }
+
+        // 1. Initialize & Start
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+        strategy.on_tick(100.0, &mut ctx).unwrap(); // Refresh orders
+
+        // Get a zone with an active order (Zone 0 is below 100, pending Buy)
+        // Zone 0: 90-95. Wait Buy.
+        // Zone 1: 95-100. Wait Buy.
+        // Zone 2: 100-105. Wait Sell (Inventory).
+        // Let's pick Zone 0.
+        let zone_idx = 0;
+        let zone = &strategy.zones[zone_idx];
+        let original_cloid = zone.order_id.expect("Zone 0 should have order");
+        assert!(strategy.active_orders.contains_key(&original_cloid));
+
+        // 2. Fail the order
+        strategy.on_order_failed(original_cloid, &mut ctx).unwrap();
+
+        // 3. Verify State Cleared
+        let zone = &strategy.zones[zone_idx];
+        assert_eq!(zone.order_id, None, "Zone order_id should be cleared");
+        assert!(
+            !strategy.active_orders.contains_key(&original_cloid),
+            "Active order should be removed"
+        );
+
+        // 4. Tick -> Retry
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+
+        // 5. Verify New Order
+        let zone = &strategy.zones[zone_idx];
+        let new_cloid = zone.order_id.expect("Zone 0 should have new order");
+        assert_ne!(new_cloid, original_cloid, "Should be a new cloid");
+        assert!(strategy.active_orders.contains_key(&new_cloid));
     }
 }

@@ -56,9 +56,19 @@ An advanced, event-driven trading bot for the Hyperliquid exchange, written in R
 
 Run the bot using `cargo run`. You must specify a configuration file.
 
-```bash
 # General Usage
 cargo run --release -- --config <PATH_TO_CONFIG> [OPTIONS]
+```
+
+## Deployment (Production)
+
+For long-running production usage, we recommend using our `tmux` based deployment scripts which allow the bot to persist after you close your terminal.
+
+See using [**Deployment Guide**](DEPLOYMENT.md) for full details.
+
+### Quick Start
+```bash
+./deployment/start.sh
 ```
 
 #### Examples

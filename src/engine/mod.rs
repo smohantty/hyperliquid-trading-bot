@@ -974,8 +974,6 @@ impl Engine {
         runtime: &mut EngineRuntime,
         strategy: &mut Box<dyn Strategy>,
     ) {
-        info!("Starting Order Reconciliation...");
-
         let open_orders = match info_client.open_orders(user_address).await {
             Ok(orders) => orders,
             Err(e) => {

@@ -637,13 +637,7 @@ impl Engine {
                 );
             }
 
-            info!(
-                "[ORDER_SENT] {} -> Exchange ({})",
-                cloid
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "no-cloid".to_string()),
-                req_summary
-            );
+            info!("[ORDER_SENT] Exchange ({})", req_summary);
 
             sdk_reqs.push(sdk_req);
             order_contexts.push((cloid, side, target_sz, reduce_only, limit_px));
@@ -661,7 +655,6 @@ impl Engine {
 
                         match status {
                             hyperliquid_rust_sdk::ExchangeDataStatus::Resting(r) => {
-                                info!("Resting (oid: {}) for {:?}", r.oid, cloid);
                                 if let Some(c) = cloid {
                                     runtime.pending_orders.insert(
                                         c,
@@ -690,7 +683,10 @@ impl Engine {
                             hyperliquid_rust_sdk::ExchangeDataStatus::Filled(f) => {
                                 let amount: f64 = f.total_sz.parse().unwrap_or(0.0);
                                 let px: f64 = f.avg_px.parse().unwrap_or(0.0);
-                                info!("Filled (oid: {}) for {:?}", f.oid, cloid);
+                                info!(
+                                    "[ORDER_FILLED_MARKET] Order fully filled. Price: {}, Size: {}",
+                                    px, amount
+                                );
 
                                 if let Some(c) = cloid {
                                     // Broadcast Filled

@@ -597,17 +597,12 @@ impl Engine {
                     sz,
                     cloid,
                 } => {
-                    let aggressive_price = if side.is_buy() {
-                        mid_price * 1.05 // 5% slippage allowance
-                    } else {
-                        mid_price * 0.95
-                    };
                     let market_info = runtime.ctx.market_info(target_symbol).unwrap();
-                    let rounded_aggressive_price = market_info.round_price(aggressive_price);
+                    let market_price = market_info.round_price(mid_price);
 
                     (
                         side,
-                        rounded_aggressive_price,
+                        market_price,
                         sz,
                         false,
                         ClientOrder::Limit(ClientLimit {

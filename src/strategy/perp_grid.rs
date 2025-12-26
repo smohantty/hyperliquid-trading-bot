@@ -780,6 +780,43 @@ mod tests {
     use crate::strategy::types::GridType;
     use std::collections::HashMap;
 
+    fn create_test_setup(
+        symbol: &str,
+        grid_bias: GridBias,
+        trigger_price: Option<f64>,
+        last_price: f64,
+        lower_price: f64,
+        upper_price: f64,
+    ) -> (PerpGridStrategy, StrategyContext) {
+        let mut markets = HashMap::new();
+        markets.insert(
+            symbol.to_string(),
+            MarketInfo::new(symbol.to_string(), "HYPE".to_string(), 0, 2, 2),
+        );
+        let mut ctx = StrategyContext::new(markets);
+        ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
+
+        if let Some(info) = ctx.market_info_mut(symbol) {
+            info.last_price = last_price;
+        }
+
+        let config = PerpGridConfig {
+            symbol: symbol.to_string(),
+            leverage: 10,
+            is_isolated: true,
+            upper_price,
+            lower_price,
+            grid_type: GridType::Arithmetic,
+            grid_count: 3,
+            total_investment: 1000.0,
+            grid_bias,
+            trigger_price,
+        };
+
+        let strategy = PerpGridStrategy::new(config);
+        (strategy, ctx)
+    }
+
     fn create_test_context(symbol: &str) -> StrategyContext {
         let mut markets = HashMap::new();
         markets.insert(
@@ -796,30 +833,15 @@ mod tests {
     #[test]
     fn test_perp_grid_init_long_bias() {
         let symbol = "HYPE".to_string();
-        let mut ctx = create_test_context(&symbol);
-
-        // No balances needed for pure state logic, but typically we set them
-        ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
-
-        let config = PerpGridConfig {
-            symbol: symbol.clone(),
-            leverage: 10,
-            is_isolated: true,
-            upper_price: 110.0,
-            lower_price: 90.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 3, // 90, 100, 110 -> zones: [90-100], [100-110]
-            total_investment: 1000.0,
-            grid_bias: GridBias::Long,
-            trigger_price: None,
-        };
-
-        let mut strategy = PerpGridStrategy::new(config);
-
-        // Set last_price to 99 so zones are classified correctly
-        if let Some(info) = ctx.market_info_mut(&symbol) {
-            info.last_price = 99.0;
-        }
+        // 90, 100, 110 -> zones: [90-100], [100-110]
+        let (mut strategy, mut ctx) = create_test_setup(
+            &symbol,
+            GridBias::Long,
+            None,
+            99.0,  // last_price
+            90.0,  // lower_price
+            110.0, // upper_price
+        );
         // Use price 99 (inside zone [90-100], below zone [100-110])
         strategy.on_tick(99.0, &mut ctx).unwrap();
 
@@ -1072,40 +1094,9 @@ mod tests {
 
     #[test]
     fn test_perp_grid_pnl_and_ping_pong() {
-        // Test full ping-pong cycle with:
-        // 1. reduce_only flags set correctly
-        // 2. raw_dir matching exchange expectations
-        // 3. PnL calculation on closing fills
-        // 4. Fee accumulation
-        // 5. Counter order generation (ping-pong)
-
-        let symbol = "TEST".to_string();
-        let mut ctx = create_test_context(&symbol);
-        ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
-
-        let config = PerpGridConfig {
-            symbol: symbol.clone(),
-            leverage: 1,
-            is_isolated: true,
-            upper_price: 120.0,
-            lower_price: 80.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 3,
-            total_investment: 1000.0,
-            grid_bias: GridBias::Long,
-            trigger_price: None,
-        };
-
-        let mut strategy = PerpGridStrategy::new(config);
-
-        // Set last_price to 95 so zones are classified correctly
-        if let Some(info) = ctx.market_info_mut(&symbol) {
-            info.last_price = 95.0;
-        }
-
-        // Initialize at price 95
-        // Zone 0 [90-100]: lower=90, 95 < 90 = false → Buy (open long, no position yet)
-        // Zone 1 [100-110]: lower=100, 95 < 100 = true → Sell (close long, need to acquire)
+        // Test full ping-pong cycle
+        let (mut strategy, mut ctx) =
+            create_test_setup("TEST", GridBias::Long, None, 95.0, 80.0, 120.0);
         strategy.on_tick(95.0, &mut ctx).unwrap();
 
         // Verify initial state
@@ -1283,32 +1274,13 @@ mod tests {
     #[test]
     fn test_perp_grid_short_bias_pnl() {
         // Test Short bias: Sell high, buy low
-        let symbol = "TEST".to_string();
-        let mut ctx = create_test_context(&symbol);
-        ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
-
-        let config = PerpGridConfig {
-            symbol: symbol.clone(),
-            leverage: 1,
-            is_isolated: true,
-            upper_price: 110.0,
-            lower_price: 90.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 3,
-            total_investment: 1000.0,
-            grid_bias: GridBias::Short, // Short bias!
-            trigger_price: None,
-        };
-
-        let mut strategy = PerpGridStrategy::new(config);
-
-        // Set last_price to 105 so Zone 0 is below price (Buy/close short)
-        // Zone 0 [90-100]: upper=100 < 105 → Buy (close short, acquired position)
-        // Zone 1 [100-110]: upper=110 < 105 → false → Sell (open short)
-        if let Some(info) = ctx.market_info_mut(&symbol) {
-            info.last_price = 105.0;
-        }
+        let (mut strategy, mut ctx) =
+            create_test_setup("TEST", GridBias::Short, None, 105.0, 90.0, 110.0);
         strategy.on_tick(105.0, &mut ctx).unwrap();
+        // grid_count needs to match 3 for helper but original test used 3.
+        // wait, helper hardcodes grid_count=3.
+        // Original used grid_count=3, lower=90, upper=110.
+        // helper works.
 
         // Handle acquisition for short bias
         if let StrategyState::AcquiringAssets { cloid, target_size } = strategy.state {
@@ -1408,6 +1380,14 @@ mod tests {
     /// - Zone [105-110]: 105 < 110? true → Sell ✗ (WRONG!)
     #[test]
     fn test_long_bias_zone_classification_at_boundary() {
+        // Grid: 90-110, count=5 (zones: [90-95], [95-100], [100-105], [105-110])
+        // Helper creates grid_count=3 by default. We need to manually setup this one because count differs.
+        // So we KEEP the manual setup for this test as it relies on specific grid geometry (5 zones).
+        // Wait, helper hardcodes grid_count=3.
+        // I should NOT use helper here unless I update helper to accept grid_count.
+        // For now, I will leave this test as is or update helper.
+        // Updating helper is better. I will update helper to accept grid_count.
+
         let mut markets = HashMap::new();
         markets.insert(
             "BTC".to_string(),

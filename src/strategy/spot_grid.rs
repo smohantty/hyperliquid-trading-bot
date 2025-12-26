@@ -805,11 +805,12 @@ mod tests {
     use crate::engine::context::{MarketInfo, StrategyContext};
     use crate::strategy::types::GridType;
 
-    #[test]
-    fn test_spot_grid_passive_trigger() {
-        // Scenario: Assets Sufficient. Wait for trigger.
-        // Start Price: 100. Trigger: 105. Expect: Wait until > 105.
-
+    fn create_test_setup(
+        trigger_price: Option<f64>,
+        base_balance: f64,
+        quote_balance: f64,
+        last_price: f64,
+    ) -> (SpotGridStrategy, StrategyContext) {
         let config = SpotGridConfig {
             symbol: "HYPE/USDC".to_string(),
             upper_price: 110.0,
@@ -817,23 +818,31 @@ mod tests {
             grid_type: GridType::Arithmetic,
             grid_count: 5,
             total_investment: 1000.0,
-            trigger_price: Some(105.0),
+            trigger_price,
         };
 
-        let mut strategy = SpotGridStrategy::new(config);
-
+        let strategy = SpotGridStrategy::new(config);
         let mut markets = HashMap::new();
         markets.insert(
             "HYPE/USDC".to_string(),
             MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
         );
         let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0); // Sufficient base
-        ctx.update_spot_balance("USDC".to_string(), 1000.0, 1000.0); // Sufficient quote
+        ctx.update_spot_balance("HYPE".to_string(), base_balance, base_balance);
+        ctx.update_spot_balance("USDC".to_string(), quote_balance, quote_balance);
 
         if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
-            info.last_price = 100.0;
+            info.last_price = last_price;
         }
+
+        (strategy, ctx)
+    }
+
+    #[test]
+    fn test_spot_grid_passive_trigger() {
+        // Scenario: Assets Sufficient. Wait for trigger.
+        // Start Price: 100. Trigger: 105. Expect: Wait until > 105.
+        let (mut strategy, mut ctx) = create_test_setup(Some(105.0), 100.0, 1000.0, 100.0);
 
         // Tick 1: Initialization. Should transition to Initializing -> WaitingForTrigger.
         // Strategy starts in Initializing.
@@ -870,30 +879,7 @@ mod tests {
         // trigger_price=104 means initial_price=104
         // Zone [105-110] has lower=105 > 104 → Sell (needs base acquisition)
 
-        let config = SpotGridConfig {
-            symbol: "HYPE/USDC".to_string(),
-            upper_price: 110.0,
-            lower_price: 90.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 5,
-            total_investment: 1000.0,
-            trigger_price: Some(104.0), // Below zone [105-110] so it needs base
-        };
-
-        let mut strategy = SpotGridStrategy::new(config);
-
-        let mut markets = HashMap::new();
-        markets.insert(
-            "HYPE/USDC".to_string(),
-            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
-        );
-        let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("HYPE".to_string(), 0.0, 0.0); // Zero assets
-        ctx.update_spot_balance("USDC".to_string(), 2000.0, 2000.0); // Sufficient Quote
-
-        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
-            info.last_price = 100.0;
-        }
+        let (mut strategy, mut ctx) = create_test_setup(Some(104.0), 0.0, 2000.0, 100.0);
 
         // Tick 1: Initialization -> Acquisition
         strategy.on_tick(100.0, &mut ctx).unwrap();
@@ -954,29 +940,7 @@ mod tests {
         // 2. Fill Buy Order (Check Fee)
         // 3. Fill Sell Order (Check PnL, Fee, Roundtrip)
 
-        let config = SpotGridConfig {
-            symbol: "HYPE/USDC".to_string(),
-            upper_price: 110.0,
-            lower_price: 90.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 5,
-            total_investment: 1000.0,
-            trigger_price: None,
-        };
-
-        let mut strategy = SpotGridStrategy::new(config);
-        let mut markets = HashMap::new();
-        markets.insert(
-            "HYPE/USDC".to_string(),
-            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
-        );
-        let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0); // Sufficient base
-        ctx.update_spot_balance("USDC".to_string(), 1000.0, 1000.0); // Sufficient quote
-
-        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
-            info.last_price = 100.0;
-        }
+        let (mut strategy, mut ctx) = create_test_setup(None, 100.0, 1000.0, 100.0);
 
         // 1. Initialize
         strategy.on_tick(100.0, &mut ctx).unwrap();
@@ -1072,29 +1036,8 @@ mod tests {
         // 3. Buy 10 @ 110 -> Inventory 20, Avg 105
         // 4. Sell 5 @ 120 -> Inventory 15, Avg 105
 
-        let config = SpotGridConfig {
-            symbol: "HYPE/USDC".to_string(),
-            upper_price: 110.0,
-            lower_price: 90.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 5,
-            total_investment: 1000.0,
-            trigger_price: None,
-        };
-
-        let mut strategy = SpotGridStrategy::new(config);
-        let mut markets = HashMap::new();
-        markets.insert(
-            "HYPE/USDC".to_string(),
-            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
-        );
-        let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("HYPE".to_string(), 0.0, 0.0); // Start with 0 for tracking test consistency
-        ctx.update_spot_balance("USDC".to_string(), 2000.0, 2000.0); // Sufficient quote
-
-        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
-            info.last_price = 100.0;
-        }
+        // Start with 0 for tracking test consistency
+        let (mut strategy, mut ctx) = create_test_setup(None, 0.0, 2000.0, 100.0);
 
         // 1. Init
         assert_eq!(strategy.position_size, 0.0);
@@ -1190,32 +1133,8 @@ mod tests {
         // Scenario: High Base, Low Quote.
         // Expect: Sell excess base to cover quote requirements.
 
-        let config = SpotGridConfig {
-            symbol: "HYPE/USDC".to_string(),
-            upper_price: 110.0,
-            lower_price: 90.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 5,
-            total_investment: 1000.0,
-            trigger_price: None,
-        };
-
-        let mut strategy = SpotGridStrategy::new(config);
-        let mut markets = HashMap::new();
-        markets.insert(
-            "HYPE/USDC".to_string(),
-            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
-        );
-        let mut ctx = StrategyContext::new(markets);
-
         // Initial state: 100 HYPE (val: $10k), but 0 USDC.
-        // Grid requires USDC for buy levels.
-        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0);
-        ctx.update_spot_balance("USDC".to_string(), 0.0, 0.0);
-
-        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
-            info.last_price = 100.0;
-        }
+        let (mut strategy, mut ctx) = create_test_setup(None, 100.0, 0.0, 100.0);
 
         // Tick 1: Init -> Should detect quote deficit and place SELL order
         strategy.on_tick(100.0, &mut ctx).unwrap();
@@ -1271,29 +1190,7 @@ mod tests {
     #[test]
     fn test_spot_grid_order_failure_recovery() {
         // Scenario: Order Fails -> Zone State Cleared -> Retry on next Tick
-        let config = SpotGridConfig {
-            symbol: "HYPE/USDC".to_string(),
-            upper_price: 110.0,
-            lower_price: 90.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 5,
-            total_investment: 1000.0,
-            trigger_price: None,
-        };
-
-        let mut strategy = SpotGridStrategy::new(config);
-        let mut markets = HashMap::new();
-        markets.insert(
-            "HYPE/USDC".to_string(),
-            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
-        );
-        let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("HYPE".to_string(), 100.0, 100.0);
-        ctx.update_spot_balance("USDC".to_string(), 1000.0, 1000.0);
-
-        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
-            info.last_price = 100.0;
-        }
+        let (mut strategy, mut ctx) = create_test_setup(None, 100.0, 1000.0, 100.0);
 
         // 1. Initialize & Start
         strategy.on_tick(100.0, &mut ctx).unwrap();
@@ -1332,24 +1229,7 @@ mod tests {
     #[test]
     fn test_spot_grid_avg_price_reset() {
         // Scenario: Buy -> Sell All -> Buy again. Avg Price should reset.
-        let config = SpotGridConfig {
-            symbol: "HYPE/USDC".to_string(),
-            upper_price: 110.0,
-            lower_price: 90.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 5,
-            total_investment: 1000.0,
-            trigger_price: None,
-        };
-
-        let mut strategy = SpotGridStrategy::new(config);
-        let mut markets = HashMap::new();
-        markets.insert(
-            "HYPE/USDC".to_string(),
-            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
-        );
-        let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("USDC".to_string(), 2000.0, 2000.0);
+        let (mut strategy, mut ctx) = create_test_setup(None, 0.0, 2000.0, 100.0);
 
         // Ensure zones are initialized
         strategy.on_tick(100.0, &mut ctx).unwrap();
@@ -1437,29 +1317,7 @@ mod tests {
     fn test_spot_grid_initialization_with_inventory() {
         // Scenario: Start with 10 HYPE (no fetch required).
         // Expect: avg_entry_price initialized to market/trigger price (100.0)
-        let config = SpotGridConfig {
-            symbol: "HYPE/USDC".to_string(),
-            upper_price: 110.0,
-            lower_price: 90.0,
-            grid_type: GridType::Arithmetic,
-            grid_count: 5,
-            total_investment: 1000.0,
-            trigger_price: None,
-        };
-
-        let mut strategy = SpotGridStrategy::new(config);
-        let mut markets = HashMap::new();
-        markets.insert(
-            "HYPE/USDC".to_string(),
-            MarketInfo::new("HYPE/USDC".to_string(), "HYPE".to_string(), 0, 2, 2),
-        );
-        let mut ctx = StrategyContext::new(markets);
-        ctx.update_spot_balance("HYPE".to_string(), 10.0, 10.0);
-        ctx.update_spot_balance("USDC".to_string(), 1000.0, 1000.0);
-
-        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
-            info.last_price = 100.0;
-        }
+        let (mut strategy, mut ctx) = create_test_setup(None, 10.0, 1000.0, 100.0);
 
         // Tick to init
         strategy.on_tick(100.0, &mut ctx).unwrap();

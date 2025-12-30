@@ -1,5 +1,5 @@
 import React from 'react';
-import { WebSocketProvider } from './context/WebSocketContext';
+import MultiBotLayout from './components/MultiBotLayout';
 import Layout from './components/Layout';
 import SummaryCard from './components/SummaryCard';
 import ConfigPanel from './components/ConfigPanel';
@@ -42,9 +42,9 @@ const DashboardContent: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <WebSocketProvider>
+    <MultiBotLayout>
       <DashboardContent />
-    </WebSocketProvider>
+    </MultiBotLayout>
   );
 };
 

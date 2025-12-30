@@ -28,7 +28,7 @@ interface WebSocketContextType {
 
 const WebSocketContext = createContext<WebSocketContextType | null>(null);
 
-export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const WebSocketProvider: React.FC<{ children: React.ReactNode; url: string }> = ({ children, url }) => {
     const [isConnected, setIsConnected] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
     const [config, setConfig] = useState<StrategyConfig | null>(null);
@@ -45,13 +45,11 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const connect = () => {
         try {
             setConnectionStatus('connecting');
-            const port = import.meta.env.VITE_WS_PORT || '9000';
-            const wsUrl = import.meta.env.VITE_WS_URL || `ws://${window.location.hostname}:${port}`;
-            const ws = new WebSocket(wsUrl);
+            const ws = new WebSocket(url);
             wsRef.current = ws;
 
             ws.onopen = () => {
-                console.log('Connected to Bot WebSocket');
+                console.log('Connected to Bot WebSocket:', url);
                 setIsConnected(true);
                 setConnectionStatus('connected');
                 if (reconnectTimeoutRef.current) {
@@ -61,12 +59,12 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             };
 
             ws.onclose = () => {
-                console.log('Disconnected from Bot WebSocket');
+                console.log('Disconnected from Bot WebSocket:', url);
                 setIsConnected(false);
                 setConnectionStatus('disconnected');
                 // Auto-reconnect
                 reconnectTimeoutRef.current = window.setTimeout(() => {
-                    console.log('Attempting reconnect...');
+                    console.log('Attempting reconnect to', url);
                     connect();
                 }, 3000);
             };
@@ -121,6 +119,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
     };
 
+    // Reconnect if URL changes
     useEffect(() => {
         connect();
         return () => {
@@ -131,7 +130,7 @@ export const WebSocketProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 clearTimeout(reconnectTimeoutRef.current);
             }
         };
-    }, []);
+    }, [url]);
 
     return (
         <WebSocketContext.Provider value={{

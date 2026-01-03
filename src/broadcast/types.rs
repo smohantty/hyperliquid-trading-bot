@@ -55,7 +55,6 @@ pub struct SystemInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpotGridSummary {
     pub symbol: String,
-    pub price: f64,
     pub state: String, // "Initializing", "Running", "AcquiringAssets", "WaitingForTrigger"
     pub uptime: String, // Human-readable uptime, e.g. "2d 14h 30m"
 
@@ -85,7 +84,6 @@ pub struct SpotGridSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PerpGridSummary {
     pub symbol: String,
-    pub price: f64,
     pub state: String,
     pub uptime: String, // Human-readable uptime, e.g. "2d 14h 30m"
 
@@ -121,8 +119,7 @@ pub struct PerpGridSummary {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GridState {
     pub symbol: String,
-    pub strategy_type: String, // "spot_grid" or "perp_grid"
-    pub current_price: f64,
+    pub strategy_type: String,     // "spot_grid" or "perp_grid"
     pub grid_bias: Option<String>, // None for spot, "Long"/"Short"/"Neutral" for perp
     pub zones: Vec<ZoneInfo>,
 }

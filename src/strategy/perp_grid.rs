@@ -709,7 +709,6 @@ impl Strategy for PerpGridStrategy {
 
         StrategySummary::PerpGrid(PerpGridSummary {
             symbol: self.config.symbol.clone(),
-            price: current_price,
             state: format!("{:?}", self.state),
             uptime,
             position_size: self.position_size,
@@ -730,13 +729,8 @@ impl Strategy for PerpGridStrategy {
         })
     }
 
-    fn get_grid_state(&self, ctx: &StrategyContext) -> GridState {
+    fn get_grid_state(&self, _ctx: &StrategyContext) -> GridState {
         use crate::broadcast::types::ZoneInfo;
-
-        let current_price = ctx
-            .market_info(&self.config.symbol)
-            .map(|m| m.last_price)
-            .unwrap_or(0.0);
 
         let zones = self
             .zones
@@ -765,7 +759,6 @@ impl Strategy for PerpGridStrategy {
         GridState {
             symbol: self.config.symbol.clone(),
             strategy_type: "perp_grid".to_string(),
-            current_price,
             grid_bias: Some(format!("{:?}", self.config.grid_bias)),
             zones,
         }

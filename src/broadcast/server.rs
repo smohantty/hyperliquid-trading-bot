@@ -17,6 +17,7 @@ pub struct StatusBroadcaster {
     last_info: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
+    last_market_update: Arc<Mutex<Option<WSEvent>>>,
     order_history: Arc<Mutex<VecDeque<WSEvent>>>,
 }
 
@@ -27,6 +28,7 @@ impl StatusBroadcaster {
         let last_info = Arc::new(Mutex::new(None));
         let last_summary = Arc::new(Mutex::new(None));
         let last_grid_state = Arc::new(Mutex::new(None));
+        let last_market_update: Arc<Mutex<Option<WSEvent>>> = Arc::new(Mutex::new(None));
         let order_history = Arc::new(Mutex::new(VecDeque::with_capacity(50)));
 
         if let Some(conf) = config {
@@ -35,6 +37,7 @@ impl StatusBroadcaster {
             let info_clone = last_info.clone();
             let summary_clone = last_summary.clone();
             let grid_state_clone = last_grid_state.clone();
+            let market_update_clone = last_market_update.clone();
             let history_clone = order_history.clone();
 
             tokio::spawn(async move {
@@ -46,6 +49,7 @@ impl StatusBroadcaster {
                     info_clone,
                     summary_clone,
                     grid_state_clone,
+                    market_update_clone,
                     history_clone,
                 )
                 .await
@@ -61,6 +65,7 @@ impl StatusBroadcaster {
             last_info,
             last_summary,
             last_grid_state,
+            last_market_update,
             order_history,
         }
     }
@@ -84,6 +89,11 @@ impl StatusBroadcaster {
             // Cache grid state for new connections
             WSEvent::GridState(_) => {
                 let mut lock = self.last_grid_state.lock().unwrap();
+                *lock = Some(event.clone());
+            }
+            // Cache recent market update for new connections (so UI has price immediately)
+            WSEvent::MarketUpdate(_) => {
+                let mut lock = self.last_market_update.lock().unwrap();
                 *lock = Some(event.clone());
             }
             // Cache recent order updates
@@ -114,6 +124,7 @@ async fn run_server(
     last_info: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
+    last_market_update: Arc<Mutex<Option<WSEvent>>>,
     order_history: Arc<Mutex<VecDeque<WSEvent>>>,
 ) -> anyhow::Result<()> {
     let addr = format!("{}:{}", host, port);
@@ -126,6 +137,7 @@ async fn run_server(
         let info_clone = last_info.clone();
         let summary_clone = last_summary.clone();
         let grid_state_clone = last_grid_state.clone();
+        let market_update_clone = last_market_update.clone();
         let history_clone = order_history.clone();
 
         tokio::spawn(async move {
@@ -137,6 +149,7 @@ async fn run_server(
                 info_clone,
                 summary_clone,
                 grid_state_clone,
+                market_update_clone,
                 history_clone,
             )
             .await
@@ -157,6 +170,7 @@ async fn handle_connection(
     last_info: Arc<Mutex<Option<WSEvent>>>,
     last_summary: Arc<Mutex<Option<WSEvent>>>,
     last_grid_state: Arc<Mutex<Option<WSEvent>>>,
+    last_market_update: Arc<Mutex<Option<WSEvent>>>,
     order_history: Arc<Mutex<VecDeque<WSEvent>>>,
 ) -> anyhow::Result<()> {
     info!("New WebSocket connection: {}", peer_addr);
@@ -190,6 +204,12 @@ async fn handle_connection(
 
         let grid_state_opt = last_grid_state.lock().unwrap().clone();
         if let Some(event) = grid_state_opt {
+            let json_str = serde_json::to_string(&event)?;
+            ws_sender.send(Message::Text(json_str)).await?;
+        }
+
+        let market_update_opt = last_market_update.lock().unwrap().clone();
+        if let Some(event) = market_update_opt {
             let json_str = serde_json::to_string(&event)?;
             ws_sender.send(Message::Text(json_str)).await?;
         }

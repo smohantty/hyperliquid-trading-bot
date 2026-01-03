@@ -44,6 +44,7 @@ pub enum WSEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemInfo {
     pub network: String,
+    pub exchange: String,
 }
 
 // ============================================================

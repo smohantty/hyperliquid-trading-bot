@@ -318,6 +318,7 @@ impl Engine {
         self.broadcaster
             .send(WSEvent::Info(crate::broadcast::types::SystemInfo {
                 network: self.exchange_config.network.clone(),
+                exchange: "hyperliquid".to_string(),
             }));
 
         info!("Starting Event Loop...");

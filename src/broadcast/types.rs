@@ -128,12 +128,12 @@ pub struct GridState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ZoneInfo {
     pub index: usize,
-    pub lower_price: f64,
-    pub upper_price: f64,
+    pub buy_price: f64,
+    pub sell_price: f64,
     pub size: f64,
 
     // Raw order data
-    pub pending_side: String, // "Buy" or "Sell"
+    pub order_side: String, // "Buy" or "Sell"
     pub has_order: bool,
     pub is_reduce_only: bool, // For perp: closing orders are reduce_only
 

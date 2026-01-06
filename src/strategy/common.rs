@@ -55,24 +55,24 @@ pub fn check_trigger(current_price: f64, trigger_price: f64, start_price: f64) -
 /// Returns a `Vec<f64>` containing the calculated prices.
 pub fn calculate_grid_prices(
     grid_type: GridType,
-    lower_price: f64,
-    upper_price: f64,
+    buy_price: f64,
+    sell_price: f64,
     grid_count: u32,
 ) -> Vec<f64> {
     let mut prices = Vec::with_capacity(grid_count as usize);
 
     match grid_type {
         GridType::Arithmetic => {
-            let step = (upper_price - lower_price) / (grid_count as f64 - 1.0);
+            let step = (sell_price - buy_price) / (grid_count as f64 - 1.0);
             for i in 0..grid_count {
-                let price = lower_price + (i as f64 * step);
+                let price = buy_price + (i as f64 * step);
                 prices.push(price);
             }
         }
         GridType::Geometric => {
-            let ratio = (upper_price / lower_price).powf(1.0 / (grid_count as f64 - 1.0));
+            let ratio = (sell_price / buy_price).powf(1.0 / (grid_count as f64 - 1.0));
             for i in 0..grid_count {
-                let price = lower_price * ratio.powi(i as i32);
+                let price = buy_price * ratio.powi(i as i32);
                 prices.push(price);
             }
         }
@@ -92,8 +92,8 @@ pub fn calculate_grid_prices(
 /// - For arithmetic: min is at highest price, max is at lowest price.
 pub fn calculate_grid_spacing_pct(
     grid_type: &GridType,
-    lower_price: f64,
-    upper_price: f64,
+    buy_price: f64,
+    sell_price: f64,
     grid_count: u32,
 ) -> (f64, f64) {
     let n = grid_count as f64;
@@ -103,7 +103,7 @@ pub fn calculate_grid_spacing_pct(
             // Geometric: constant ratio between levels
             // ratio = (upper/lower)^(1/n)
             // spacing_pct = (ratio - 1) * 100
-            let ratio = (upper_price / lower_price).powf(1.0 / n);
+            let ratio = (sell_price / buy_price).powf(1.0 / n);
             let spacing_pct = (ratio - 1.0) * 100.0;
             (spacing_pct, spacing_pct)
         }
@@ -111,9 +111,9 @@ pub fn calculate_grid_spacing_pct(
             // Arithmetic: constant dollar spacing
             // spacing = (upper - lower) / n
             // At lower prices, the % is higher; at higher prices, the % is lower
-            let spacing = (upper_price - lower_price) / n;
-            let min_pct = (spacing / upper_price) * 100.0; // Smallest % at highest price
-            let max_pct = (spacing / lower_price) * 100.0; // Largest % at lowest price
+            let spacing = (sell_price - buy_price) / n;
+            let min_pct = (spacing / sell_price) * 100.0; // Smallest % at highest price
+            let max_pct = (spacing / buy_price) * 100.0; // Largest % at lowest price
             (min_pct, max_pct)
         }
     }

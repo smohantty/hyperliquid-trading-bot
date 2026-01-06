@@ -24,15 +24,15 @@ enum StrategyState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GridZone {
     index: usize,
-    lower_price: f64,
-    upper_price: f64,
+    buy_price: f64,
+    sell_price: f64,
     size: f64,
     /// The side of the pending order for this zone
-    pending_side: OrderSide,
+    order_side: OrderSide,
     /// The operational mode: Long (buy to open) or Short (sell to open)
     mode: ZoneMode,
     entry_price: f64,
-    order_id: Option<Cloid>,
+    cloid: Option<Cloid>,
 
     // Performance Metrics
     roundtrip_count: u32,
@@ -150,10 +150,10 @@ impl PerpGridStrategy {
             };
 
             // Zone classification based on price line:
-            // - Zone ABOVE price: lower > initial_price (both bounds > price)
-            // - Zone BELOW price: upper < initial_price (both bounds < price)
-            // - Zone CONTAINS price: lower <= initial_price <= upper
-            let (pending_side, mode) = match self.config.grid_bias {
+            // - Zone ABOVE price: buy_price > initial_price (both bounds > price)
+            // - Zone BELOW price: sell_price < initial_price (both bounds < price)
+            // - Zone CONTAINS price: buy_price <= initial_price <= sell_price
+            let (order_side, mode) = match self.config.grid_bias {
                 GridBias::Long => {
                     // Long bias: acquire long positions above price, wait to open below
                     // Zone ABOVE price (lower > price): Have long → Sell to close
@@ -176,22 +176,22 @@ impl PerpGridStrategy {
                 }
             };
 
-            if mode == ZoneMode::Long && pending_side.is_sell() {
+            if mode == ZoneMode::Long && order_side.is_sell() {
                 total_position_required += size;
             }
-            if mode == ZoneMode::Short && pending_side.is_buy() {
+            if mode == ZoneMode::Short && order_side.is_buy() {
                 total_position_required -= size; // Short position needed (negative size)
             }
 
             self.zones.push(GridZone {
                 index: i,
-                lower_price: lower,
-                upper_price: upper,
+                buy_price: lower,
+                sell_price: upper,
                 size,
-                pending_side,
+                order_side,
                 mode,
                 entry_price: 0.0,
-                order_id: None,
+                cloid: None,
                 roundtrip_count: 0,
             });
         }
@@ -244,7 +244,7 @@ impl PerpGridStrategy {
                         let grid_price = self
                             .zones
                             .iter()
-                            .map(|z| z.lower_price)
+                            .map(|z| z.buy_price)
                             .filter(|&p| p < market_price)
                             .max_by(|a, b| a.partial_cmp(b).unwrap())
                             .unwrap_or(market_price);
@@ -255,7 +255,7 @@ impl PerpGridStrategy {
                         let grid_price = self
                             .zones
                             .iter()
-                            .map(|z| z.upper_price)
+                            .map(|z| z.sell_price)
                             .filter(|&p| p > market_price)
                             .min_by(|a, b| a.partial_cmp(b).unwrap())
                             .unwrap_or(market_price);
@@ -310,14 +310,14 @@ impl PerpGridStrategy {
         };
 
         for idx in 0..self.zones.len() {
-            if self.zones[idx].order_id.is_none() {
+            if self.zones[idx].cloid.is_none() {
                 let (side, price, size, reduce_only) = {
                     let zone = &self.zones[idx];
-                    let side = zone.pending_side;
+                    let side = zone.order_side;
                     let price = if side.is_buy() {
-                        zone.lower_price
+                        zone.buy_price
                     } else {
-                        zone.upper_price
+                        zone.sell_price
                     };
                     let reduce_only = match zone.mode {
                         ZoneMode::Short => side.is_buy(), // Buy closes short
@@ -327,7 +327,7 @@ impl PerpGridStrategy {
                 };
 
                 let cloid = ctx.generate_cloid();
-                self.zones[idx].order_id = Some(cloid);
+                self.zones[idx].cloid = Some(cloid);
                 self.active_orders.insert(cloid, idx);
 
                 info!(
@@ -354,8 +354,8 @@ impl PerpGridStrategy {
     }
 
     fn validate_fill_assertions(zone: &GridZone, fill: &OrderFill, zone_idx: usize) {
-        // 1. Validate fill.side matches zone's pending order side
-        let expected_side = zone.pending_side;
+        // 1. Validate fill.side matches zone's order_side
+        let expected_side = zone.order_side;
         if fill.side != expected_side {
             error!(
                 "[PERP_GRID] ASSERTION FAILED: Zone {} expected side {:?} but got {:?}",
@@ -371,7 +371,7 @@ impl PerpGridStrategy {
         // 2. Validate raw_dir matches expected exchange direction
         // Long mode: Buy = "Open Long", Sell = "Close Long"
         // Short mode: Sell = "Open Short", Buy = "Close Short"
-        let expected_dir = match (zone.pending_side, zone.mode) {
+        let expected_dir = match (zone.order_side, zone.mode) {
             (OrderSide::Buy, ZoneMode::Long) => "Open Long",
             (OrderSide::Sell, ZoneMode::Long) => "Close Long",
             (OrderSide::Sell, ZoneMode::Short) => "Open Short",
@@ -394,7 +394,7 @@ impl PerpGridStrategy {
         // 3. Validate reduce_only matches open/close expectation
         // Opening positions: reduce_only = false
         // Closing positions: reduce_only = true
-        let expected_reduce_only = match (zone.pending_side, zone.mode) {
+        let expected_reduce_only = match (zone.order_side, zone.mode) {
             (OrderSide::Buy, ZoneMode::Long) => false,   // Open Long
             (OrderSide::Sell, ZoneMode::Long) => true,   // Close Long
             (OrderSide::Sell, ZoneMode::Short) => false, // Open Short
@@ -459,7 +459,7 @@ impl PerpGridStrategy {
         );
 
         self.active_orders.insert(next_cloid, zone_idx);
-        zone.order_id = Some(next_cloid);
+        zone.cloid = Some(next_cloid);
 
         ctx.place_order(OrderRequest::Limit {
             symbol: self.config.symbol.clone(),
@@ -555,11 +555,11 @@ impl Strategy for PerpGridStrategy {
                     // Update Zones Entry Price
                     for zone in &mut self.zones {
                         // Long mode: We bought, now waiting to Sell (Close Long). Set entry.
-                        if zone.mode == ZoneMode::Long && zone.pending_side.is_sell() {
+                        if zone.mode == ZoneMode::Long && zone.order_side.is_sell() {
                             zone.entry_price = fill.price;
                         }
                         // Short mode: We sold, now waiting to Buy (Close Short). Set entry.
-                        if zone.mode == ZoneMode::Short && zone.pending_side.is_buy() {
+                        if zone.mode == ZoneMode::Short && zone.order_side.is_buy() {
                             zone.entry_price = fill.price;
                         }
                     }
@@ -577,13 +577,13 @@ impl Strategy for PerpGridStrategy {
 
                 let (next_px, next_side, pnl) = {
                     let zone = &mut self.zones[zone_idx];
-                    zone.order_id = None;
+                    zone.cloid = None;
 
                     // Validate fill assertions
                     Self::validate_fill_assertions(zone, fill, zone_idx);
 
                     // Determine if this is an opening or closing fill
-                    let is_opening = match (zone.pending_side, zone.mode) {
+                    let is_opening = match (zone.order_side, zone.mode) {
                         (OrderSide::Buy, ZoneMode::Long) => true,   // Open Long
                         (OrderSide::Sell, ZoneMode::Short) => true, // Open Short
                         _ => false,                                 // Closing
@@ -591,7 +591,7 @@ impl Strategy for PerpGridStrategy {
 
                     // Update Position Size and Average Entry Price
                     let old_pos = self.position_size;
-                    if zone.pending_side.is_buy() {
+                    if zone.order_side.is_buy() {
                         self.position_size += fill.size;
                     } else {
                         self.position_size -= fill.size;
@@ -607,42 +607,42 @@ impl Strategy for PerpGridStrategy {
                         self.avg_entry_price = 0.0;
                     }
 
-                    let (next_side, entry_px, pnl, next_px) = match (zone.pending_side, zone.mode) {
+                    let (next_side, entry_px, pnl, next_px) = match (zone.order_side, zone.mode) {
                         (OrderSide::Buy, ZoneMode::Long) => {
                             info!(
                                 "[PERP_GRID] Zone {} | BUY (Open Long) Filled @ {} | Size: {} | Next: SELL (Close) @ {}",
-                                zone_idx, fill.price, fill.size, zone.upper_price
+                                zone_idx, fill.price, fill.size, zone.sell_price
                             );
-                            (OrderSide::Sell, fill.price, None, zone.upper_price)
+                            (OrderSide::Sell, fill.price, None, zone.sell_price)
                         }
                         (OrderSide::Sell, ZoneMode::Long) => {
                             let pnl = (fill.price - zone.entry_price) * fill.size;
                             zone.roundtrip_count += 1;
                             info!(
                                 "[PERP_GRID] Zone {} | SELL (Close Long) Filled @ {} | PnL: {:.4} | Next: BUY (Open) @ {}",
-                                zone_idx, fill.price, pnl, zone.lower_price
+                                zone_idx, fill.price, pnl, zone.buy_price
                             );
-                            (OrderSide::Buy, 0.0, Some(pnl), zone.lower_price)
+                            (OrderSide::Buy, 0.0, Some(pnl), zone.buy_price)
                         }
                         (OrderSide::Sell, ZoneMode::Short) => {
                             info!(
                                 "[PERP_GRID] Zone {} | SELL (Open Short) Filled @ {} | Size: {} | Next: BUY (Close) @ {}",
-                                zone_idx, fill.price, fill.size, zone.lower_price
+                                zone_idx, fill.price, fill.size, zone.buy_price
                             );
-                            (OrderSide::Buy, fill.price, None, zone.lower_price)
+                            (OrderSide::Buy, fill.price, None, zone.buy_price)
                         }
                         (OrderSide::Buy, ZoneMode::Short) => {
                             let pnl = (zone.entry_price - fill.price) * fill.size;
                             zone.roundtrip_count += 1;
                             info!(
                                 "[PERP_GRID] Zone {} | BUY (Close Short) Filled @ {} | PnL: {:.4} | Next: SELL (Open) @ {}",
-                                zone_idx, fill.price, pnl, zone.upper_price
+                                zone_idx, fill.price, pnl, zone.sell_price
                             );
-                            (OrderSide::Sell, 0.0, Some(pnl), zone.upper_price)
+                            (OrderSide::Sell, 0.0, Some(pnl), zone.sell_price)
                         }
                     };
 
-                    zone.pending_side = next_side;
+                    zone.order_side = next_side;
                     zone.entry_price = entry_px;
                     (next_px, next_side, pnl)
                 };
@@ -738,17 +738,17 @@ impl Strategy for PerpGridStrategy {
             .map(|z| {
                 // Frontend will derive labels. We just need reduce_only for the struct.
                 let is_reduce_only = match z.mode {
-                    ZoneMode::Short => z.pending_side.is_buy(),
-                    ZoneMode::Long => z.pending_side.is_sell(),
+                    ZoneMode::Short => z.order_side.is_buy(),
+                    ZoneMode::Long => z.order_side.is_sell(),
                 };
 
                 ZoneInfo {
                     index: z.index,
-                    lower_price: z.lower_price,
-                    upper_price: z.upper_price,
+                    buy_price: z.buy_price,
+                    sell_price: z.sell_price,
                     size: z.size,
-                    pending_side: z.pending_side.to_string(),
-                    has_order: z.order_id.is_some(),
+                    order_side: z.order_side.to_string(),
+                    has_order: z.cloid.is_some(),
                     is_reduce_only,
                     entry_price: z.entry_price,
                     roundtrip_count: z.roundtrip_count,
@@ -839,10 +839,9 @@ mod tests {
         strategy.on_tick(99.0, &mut ctx).unwrap();
 
         assert_eq!(strategy.zones.len(), 2);
-        // Zone 0 [90-100]: lower=90, 99 < 90 = false → Buy (zone at/below price)
-        assert_eq!(strategy.zones[0].pending_side, OrderSide::Buy);
-        // Zone 1 [100-110]: lower=100, 99 < 100 = true → Sell (zone above price)
-        assert_eq!(strategy.zones[1].pending_side, OrderSide::Sell);
+        assert_eq!(strategy.zones[0].order_side, OrderSide::Buy);
+        // Zone 1 [100-110]: buy_price=100, 99 < 100 = true → Sell (zone above price)
+        assert_eq!(strategy.zones[1].order_side, OrderSide::Sell);
 
         match strategy.state {
             StrategyState::AcquiringAssets { target_size, .. } => {
@@ -1025,8 +1024,8 @@ mod tests {
         // Find Active Order for Zone 0 (Buy @ 80)
         let zone0_idx = 0;
         let zone0 = &strategy.zones[zone0_idx];
-        assert_eq!(zone0.pending_side, OrderSide::Buy);
-        let order_id = zone0.order_id.expect("Zone 0 should have order");
+        assert_eq!(zone0.order_side, OrderSide::Buy);
+        let cloid = zone0.cloid.expect("Zone 0 should have order");
 
         let size = zone0.size;
 
@@ -1038,7 +1037,7 @@ mod tests {
                     size,
                     price: 80.0,
                     fee: 0.0,
-                    cloid: Some(order_id),
+                    cloid: Some(cloid),
                     reduce_only: None,
                     raw_dir: None,
                 },
@@ -1057,8 +1056,8 @@ mod tests {
 
         // Zone 0 flips to WaitingSell (Close Long). placing Sell @ 100.
         let zone0 = &strategy.zones[zone0_idx];
-        assert_eq!(zone0.pending_side, OrderSide::Sell);
-        let sell_oid = zone0.order_id.expect("Zone 0 should have new sell order");
+        assert_eq!(zone0.order_side, OrderSide::Sell);
+        let sell_oid = zone0.cloid.expect("Zone 0 should have new sell order");
 
         // Simulate Fill: Sell @ 100
         strategy
@@ -1129,13 +1128,13 @@ mod tests {
         let buy_zone_idx = strategy
             .zones
             .iter()
-            .position(|z| z.pending_side.is_buy())
+            .position(|z| z.order_side.is_buy())
             .expect("Should have a WaitingBuy zone");
 
         let zone = &strategy.zones[buy_zone_idx];
-        let buy_cloid = zone.order_id.expect("Zone should have order");
+        let buy_cloid = zone.cloid.expect("Zone should have order");
         let zone_size = zone.size;
-        let buy_price = zone.lower_price; // Buy at lower bound
+        let buy_price = zone.buy_price; // Buy at buy_price
 
         // ============================================================
         // STEP 1: Open Long (Buy) - reduce_only = false
@@ -1161,12 +1160,12 @@ mod tests {
         // Verify: Fees accumulated
         assert!((strategy.total_fees - 0.75).abs() < 0.01); // 0.5 + 0.25
                                                             // Verify: Zone flipped to WaitingSell
-        assert_eq!(strategy.zones[buy_zone_idx].pending_side, OrderSide::Sell);
+        assert_eq!(strategy.zones[buy_zone_idx].order_side, OrderSide::Sell);
         // Verify: Entry price recorded
         assert!((strategy.zones[buy_zone_idx].entry_price - buy_price).abs() < 0.01);
         // Verify: Counter order placed (Sell at upper price)
         let sell_cloid = strategy.zones[buy_zone_idx]
-            .order_id
+            .cloid
             .expect("Should have new sell order");
 
         // Check the counter order in queue
@@ -1180,8 +1179,8 @@ mod tests {
             } => {
                 assert!(side.is_sell(), "Counter order should be Sell");
                 assert!(
-                    (*price - strategy.zones[buy_zone_idx].upper_price).abs() < 0.01,
-                    "Sell should be at upper_price"
+                    (*price - strategy.zones[buy_zone_idx].sell_price).abs() < 0.01,
+                    "Sell should be at sell_price"
                 );
                 assert!(*reduce_only, "Close Long should be reduce_only");
             }
@@ -1193,7 +1192,7 @@ mod tests {
         // ============================================================
         // STEP 2: Close Long (Sell) - reduce_only = true, generates PnL
         // ============================================================
-        let sell_price = strategy.zones[buy_zone_idx].upper_price; // Sell at upper bound
+        let sell_price = strategy.zones[buy_zone_idx].sell_price; // Sell at sell_price
         let sell_fee = 0.30;
         let expected_pnl = (sell_price - buy_price) * zone_size; // Profit!
 
@@ -1232,7 +1231,7 @@ mod tests {
         );
 
         // Verify: Zone flipped back to WaitingBuy (ping-pong!)
-        assert_eq!(strategy.zones[buy_zone_idx].pending_side, OrderSide::Buy);
+        assert_eq!(strategy.zones[buy_zone_idx].order_side, OrderSide::Buy);
 
         // Verify: Entry price reset
         assert_eq!(strategy.zones[buy_zone_idx].entry_price, 0.0);
@@ -1248,8 +1247,8 @@ mod tests {
             } => {
                 assert!(side.is_buy(), "Counter order should be Buy");
                 assert!(
-                    (*price - strategy.zones[buy_zone_idx].lower_price).abs() < 0.01,
-                    "Buy should be at lower_price"
+                    (*price - strategy.zones[buy_zone_idx].buy_price).abs() < 0.01,
+                    "Buy should be at buy_price"
                 );
                 assert!(!*reduce_only, "Open Long should NOT be reduce_only");
             }
@@ -1301,14 +1300,14 @@ mod tests {
         let close_zone_idx = strategy
             .zones
             .iter()
-            .position(|z| z.pending_side.is_buy() && z.mode == ZoneMode::Short)
+            .position(|z| z.order_side.is_buy() && z.mode == ZoneMode::Short)
             .expect("Should have a WaitingBuy zone for short bias");
 
         let zone = &strategy.zones[close_zone_idx];
-        let cloid = zone.order_id.expect("Zone should have order");
+        let cloid = zone.cloid.expect("Zone should have order");
         let zone_size = zone.size;
         let entry_price = zone.entry_price; // Entry from acquisition
-        let close_price = zone.lower_price; // Buy at lower to close short
+        let close_price = zone.buy_price; // Buy at buy_price to close short
 
         // Close Short (Buy) - reduce_only = true, generates PnL
         let expected_pnl = (entry_price - close_price) * zone_size; // Profit when close < entry
@@ -1337,7 +1336,7 @@ mod tests {
         );
 
         // Verify zone flipped to WaitingSell (ping-pong: now open short again)
-        assert_eq!(strategy.zones[close_zone_idx].pending_side, OrderSide::Sell);
+        assert_eq!(strategy.zones[close_zone_idx].order_side, OrderSide::Sell);
 
         // Verify counter order is Sell (Open Short)
         let counter_order = ctx.order_queue.last().expect("Should have order");
@@ -1417,7 +1416,7 @@ mod tests {
         for zone in &strategy.zones {
             println!(
                 "  Zone {} [{}-{}]: pending={:?}, mode={:?}",
-                zone.index, zone.lower_price, zone.upper_price, zone.pending_side, zone.mode
+                zone.index, zone.buy_price, zone.sell_price, zone.order_side, zone.mode
             );
         }
 
@@ -1426,22 +1425,19 @@ mod tests {
         // Per user's logic: zone is NOT above (lower > price fails: 105 > 105 = false)
         // So it should be Buy (waiting to open long), not Sell
         let zone_at_boundary = &strategy.zones[3]; // [105-110]
-        assert_eq!(zone_at_boundary.lower_price, 105.0);
-        assert_eq!(zone_at_boundary.upper_price, 110.0);
+        assert_eq!(zone_at_boundary.buy_price, 105.0);
+        assert_eq!(zone_at_boundary.sell_price, 110.0);
 
         // BUG: Current code classifies this as Sell because 105 < 110
         // EXPECTED: Should be Buy because 105 is NOT < 105 (lower)
         println!("\n🔍 Zone [105-110] at price boundary:");
-        println!(
-            "  Current: pending_side = {:?}",
-            zone_at_boundary.pending_side
-        );
-        println!("  Expected: pending_side = Buy (zone at boundary, not above)");
+        println!("  Current: order_side = {:?}", zone_at_boundary.order_side);
+        println!("  Expected: order_side = Buy (zone at boundary, not above)");
 
         // This assertion will FAIL with current buggy code,
         // demonstrating the bug:
         assert_eq!(
-            zone_at_boundary.pending_side,
+            zone_at_boundary.order_side,
             OrderSide::Buy,
             "Zone [105-110] at price boundary should be Buy, not Sell"
         );
@@ -1498,7 +1494,7 @@ mod tests {
         for zone in &strategy.zones {
             println!(
                 "  Zone {} [{}-{}]: pending={:?}, mode={:?}",
-                zone.index, zone.lower_price, zone.upper_price, zone.pending_side, zone.mode
+                zone.index, zone.buy_price, zone.sell_price, zone.order_side, zone.mode
             );
         }
 
@@ -1507,22 +1503,19 @@ mod tests {
         // Per user's logic: zone is NOT below (upper < price fails: 95 < 95 = false)
         // So it should be Sell (waiting to open short), not Buy
         let zone_at_boundary = &strategy.zones[0]; // [90-95]
-        assert_eq!(zone_at_boundary.lower_price, 90.0);
-        assert_eq!(zone_at_boundary.upper_price, 95.0);
+        assert_eq!(zone_at_boundary.buy_price, 90.0);
+        assert_eq!(zone_at_boundary.sell_price, 95.0);
 
         // BUG: Current code classifies this as Buy because 95 > 90
         // EXPECTED: Should be Sell because 95 is NOT > 95 (upper)
         println!("\n🔍 Zone [90-95] at price boundary:");
-        println!(
-            "  Current: pending_side = {:?}",
-            zone_at_boundary.pending_side
-        );
-        println!("  Expected: pending_side = Sell (zone at boundary, not below)");
+        println!("  Current: order_side = {:?}", zone_at_boundary.order_side);
+        println!("  Expected: order_side = Sell (zone at boundary, not below)");
 
         // This assertion will FAIL with current buggy code,
         // demonstrating the bug:
         assert_eq!(
-            zone_at_boundary.pending_side,
+            zone_at_boundary.order_side,
             OrderSide::Sell,
             "Zone [90-95] at price boundary should be Sell, not Buy"
         );

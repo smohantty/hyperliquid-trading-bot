@@ -778,8 +778,8 @@ mod tests {
         grid_bias: GridBias,
         trigger_price: Option<f64>,
         last_price: f64,
-        lower_price: f64,
-        upper_price: f64,
+        range_low: f64,
+        range_high: f64,
     ) -> (PerpGridStrategy, StrategyContext) {
         let mut markets = HashMap::new();
         markets.insert(
@@ -797,8 +797,8 @@ mod tests {
             symbol: symbol.to_string(),
             leverage: 10,
             is_isolated: true,
-            upper_price,
-            lower_price,
+            upper_price: range_high,
+            lower_price: range_low,
             grid_type: GridType::Arithmetic,
             grid_count: 3,
             total_investment: 1000.0,

@@ -48,31 +48,31 @@ pub fn check_trigger(current_price: f64, trigger_price: f64, start_price: f64) -
 /// Calculates the grid levels (prices) based on the configuration.
 ///
 /// * `grid_type` - Arithmetic or Geometric.
-/// * `lower_price` - The bottom of the grid range.
-/// * `upper_price` - The top of the grid range.
+/// * `range_low` - The bottom of the grid range.
+/// * `range_high` - The top of the grid range.
 /// * `grid_count` - The number of levels to generate.
 ///
 /// Returns a `Vec<f64>` containing the calculated prices.
 pub fn calculate_grid_prices(
     grid_type: GridType,
-    buy_price: f64,
-    sell_price: f64,
+    range_low: f64,
+    range_high: f64,
     grid_count: u32,
 ) -> Vec<f64> {
     let mut prices = Vec::with_capacity(grid_count as usize);
 
     match grid_type {
         GridType::Arithmetic => {
-            let step = (sell_price - buy_price) / (grid_count as f64 - 1.0);
+            let step = (range_high - range_low) / (grid_count as f64 - 1.0);
             for i in 0..grid_count {
-                let price = buy_price + (i as f64 * step);
+                let price = range_low + (i as f64 * step);
                 prices.push(price);
             }
         }
         GridType::Geometric => {
-            let ratio = (sell_price / buy_price).powf(1.0 / (grid_count as f64 - 1.0));
+            let ratio = (range_high / range_low).powf(1.0 / (grid_count as f64 - 1.0));
             for i in 0..grid_count {
-                let price = buy_price * ratio.powi(i as i32);
+                let price = range_low * ratio.powi(i as i32);
                 prices.push(price);
             }
         }
@@ -83,8 +83,8 @@ pub fn calculate_grid_prices(
 /// Calculate grid spacing as percentage (min, max).
 ///
 /// * `grid_type` - Arithmetic or Geometric.
-/// * `lower_price` - The bottom of the grid range.
-/// * `upper_price` - The top of the grid range.
+/// * `range_low` - The bottom of the grid range.
+/// * `range_high` - The top of the grid range.
 /// * `grid_count` - The number of grid zones.
 ///
 /// Returns `(min%, max%)`:
@@ -92,8 +92,8 @@ pub fn calculate_grid_prices(
 /// - For arithmetic: min is at highest price, max is at lowest price.
 pub fn calculate_grid_spacing_pct(
     grid_type: &GridType,
-    buy_price: f64,
-    sell_price: f64,
+    range_low: f64,
+    range_high: f64,
     grid_count: u32,
 ) -> (f64, f64) {
     let n = grid_count as f64;
@@ -103,7 +103,7 @@ pub fn calculate_grid_spacing_pct(
             // Geometric: constant ratio between levels
             // ratio = (upper/lower)^(1/n)
             // spacing_pct = (ratio - 1) * 100
-            let ratio = (sell_price / buy_price).powf(1.0 / n);
+            let ratio = (range_high / range_low).powf(1.0 / n);
             let spacing_pct = (ratio - 1.0) * 100.0;
             (spacing_pct, spacing_pct)
         }
@@ -111,9 +111,9 @@ pub fn calculate_grid_spacing_pct(
             // Arithmetic: constant dollar spacing
             // spacing = (upper - lower) / n
             // At lower prices, the % is higher; at higher prices, the % is lower
-            let spacing = (sell_price - buy_price) / n;
-            let min_pct = (spacing / sell_price) * 100.0; // Smallest % at highest price
-            let max_pct = (spacing / buy_price) * 100.0; // Largest % at lowest price
+            let spacing = (range_high - range_low) / n;
+            let min_pct = (spacing / range_high) * 100.0; // Smallest % at highest price
+            let max_pct = (spacing / range_low) * 100.0; // Largest % at lowest price
             (min_pct, max_pct)
         }
     }

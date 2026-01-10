@@ -92,7 +92,7 @@ pub struct PerpGridSummary {
     pub avg_entry_price: f64,
 
     // PnL
-    pub realized_pnl: f64,
+    pub matched_profit: f64,
     pub unrealized_pnl: f64,
     pub total_fees: f64,
 

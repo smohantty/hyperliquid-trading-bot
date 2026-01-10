@@ -54,9 +54,9 @@ pub struct PerpGridStrategy {
     start_time: Instant,
 
     // Performance Metrics
-    realized_pnl: f64,
+    matched_profit: f64,
     total_fees: f64,
-    unrealized_pnl: f64,
+    initial_equity: f64,
 
     // Position Tracking
     position_size: f64,
@@ -74,9 +74,9 @@ impl PerpGridStrategy {
             initial_entry_price: None,
             trigger_reference_price: None,
             start_time: Instant::now(),
-            realized_pnl: 0.0,
+            matched_profit: 0.0,
             total_fees: 0.0,
-            unrealized_pnl: 0.0,
+            initial_equity: 0.0,
             position_size: 0.0,
             avg_entry_price: 0.0,
         }
@@ -136,6 +136,9 @@ impl PerpGridStrategy {
             error!("[PERP_GRID] {}", msg);
             return Err(anyhow!(msg));
         }
+
+        // Set initial equity for PnL tracking
+        self.initial_equity = wallet_balance;
 
         self.zones.clear();
         let mut total_position_required = 0.0;
@@ -651,8 +654,9 @@ impl Strategy for PerpGridStrategy {
                 };
 
                 // Accumulate realized PnL from closing fills
+                // Accumulate realized PnL from closing fills
                 if let Some(pnl) = pnl {
-                    self.realized_pnl += pnl;
+                    self.matched_profit += pnl;
                 }
 
                 self.place_counter_order(zone_idx, next_px, next_side, ctx)?;
@@ -717,7 +721,7 @@ impl Strategy for PerpGridStrategy {
             position_size: self.position_size,
             position_side: position_side.to_string(),
             avg_entry_price: self.avg_entry_price,
-            realized_pnl: self.realized_pnl,
+            matched_profit: self.matched_profit,
             unrealized_pnl,
             total_fees: self.total_fees,
             leverage: self.config.leverage,
@@ -1095,7 +1099,7 @@ mod tests {
         strategy.on_tick(95.0, &mut ctx).unwrap();
 
         // Verify initial state
-        assert_eq!(strategy.realized_pnl, 0.0);
+        assert_eq!(strategy.matched_profit, 0.0);
         assert_eq!(strategy.total_fees, 0.0);
         assert_eq!(strategy.position_size, 0.0);
 
@@ -1159,7 +1163,7 @@ mod tests {
             .unwrap();
 
         // Verify: No PnL on opening fill
-        assert_eq!(strategy.realized_pnl, 0.0);
+        assert_eq!(strategy.matched_profit, 0.0);
         // Verify: Fees accumulated
         assert!((strategy.total_fees - 0.75).abs() < 0.01); // 0.5 + 0.25
                                                             // Verify: Zone flipped to WaitingSell
@@ -1218,10 +1222,10 @@ mod tests {
 
         // Verify: PnL calculated correctly
         assert!(
-            (strategy.realized_pnl - expected_pnl).abs() < 0.01,
+            (strategy.matched_profit - expected_pnl).abs() < 0.01,
             "Expected PnL {:.4}, got {:.4}",
             expected_pnl,
-            strategy.realized_pnl
+            strategy.matched_profit
         );
 
         // Verify: Fees accumulated
@@ -1260,7 +1264,7 @@ mod tests {
 
         println!(
             "✅ Ping-Pong Complete! PnL: {:.4}, Total Fees: {:.4}, Roundtrips: {}",
-            strategy.realized_pnl,
+            strategy.matched_profit,
             strategy.total_fees,
             strategy.zones[buy_zone_idx].roundtrip_count
         );
@@ -1332,10 +1336,10 @@ mod tests {
 
         // Verify PnL for short: profit = (entry - close) * size
         assert!(
-            (strategy.realized_pnl - expected_pnl).abs() < 0.01,
+            (strategy.matched_profit - expected_pnl).abs() < 0.01,
             "Short PnL: expected {:.4}, got {:.4}",
             expected_pnl,
-            strategy.realized_pnl
+            strategy.matched_profit
         );
 
         // Verify zone flipped to WaitingSell (ping-pong: now open short again)
@@ -1355,7 +1359,7 @@ mod tests {
 
         println!(
             "✅ Short Bias Ping-Pong Complete! PnL: {:.4}",
-            strategy.realized_pnl
+            strategy.matched_profit
         );
     }
 

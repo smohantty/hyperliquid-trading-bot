@@ -501,6 +501,11 @@ impl SpotGridStrategy {
             return;
         }
 
+        // Skip if exceeded max retries
+        if zone.retry_count >= crate::constants::MAX_ORDER_RETRIES {
+            return;
+        }
+
         let side = zone.order_side;
         let price = if side.is_buy() {
             zone.buy_price
@@ -587,6 +592,7 @@ impl SpotGridStrategy {
 
         // Update Strategy Fees
         self.total_fees += fill.fee;
+        self.zones[zone_idx].retry_count = 0; // Reset retries on fill
 
         // Buy Fill: Increase base inventory, decrease quote inventory
         self.inventory_base += fill.size;
@@ -617,6 +623,7 @@ impl SpotGridStrategy {
 
         // Update Zone Metrics
         self.zones[zone_idx].roundtrip_count += 1;
+        self.zones[zone_idx].retry_count = 0; // Reset retries on fill
 
         // Update Strategy Metrics
         self.matched_profit += pnl;
@@ -790,15 +797,19 @@ impl Strategy for SpotGridStrategy {
     }
 
     fn on_order_failed(&mut self, cloid: Cloid, _ctx: &mut StrategyContext) -> Result<()> {
-        log::warn!("[SPOT_GRID] Order failed callback for cloid: {}", cloid);
         if let Some(zone_idx) = self.active_orders.remove(&cloid) {
             if let Some(zone) = self.zones.get_mut(zone_idx) {
                 if zone.cloid == Some(cloid) {
-                    log::info!(
-                        "[SPOT_GRID] Clearing failed order state for Zone {}",
-                        zone_idx
-                    );
                     zone.cloid = None;
+                    zone.retry_count += 1;
+
+                    log::warn!(
+                        "[ORDER_FAILED] [SPOT_GRID] GRID_ZONE_{} cloid: {} Retry count: {}/{}",
+                        zone_idx,
+                        cloid,
+                        zone.retry_count,
+                        crate::constants::MAX_ORDER_RETRIES
+                    );
                 }
             }
         }

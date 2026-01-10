@@ -307,56 +307,82 @@ impl PerpGridStrategy {
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) -> Result<()> {
-        let market_info = match ctx.market_info(&self.config.symbol) {
-            Some(i) => i.clone(),
-            None => {
-                error!("[PERP_GRID] No market info for {}", self.config.symbol);
-                return Err(anyhow!("No market info for {}", self.config.symbol));
-            }
-        };
+        // Collect zone indices that need orders to avoid borrowing issues
+        let zones_needing_orders: Vec<usize> = (0..self.zones.len())
+            .filter(|&i| self.zones[i].cloid.is_none())
+            .collect();
 
-        for idx in 0..self.zones.len() {
-            if self.zones[idx].cloid.is_none() {
-                let (side, price, size, reduce_only) = {
-                    let zone = &self.zones[idx];
-                    let side = zone.order_side;
-                    let price = if side.is_buy() {
-                        zone.buy_price
-                    } else {
-                        zone.sell_price
-                    };
-                    let reduce_only = match zone.mode {
-                        ZoneMode::Short => side.is_buy(), // Buy closes short
-                        ZoneMode::Long => side.is_sell(), // Sell closes long
-                    };
-                    (side, price, zone.size, reduce_only)
-                };
-
-                let cloid = ctx.generate_cloid();
-                self.zones[idx].cloid = Some(cloid);
-                self.active_orders.insert(cloid, idx);
-
-                info!(
-                    "[ORDER_REQUEST] [PERP_GRID] GRID_LVL_{}: LIMIT {} {} {} @ {}{}",
-                    idx,
-                    side,
-                    size,
-                    self.config.symbol,
-                    price,
-                    if reduce_only { " (RO)" } else { "" }
-                );
-
-                ctx.place_order(OrderRequest::Limit {
-                    symbol: self.config.symbol.clone(),
-                    side,
-                    price: market_info.round_price(price),
-                    sz: market_info.round_size(size),
-                    reduce_only,
-                    cloid: Some(cloid),
-                });
-            }
+        // Place orders for each zone
+        for zone_idx in zones_needing_orders {
+            self.place_zone_order(zone_idx, ctx);
         }
         Ok(())
+    }
+
+    /// Place an order for a zone based on its current state.
+    /// Python equivalent: place_zone_order
+    fn place_zone_order(&mut self, zone_idx: usize, ctx: &mut StrategyContext) {
+        let zone = &self.zones[zone_idx];
+
+        // Skip if already has an order
+        if zone.cloid.is_some() {
+            return;
+        }
+
+        // Skip if exceeded max retries
+        if zone.retry_count >= crate::constants::MAX_ORDER_RETRIES {
+            return;
+        }
+
+        let side = zone.order_side;
+        let price = if side.is_buy() {
+            zone.buy_price
+        } else {
+            zone.sell_price
+        };
+
+        let reduce_only = match zone.mode {
+            ZoneMode::Short => side.is_buy(), // Buy closes short
+            ZoneMode::Long => side.is_sell(), // Sell closes long
+        };
+
+        let size = zone.size;
+        let cloid = ctx.generate_cloid();
+
+        // Need market info for rounding
+        let (rounded_price, rounded_size) =
+            if let Some(market_info) = ctx.market_info(&self.config.symbol) {
+                (market_info.round_price(price), market_info.round_size(size))
+            } else {
+                error!(
+                    "[PERP_GRID] No market info for {} in place_zone_order",
+                    self.config.symbol
+                );
+                return;
+            };
+
+        // Update zone state
+        self.zones[zone_idx].cloid = Some(cloid);
+        self.active_orders.insert(cloid, zone_idx);
+
+        info!(
+            "[ORDER_REQUEST] [PERP_GRID] GRID_ZONE_{}: LIMIT {} {} {} @ {}{}",
+            zone_idx,
+            side,
+            rounded_size,
+            self.config.symbol,
+            rounded_price,
+            if reduce_only { " (RO)" } else { "" }
+        );
+
+        ctx.place_order(OrderRequest::Limit {
+            symbol: self.config.symbol.clone(),
+            side,
+            price: rounded_price,
+            sz: rounded_size,
+            reduce_only,
+            cloid: Some(cloid),
+        });
     }
 
     fn validate_fill_assertions(zone: &GridZone, fill: &OrderFill, zone_idx: usize) {

@@ -61,6 +61,13 @@ pub struct SpotGridStrategy {
     // Position Tracking
     inventory_base: f64,
     inventory_quote: f64,
+
+    // Acquisition State Tracking (aligned with Python)
+    acquisition_target_size: f64,
+    required_base: f64,
+    required_quote: f64,
+    initial_avail_base: f64,
+    initial_avail_quote: f64,
 }
 
 impl SpotGridStrategy {
@@ -93,6 +100,12 @@ impl SpotGridStrategy {
             initial_equity: 0.0,
             inventory_base: 0.0,
             inventory_quote: 0.0,
+            // Acquisition state tracking
+            acquisition_target_size: 0.0,
+            required_base: 0.0,
+            required_quote: 0.0,
+            initial_avail_base: 0.0,
+            initial_avail_quote: 0.0,
         }
     }
 
@@ -109,6 +122,10 @@ impl SpotGridStrategy {
         // 1. Generate Zones
         let (total_base_required, total_quote_required) = self.calculate_grid_plan(&market_info)?;
 
+        // Store required amounts in struct for debugging/state inspection
+        self.required_base = total_base_required;
+        self.required_quote = total_quote_required;
+
         info!(
             "[SPOT_GRID] INITIALIZATION: Asset Required: {} ( {} ), {} ( {} )",
             self.base_asset, total_base_required, self.quote_asset, total_quote_required
@@ -119,6 +136,10 @@ impl SpotGridStrategy {
         let available_quote = ctx.get_spot_available(&self.quote_asset);
         self.inventory_base = available_base;
         self.inventory_quote = available_quote;
+
+        // Store initial available amounts for acquisition tracking
+        self.initial_avail_base = available_base;
+        self.initial_avail_quote = available_quote;
 
         // Calculate and store initial equity
         let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);

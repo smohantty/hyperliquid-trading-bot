@@ -34,6 +34,8 @@ struct GridZone {
 
     // Performance Metrics
     roundtrip_count: u32,
+    /// Track order failures for retry logic
+    retry_count: u32,
 }
 
 #[allow(dead_code)]
@@ -57,7 +59,7 @@ pub struct SpotGridStrategy {
     unrealized_pnl: f64,
 
     // Position Tracking
-    position_size: f64,
+    inventory_base: f64,
     avg_entry_price: f64,
 }
 
@@ -89,7 +91,7 @@ impl SpotGridStrategy {
             realized_pnl: 0.0,
             total_fees: 0.0,
             unrealized_pnl: 0.0,
-            position_size: 0.0,
+            inventory_base: 0.0,
             avg_entry_price: 0.0,
         }
     }
@@ -105,8 +107,7 @@ impl SpotGridStrategy {
         };
 
         // 1. Generate Zones
-        let (total_base_required, total_quote_required) =
-            self.generate_grid_levels(&market_info)?;
+        let (total_base_required, total_quote_required) = self.calculate_grid_plan(&market_info)?;
 
         info!(
             "[SPOT_GRID] INITIALIZATION: Asset Required: {} ( {} ), {} ( {} )",
@@ -117,15 +118,15 @@ impl SpotGridStrategy {
         // This is critical for accurate tracking once the grid starts
         let available_base = ctx.get_spot_available(&self.base_asset);
         let available_quote = ctx.get_spot_available(&self.quote_asset);
-        self.position_size = available_base;
-        if self.position_size > 0.0 {
+        self.inventory_base = available_base;
+        if self.inventory_base > 0.0 {
             // Mark to market: Assume existing inventory has a cost basis of the starting price
             // This ensures PnL tracking starts from zero relative to start time
             let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
             self.avg_entry_price = initial_price;
             info!(
                 "[SPOT_GRID] Initial inventory detected: {} {}. Setting avg_entry_price to {}",
-                self.position_size, self.base_asset, self.avg_entry_price
+                self.inventory_base, self.base_asset, self.avg_entry_price
             );
         }
 
@@ -150,19 +151,41 @@ impl SpotGridStrategy {
         self.check_initial_acquisition(ctx, &market_info, total_base_required, total_quote_required)
     }
 
-    fn generate_grid_levels(&mut self, market_info: &MarketInfo) -> Result<(f64, f64)> {
-        // Generate Levels
-        let prices: Vec<f64> = common::calculate_grid_prices(
-            self.config.grid_type.clone(),
-            self.config.lower_price,
-            self.config.upper_price,
-            self.config.grid_count,
-        )
-        .into_iter()
-        .map(|p| market_info.round_price(p))
-        .collect();
+    /// Calculate grid plan - generates zones based on grid_count OR spread_bips
+    fn calculate_grid_plan(&mut self, market_info: &MarketInfo) -> Result<(f64, f64)> {
+        // Generate price levels based on config
+        let prices: Vec<f64> = if let Some(spread_bips) = self.config.spread_bips {
+            // Use spread_bips to calculate levels
+            common::calculate_grid_prices_by_spread(
+                self.config.lower_price,
+                self.config.upper_price,
+                spread_bips,
+            )
+            .into_iter()
+            .map(|p| market_info.round_price(p))
+            .collect()
+        } else if let Some(count) = self.config.grid_count {
+            // Use grid_count
+            common::calculate_grid_prices(
+                self.config.grid_type.clone(),
+                self.config.lower_price,
+                self.config.upper_price,
+                count,
+            )
+            .into_iter()
+            .map(|p| market_info.round_price(p))
+            .collect()
+        } else {
+            return Err(anyhow!(
+                "Either grid_count or spread_bips must be specified"
+            ));
+        };
 
-        let num_zones = self.config.grid_count as usize - 1;
+        if prices.len() < 2 {
+            return Err(anyhow!("Not enough price levels generated"));
+        }
+
+        let num_zones = prices.len() - 1;
         let quote_per_zone = self.config.total_investment / num_zones as f64;
 
         if quote_per_zone < MIN_NOTIONAL_VALUE {
@@ -192,9 +215,9 @@ impl SpotGridStrategy {
             // Zone ABOVE price line (buy_price > price): We acquired base at initial_price -> Sell at sell_price
             // Zone AT or BELOW price line: We have quote, waiting to buy at buy_price
             let order_side = if lower > initial_price {
-                OrderSide::Sell // Zone above price line → sell at upper, then ping-pong
+                OrderSide::Sell // Zone above price line -> sell at upper, then ping-pong
             } else {
-                OrderSide::Buy // Zone at/below price line → buy at lower, then ping-pong
+                OrderSide::Buy // Zone at/below price line -> buy at lower, then ping-pong
             };
 
             if order_side.is_sell() {
@@ -216,8 +239,11 @@ impl SpotGridStrategy {
                 },
                 cloid: None,
                 roundtrip_count: 0,
+                retry_count: 0,
             });
         }
+
+        info!("[SPOT_GRID] Grid Plan: {} zones generated", num_zones);
 
         // Normalize total requirement to exchange precision
         Ok((
@@ -441,16 +467,16 @@ impl SpotGridStrategy {
 
         // Update Inventory
         if fill.side.is_buy() {
-            let new_position = self.position_size + fill.size;
+            let new_position = self.inventory_base + fill.size;
             if new_position > 0.0 {
-                self.avg_entry_price = (self.avg_entry_price * self.position_size
+                self.avg_entry_price = (self.avg_entry_price * self.inventory_base
                     + fill.price * fill.size)
                     / new_position;
             }
-            self.position_size = new_position;
+            self.inventory_base = new_position;
         } else {
-            self.position_size = (self.position_size - fill.size).max(0.0);
-            if self.position_size < 0.0001 {
+            self.inventory_base = (self.inventory_base - fill.size).max(0.0);
+            if self.inventory_base < 0.0001 {
                 self.avg_entry_price = 0.0;
             }
             // Avg entry price remains same on sell until completely closed
@@ -487,13 +513,14 @@ impl SpotGridStrategy {
         self.total_fees += fill.fee;
 
         // Buy Fill: Increase Inventory & Update Avg Entry Price
-        let new_position = self.position_size + fill.size;
+        let new_position = self.inventory_base + fill.size;
         if new_position > 0.0 {
             // Weighted Average Cost Basis
-            self.avg_entry_price =
-                (self.avg_entry_price * self.position_size + fill.price * fill.size) / new_position;
+            self.avg_entry_price = (self.avg_entry_price * self.inventory_base
+                + fill.price * fill.size)
+                / new_position;
         }
-        self.position_size = new_position;
+        self.inventory_base = new_position;
 
         // Update zone: now waiting to sell
         self.zones[zone_idx].order_side = OrderSide::Sell;
@@ -526,8 +553,8 @@ impl SpotGridStrategy {
         self.total_fees += fill.fee;
 
         // Sell Fill: Decrease Inventory
-        self.position_size = (self.position_size - fill.size).max(0.0);
-        if self.position_size < 0.0001 {
+        self.inventory_base = (self.inventory_base - fill.size).max(0.0);
+        if self.inventory_base < 0.0001 {
             self.avg_entry_price = 0.0;
         }
         // Avg Entry Price remains unchanged on partial reduction (FIFO/WAC standard)
@@ -720,8 +747,8 @@ impl Strategy for SpotGridStrategy {
             .unwrap_or(0.0);
 
         // Calculate approx unrealized pnl for spot inventory
-        let unrealized_pnl = if self.position_size > 0.0 && self.avg_entry_price > 0.0 {
-            (current_price - self.avg_entry_price) * self.position_size
+        let unrealized_pnl = if self.inventory_base > 0.0 && self.avg_entry_price > 0.0 {
+            (current_price - self.avg_entry_price) * self.inventory_base
         } else {
             0.0
         };
@@ -730,11 +757,13 @@ impl Strategy for SpotGridStrategy {
         let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
 
         // Calculate grid spacing percentage
+        // Use zones.len() + 1 as effective grid_count (zones are between grid levels)
+        let grid_count = (self.zones.len() + 1) as u32;
         let grid_spacing_pct = common::calculate_grid_spacing_pct(
             &self.config.grid_type,
             self.config.lower_price,
             self.config.upper_price,
-            self.config.grid_count,
+            grid_count,
         );
 
         // Calculate uptime
@@ -744,7 +773,7 @@ impl Strategy for SpotGridStrategy {
             symbol: self.config.symbol.clone(),
             state: format!("{:?}", self.state),
             uptime,
-            position_size: self.position_size,
+            position_size: self.inventory_base,
             avg_entry_price: self.avg_entry_price,
             realized_pnl: self.realized_pnl,
             unrealized_pnl,
@@ -809,7 +838,8 @@ mod tests {
             upper_price: 110.0,
             lower_price: 90.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 5,
+            grid_count: Some(5),
+            spread_bips: None,
             total_investment: 1000.0,
             trigger_price,
         };
@@ -1033,7 +1063,7 @@ mod tests {
         let (mut strategy, mut ctx) = create_test_setup(None, 0.0, 2000.0, 100.0);
 
         // 1. Init
-        assert_eq!(strategy.position_size, 0.0);
+        assert_eq!(strategy.inventory_base, 0.0);
         assert_eq!(strategy.avg_entry_price, 0.0);
         strategy.on_tick(100.0, &mut ctx).unwrap();
 
@@ -1066,7 +1096,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(strategy.position_size, 10.0);
+        assert_eq!(strategy.inventory_base, 10.0);
         assert_eq!(strategy.avg_entry_price, 100.0);
 
         // 3. Buy 10 @ 110 (Artificial fill to test logic)
@@ -1092,7 +1122,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(strategy.position_size, 20.0);
+        assert_eq!(strategy.inventory_base, 20.0);
         assert_eq!(strategy.avg_entry_price, 105.0); // (10*100 + 10*110) / 20 = 105
 
         // 4. Sell 5 @ 120
@@ -1117,7 +1147,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(strategy.position_size, 15.0);
+        assert_eq!(strategy.inventory_base, 15.0);
         assert_eq!(strategy.avg_entry_price, 105.0); // Stays same on sell
     }
 
@@ -1157,8 +1187,8 @@ mod tests {
             _ => panic!("Lost state"),
         };
 
-        // Before fill, position_size was 100
-        assert_eq!(strategy.position_size, 100.0);
+        // Before fill, inventory_base was 100
+        assert_eq!(strategy.inventory_base, 100.0);
 
         strategy
             .on_order_filled(
@@ -1175,8 +1205,8 @@ mod tests {
             )
             .unwrap();
 
-        // After sell fill, position_size should be 95
-        assert_eq!(strategy.position_size, 95.0);
+        // After sell fill, inventory_base should be 95
+        assert_eq!(strategy.inventory_base, 95.0);
         assert_eq!(strategy.state, StrategyState::Running);
     }
 
@@ -1250,7 +1280,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(strategy.avg_entry_price, 100.0);
-        assert_eq!(strategy.position_size, 10.0);
+        assert_eq!(strategy.inventory_base, 10.0);
 
         // 2. Sell 10 @ 110 (Close position)
         // Set up zone to be selling
@@ -1274,7 +1304,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(strategy.position_size, 0.0);
+        assert_eq!(strategy.inventory_base, 0.0);
         assert_eq!(
             strategy.avg_entry_price, 0.0,
             "Avg entry price should reset to 0"
@@ -1300,7 +1330,7 @@ mod tests {
                 &mut ctx,
             )
             .unwrap();
-        assert_eq!(strategy.position_size, 5.0);
+        assert_eq!(strategy.inventory_base, 5.0);
         assert_eq!(
             strategy.avg_entry_price, 120.0,
             "Avg entry price should reflect new Buy only"
@@ -1315,7 +1345,7 @@ mod tests {
         // Tick to init
         strategy.on_tick(100.0, &mut ctx).unwrap();
 
-        assert_eq!(strategy.position_size, 10.0);
+        assert_eq!(strategy.inventory_base, 10.0);
         assert_eq!(
             strategy.avg_entry_price, 100.0,
             "Should initialize avg_entry_price to market price"

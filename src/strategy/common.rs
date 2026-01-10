@@ -80,6 +80,36 @@ pub fn calculate_grid_prices(
     prices
 }
 
+/// Calculates the grid levels (prices) based on spread in basis points.
+///
+/// * `range_low` - The bottom of the grid range.
+/// * `range_high` - The top of the grid range.
+/// * `spread_bips` - Spread between levels in basis points (1 bip = 0.01%).
+///
+/// Returns a `Vec<f64>` containing the calculated prices.
+pub fn calculate_grid_prices_by_spread(
+    range_low: f64,
+    range_high: f64,
+    spread_bips: f64,
+) -> Vec<f64> {
+    let mut prices = Vec::new();
+    if range_low >= range_high {
+        return prices;
+    }
+
+    // 1 bip = 0.01% = 0.0001
+    // ratio = 1 + (spread_bips / 10000)
+    let ratio = 1.0 + (spread_bips / 10000.0);
+
+    let mut current_price = range_low;
+    while current_price <= range_high {
+        prices.push(current_price);
+        current_price *= ratio;
+    }
+
+    prices
+}
+
 /// Calculate grid spacing as percentage (min, max).
 ///
 /// * `grid_type` - Arithmetic or Geometric.

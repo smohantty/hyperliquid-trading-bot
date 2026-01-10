@@ -121,7 +121,8 @@ fn create_spot_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         upper_price,
         lower_price,
         grid_type,
-        grid_count,
+        grid_count: Some(grid_count),
+        spread_bips: None,
         total_investment,
         trigger_price,
     }))

@@ -17,7 +17,12 @@ pub struct SpotGridConfig {
     pub upper_price: f64,
     pub lower_price: f64,
     pub grid_type: GridType,
-    pub grid_count: u32,
+    /// Number of grid levels. Either grid_count OR spread_bips must be provided.
+    #[serde(default)]
+    pub grid_count: Option<u32>,
+    /// Spread in basis points between levels. Either grid_count OR spread_bips must be provided.
+    #[serde(default)]
+    pub spread_bips: Option<f64>,
     pub total_investment: f64,
     #[serde(default)]
     pub trigger_price: Option<f64>,
@@ -68,13 +73,38 @@ impl StrategyConfig {
 
 impl SpotGridConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
-        // Common checks
-        if self.grid_count <= 2 {
-            return Err(anyhow::anyhow!(
-                "Grid count {} must be greater than 2.",
-                self.grid_count
-            ));
+        // Must have either grid_count OR spread_bips, not both
+        match (self.grid_count, self.spread_bips) {
+            (None, None) => {
+                return Err(anyhow::anyhow!(
+                    "Either grid_count or spread_bips must be specified."
+                ));
+            }
+            (Some(_), Some(_)) => {
+                return Err(anyhow::anyhow!(
+                    "Only one of grid_count or spread_bips can be specified, not both."
+                ));
+            }
+            _ => {}
         }
+
+        // Validate grid_count if present
+        if let Some(count) = self.grid_count {
+            if count <= 2 {
+                return Err(anyhow::anyhow!(
+                    "Grid count {} must be greater than 2.",
+                    count
+                ));
+            }
+        }
+
+        // Validate spread_bips if present
+        if let Some(bips) = self.spread_bips {
+            if bips <= 0.0 {
+                return Err(anyhow::anyhow!("spread_bips {} must be positive.", bips));
+            }
+        }
+
         if self.upper_price <= self.lower_price {
             return Err(anyhow::anyhow!(
                 "Upper price {} must be greater than lower price {}.",
@@ -106,6 +136,12 @@ impl SpotGridConfig {
             return Err(anyhow::anyhow!("Total investment must be positive."));
         }
         Ok(())
+    }
+
+    /// Get the effective grid count, either from config or calculated from spread_bips.
+    /// This should only be called after zones have been generated.
+    pub fn get_grid_count(&self) -> u32 {
+        self.grid_count.unwrap_or(0)
     }
 }
 
@@ -194,7 +230,8 @@ mod tests {
             upper_price: 1000.0,
             lower_price: 2000.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 10,
+            grid_count: Some(10),
+            spread_bips: None,
             total_investment: 1000.0,
             trigger_price: None,
         });
@@ -213,7 +250,8 @@ mod tests {
             upper_price: 2000.0,
             lower_price: 1000.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 10,
+            grid_count: Some(10),
+            spread_bips: None,
             total_investment: 1000.0,
             trigger_price: Some(3000.0),
         });
@@ -229,7 +267,8 @@ mod tests {
             upper_price: 2000.0,
             lower_price: 1000.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 2,
+            grid_count: Some(2),
+            spread_bips: None,
             total_investment: 1000.0,
             trigger_price: None,
         });
@@ -248,7 +287,8 @@ mod tests {
             upper_price: 2000.0,
             lower_price: 1000.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 5,
+            grid_count: Some(5),
+            spread_bips: None,
             total_investment: 1000.0,
             trigger_price: None,
         });
@@ -262,7 +302,8 @@ mod tests {
             upper_price: 2000.0,
             lower_price: 1000.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 5,
+            grid_count: Some(5),
+            spread_bips: None,
             total_investment: -100.0,
             trigger_price: None,
         });
@@ -309,11 +350,25 @@ mod tests {
             upper_price: 2000.0,
             lower_price: 1000.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 10,
+            grid_count: Some(10),
+            spread_bips: None,
             total_investment: 1000.0,
             trigger_price: None,
         });
         assert!(spot.validate().is_ok());
+
+        // Test with spread_bips instead of grid_count
+        let spot_bips = StrategyConfig::SpotGrid(SpotGridConfig {
+            symbol: "ETH/USDC".to_string(),
+            upper_price: 2000.0,
+            lower_price: 1000.0,
+            grid_type: GridType::Geometric,
+            grid_count: None,
+            spread_bips: Some(100.0), // 1%
+            total_investment: 1000.0,
+            trigger_price: None,
+        });
+        assert!(spot_bips.validate().is_ok());
 
         let perp = StrategyConfig::PerpGrid(PerpGridConfig {
             symbol: "BTC".to_string(),

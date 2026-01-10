@@ -431,42 +431,55 @@ impl SpotGridStrategy {
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) {
-        // Collect orders to place to avoid borrowing issues
-        let mut orders_to_place: Vec<(usize, OrderSide, f64, f64, Cloid)> = Vec::new();
+        // Collect zone indices that need orders to avoid borrowing issues
+        let zones_needing_orders: Vec<usize> = (0..self.zones.len())
+            .filter(|&i| self.zones[i].cloid.is_none())
+            .collect();
 
-        for i in 0..self.zones.len() {
-            if self.zones[i].cloid.is_none() {
-                let zone = &self.zones[i];
-                let price = if zone.order_side.is_buy() {
-                    zone.buy_price
-                } else {
-                    zone.sell_price
-                };
+        // Place orders for each zone
+        for zone_idx in zones_needing_orders {
+            self.place_zone_order(zone_idx, ctx);
+        }
+    }
 
-                let cloid = ctx.generate_cloid();
-                orders_to_place.push((i, zone.order_side, price, zone.size, cloid));
-            }
+    /// Place an order for a zone based on its current state.
+    /// Python equivalent: place_zone_order
+    fn place_zone_order(&mut self, zone_idx: usize, ctx: &mut StrategyContext) {
+        let zone = &self.zones[zone_idx];
+
+        // Skip if already has an order
+        if zone.cloid.is_some() {
+            return;
         }
 
-        // Execute placement
-        for (index, side, price, size, cloid) in orders_to_place {
-            let zone = &mut self.zones[index];
-            zone.cloid = Some(cloid);
-            self.active_orders.insert(cloid, index);
+        let side = zone.order_side;
+        let price = if side.is_buy() {
+            zone.buy_price
+        } else {
+            zone.sell_price
+        };
+        let size = zone.size;
 
-            info!(
-                "[ORDER_REQUEST] [SPOT_GRID] GRID_LVL_{}: LIMIT {} {} {} @ {}",
-                index, side, size, self.config.symbol, price
-            );
-            ctx.place_order(OrderRequest::Limit {
-                symbol: self.config.symbol.clone(),
-                side,
-                price,
-                sz: size,
-                reduce_only: false,
-                cloid: Some(cloid),
-            });
-        }
+        // Generate cloid and place order
+        let cloid = ctx.generate_cloid();
+
+        // Update zone state
+        self.zones[zone_idx].cloid = Some(cloid);
+        self.active_orders.insert(cloid, zone_idx);
+
+        info!(
+            "[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{} cloid: {} LIMIT {} {} {} @ {}",
+            zone_idx, cloid, side, size, self.base_asset, price
+        );
+
+        ctx.place_order(OrderRequest::Limit {
+            symbol: self.config.symbol.clone(),
+            side,
+            price,
+            sz: size,
+            reduce_only: false,
+            cloid: Some(cloid),
+        });
     }
 
     fn handle_acquisition_fill(

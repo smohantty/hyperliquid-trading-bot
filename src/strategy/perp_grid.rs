@@ -36,6 +36,8 @@ struct GridZone {
 
     // Performance Metrics
     roundtrip_count: u32,
+    /// Track order failures for retry logic
+    retry_count: u32,
 }
 
 #[allow(dead_code)]
@@ -193,6 +195,7 @@ impl PerpGridStrategy {
                 entry_price: 0.0,
                 cloid: None,
                 roundtrip_count: 0,
+                retry_count: 0,
             });
         }
 

@@ -1,0 +1,97 @@
+# Project Rules & Context: Hyperliquid Trading Bot
+
+## 1. Project Overview
+This is a high-performance, event-driven trading bot for Hyperliquid (Spot & Perp). The codebase is written in **Rust** and uses `tokio` for concurrency.
+
+## 2. Technology Stack
+- **Language**: Rust (Edition 2021)
+- **Build System**: `cargo`
+- **Concurrency**: `tokio` with async/await
+- **Exchange SDK**: `hyperliquid_rust_sdk`
+- **Notifications**: `teloxide` (Telegram)
+- **Logging**: `tracing` ecosystem
+
+## 3. Architecture & Core Concepts
+
+### Core Components
+- **Engine (`src/engine/`)**: The "brain" that orchestrates everything.
+    - Manages WebSocket/API connections via `hyperliquid_rust_sdk`.
+    - Maintains state (balances, open orders).
+    - Dispatches events (`on_tick`, `on_order_filled`) to strategies.
+- **Strategy (`src/strategy/`)**: Pure logic containers.
+    - **MUST** implement `Strategy` trait.
+    - **MUST NOT** make API calls directly. Return order requests for the Engine to execute.
+    - Implementations: `SpotGridStrategy`, `PerpGridStrategy`.
+- **Broadcaster (`src/broadcast/`)**: WebSocket server for UI/Dashboard.
+    - Pushes real-time state updates to external clients.
+- **Reporter (`src/reporter/`)**: Telegram bot for notifications and status commands.
+
+### Data Flow
+1.  **Tick**: Engine receives market data → `strategy.on_tick(price, ctx)`.
+2.  **Order Logic**: Strategy calculates and returns order requests.
+3.  **Execution**: Engine executes orders via `ExchangeClient`.
+4.  **Updates**: Engine receives fill events → `strategy.on_order_filled(...)`.
+
+## 4. Coding Standards
+
+### Critical Rules
+> [!IMPORTANT]
+> **Result Handling**: All `Result`s must be handled properly. Avoid `unwrap()` in critical paths.
+> Use `?` operator or explicit `match` for error propagation.
+
+> [!IMPORTANT]
+> **Engine vs Strategy Separation**: Strategies are pure logic.
+> - **Never** put networking/API calls inside a Strategy.
+> - Strategies process events and return actions.
+
+### Safety
+- Be aware of `TelegramReporter`. If you change `StatusSummary`, check Telegram output.
+- Do not commit real keys in `.env` or config files.
+
+## 5. Directory Structure
+- `src/config/`: Configuration loading and validation
+- `src/engine/`: Trading engine core
+- `src/strategy/`: Trading strategies (SpotGrid, PerpGrid)
+- `src/broadcast/`: WebSocket broadcaster
+- `src/reporter/`: Telegram reporter
+- `src/logging/`: Audit logging
+- `src/model.rs`: Core types (`Cloid`, `OrderRequest`, `OrderFill`)
+- `docs/`: Design docs and strategy documentation
+- `frontend/`: Vite + Electron dashboard
+
+## 6. Development Workflow
+1.  **Build Check**: `cargo check`
+2.  **Format**: `cargo fmt`
+3.  **Run Bot**: `cargo run --bin hyperliquid-trading-bot -- -c configs/config.toml`
+4.  **Run Tests**: `cargo test`
+5.  **Run Frontend**: `cd frontend && npm install && npm run dev`
+
+### Pre-Commit Requirements
+> [!IMPORTANT]
+> **ALWAYS** run `cargo check` and `cargo fmt` before committing.
+> Do not commit code that fails to compile or is poorly formatted.
+
+### Output Standards
+- **Conciseness**: Do not include "summary" or "explanation" sections that merely describe what the code does.
+- **Documentation Policy**: Update `docs/` if you change behavior or add features. Code and docs must stay in sync.
+
+## 7. Configuration
+- **Secrets**: Handled via `.env` (loaded by `dotenvy`).
+- **Strategy Config**: Defined in TOML, validated in `src/config/strategy.rs`.
+
+## 8. Critical Documentation
+Before starting any task, **READ** these documents:
+- **Architecture**: `docs/design.md`
+- **Strategies**: `docs/strategies/`
+- **Config Reference**: `src/config/strategy.rs`
+
+## Reference
+See [AGENT.md](./AGENT.md) for detailed workflow requirements and phase-based development process.
+
+## 9. AI Assistant Memory
+> [!TIP]
+> **Extended Context**:
+> - Check [`.gemini/memory.md`](.gemini/memory.md) for active project status, recent decisions, and known technical debt.
+> - Check [`.gemini/architecture.md`](.gemini/architecture.md) for detailed system design and flow charts.
+>
+> Use these files to orient yourself before starting complex tasks.

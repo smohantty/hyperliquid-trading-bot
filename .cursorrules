@@ -60,16 +60,14 @@ This is a high-performance, event-driven trading bot for Hyperliquid (Spot & Per
 - `frontend/`: Vite + Electron dashboard
 
 ## 6. Development Workflow
-1.  **Build Check**: `cargo check`
-2.  **Format**: `cargo fmt`
-3.  **Run Bot**: `cargo run --bin hyperliquid-trading-bot -- -c configs/config.toml`
-4.  **Run Tests**: `cargo test`
-5.  **Run Frontend**: `cd frontend && npm install && npm run dev`
+1.  **Usage**: `cargo run --bin hyperliquid-trading-bot -- -c configs/config.toml`
+2.  **Verify**: `./check_code.sh` (Runs fmt, clippy, check, and test)
+3.  **Frontend**: `cd frontend && npm install && npm run dev`
 
 ### Pre-Commit Requirements
 > [!IMPORTANT]
-> **ALWAYS** run `cargo check` and `cargo fmt` before committing.
-> Do not commit code that fails to compile or is poorly formatted.
+> **ALWAYS** run `./check_code.sh` before committing or finishing a task.
+> Do not commit code that fails this script.
 
 ### Output Standards
 - **Conciseness**: Do not include "summary" or "explanation" sections that merely describe what the code does.

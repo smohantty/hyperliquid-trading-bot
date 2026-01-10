@@ -11,6 +11,7 @@ Core Engine and Strategy implementation for Hyperliquid Spot & Perp grid trading
 - **Broadcaster Pattern**: Real-time WebSocket server pushes state to external UIs.
 - **Telegram Integration**: `TelegramReporter` provides `/status` command and trade notifications.
 - **Documentation Policy**: Docs in `docs/` must be updated alongside code changes.
+- **Quality Assurance**: Use `./check_code.sh` for all linting, formatting, and testing before code submission.
 
 ## 3. Known Technical Debt / TODOs
 

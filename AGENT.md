@@ -54,10 +54,10 @@ You must strictly follow this process for every user request involving code chan
     *   **API/Events**: `docs/api/schema.json` is the **Single Source of Truth** for the WebSocket API. If data usage changes, update this schema first. Strategy docs should link to it.
 
 ### Phase 4: Verification
-1.  **Compiles?**: Always run `cargo check`.
-2.  **Format?**: Run `cargo fmt` to ensure code style compliance.
-3.  **Tests?**: Run `cargo test` if applicable.
-4.  **Verify**: Confirm the change meets the Requirements.
+1.  **Automated Check**: Run `./check_code.sh`.
+    *   This script runs `cargo fmt`, `cargo clippy`, `cargo test`, and `cargo check`.
+    *   **Mandatory**: This *must* pass before task completion.
+2.  **Verify**: Confirm the change meets the Requirements.
 
 ## 3. System Architecture Constraints
 *   **Engine vs Strategy**: The `Engine` (`src/engine/`) manages connections and state. The `Strategy` (`src/strategy/`) is pure logic.

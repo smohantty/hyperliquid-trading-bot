@@ -1,7 +1,7 @@
 use crate::broadcast::types::{GridState, StrategySummary};
 use crate::config::strategy::PerpGridConfig;
 
-use crate::engine::context::{StrategyContext, MIN_NOTIONAL_VALUE};
+use crate::engine::context::{MarketInfo, StrategyContext, MIN_NOTIONAL_VALUE};
 use crate::model::{Cloid, OrderFill, OrderRequest, OrderSide};
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
@@ -304,6 +304,55 @@ impl PerpGridStrategy {
             warn!("[PERP_GRID] Failed to refresh orders: {}", e);
         }
         Ok(())
+    }
+
+    /// Calculate optimal price for acquiring assets during initial setup.
+    /// Python equivalent: _calculate_acquisition_price
+    fn calculate_acquisition_price(
+        &self,
+        side: OrderSide,
+        current_price: f64,
+        market_info: &MarketInfo,
+    ) -> f64 {
+        // If trigger_price is set, use it
+        if let Some(trigger) = self.config.trigger_price {
+            return market_info.round_price(trigger);
+        }
+
+        if side.is_buy() {
+            // Find nearest level LOWER than market to buy at (Limit Buy below market)
+            let candidates: Vec<f64> = self
+                .zones
+                .iter()
+                .filter(|z| z.buy_price < current_price)
+                .map(|z| z.buy_price)
+                .collect();
+
+            if !candidates.is_empty() {
+                return market_info.round_price(candidates.into_iter().fold(0.0, f64::max));
+            } else if !self.zones.is_empty() {
+                // Fallback: use first zone's buy price
+                return market_info.round_price(self.zones[0].buy_price);
+            }
+        } else {
+            // SELL: Find nearest level ABOVE market to sell at (Limit Sell above market)
+            let candidates: Vec<f64> = self
+                .zones
+                .iter()
+                .filter(|z| z.sell_price > current_price)
+                .map(|z| z.sell_price)
+                .collect();
+
+            if !candidates.is_empty() {
+                return market_info
+                    .round_price(candidates.into_iter().fold(f64::INFINITY, f64::min));
+            } else if !self.zones.is_empty() {
+                // Fallback: use last zone's sell price
+                return market_info.round_price(self.zones.last().unwrap().sell_price);
+            }
+        }
+
+        current_price
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) -> Result<()> {

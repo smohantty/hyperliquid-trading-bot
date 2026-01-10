@@ -135,6 +135,30 @@ pub enum OrderRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct OrderId(pub u64);
 
+/// Represents a percentage spread for markup/markdown calculations.
+///
+/// 0.1 means 0.1% (pips).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Spread {
+    pub value: f64,
+}
+
+impl Spread {
+    pub const fn new(value: f64) -> Self {
+        Self { value }
+    }
+
+    /// Returns value * (1 + spread/100)
+    pub fn markup(&self, value: f64) -> f64 {
+        value * (1.0 + (self.value / 100.0))
+    }
+
+    /// Returns value * (1 - spread/100)
+    pub fn markdown(&self, value: f64) -> f64 {
+        value * (1.0 - (self.value / 100.0))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +191,19 @@ mod tests {
         let json = serde_json::to_string(&original).unwrap();
         let parsed: Cloid = serde_json::from_str(&json).unwrap();
         assert_eq!(original, parsed);
+    }
+
+    #[test]
+    fn test_spread_markup_markdown() {
+        let spread = Spread::new(0.1); // 0.1%
+
+        let val = 100.0;
+        let up = spread.markup(val);
+        // 100 * (1 + 0.001) = 100.1
+        assert!((up - 100.1).abs() < 1e-10);
+
+        let down = spread.markdown(val);
+        // 100 * (1 - 0.001) = 99.9
+        assert!((down - 99.9).abs() < 1e-10);
     }
 }

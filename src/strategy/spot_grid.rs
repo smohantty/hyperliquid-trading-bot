@@ -11,6 +11,7 @@ use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::time::Instant;
 
+use crate::constants::{ACQUISITION_SPREAD, FEE_BUFFER, INVESTMENT_BUFFER_SPOT};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -198,7 +199,8 @@ impl SpotGridStrategy {
         }
 
         let num_zones = prices.len() - 1;
-        let quote_per_zone = self.config.total_investment / num_zones as f64;
+        let adjusted_investment = INVESTMENT_BUFFER_SPOT.markdown(self.config.total_investment);
+        let quote_per_zone = adjusted_investment / num_zones as f64;
 
         if quote_per_zone < MIN_NOTIONAL_VALUE {
             let msg = format!(
@@ -284,8 +286,8 @@ impl SpotGridStrategy {
             if !candidates.is_empty() {
                 return market_info.round_price(candidates.into_iter().fold(0.0, f64::max));
             } else if !self.zones.is_empty() {
-                // Fallback: use first zone's buy price
-                return market_info.round_price(self.zones[0].buy_price);
+                // Fallback: Price is below grid. Return markdown of current price for BUY.
+                return market_info.round_price(ACQUISITION_SPREAD.markdown(current_price));
             }
         } else {
             // SELL: Find nearest level ABOVE market to sell at (Limit Sell above market)
@@ -300,8 +302,8 @@ impl SpotGridStrategy {
                 return market_info
                     .round_price(candidates.into_iter().fold(f64::INFINITY, f64::min));
             } else if !self.zones.is_empty() {
-                // Fallback: use last zone's sell price
-                return market_info.round_price(self.zones.last().unwrap().sell_price);
+                // Fallback: Price is above grid. Return markup of current price for SELL.
+                return market_info.round_price(ACQUISITION_SPREAD.markup(current_price));
             }
         }
 
@@ -322,6 +324,9 @@ impl SpotGridStrategy {
         let quote_deficit = total_quote_required - available_quote;
 
         if base_deficit > 0.0 {
+            // Add fee buffer
+            let base_deficit = FEE_BUFFER.markup(base_deficit);
+
             let acquisition_price = self.calculate_acquisition_price(
                 OrderSide::Buy,
                 market_info.last_price,
@@ -456,7 +461,26 @@ impl SpotGridStrategy {
         } else {
             zone.sell_price
         };
-        let size = zone.size;
+
+        let market_info = match ctx.market_info(&self.config.symbol) {
+            Some(i) => i,
+            None => {
+                error!("[SPOT_GRID] No market info for {}", self.config.symbol);
+                return;
+            }
+        };
+
+        let raw_size = if side.is_sell() {
+            FEE_BUFFER.markdown(zone.size)
+        } else {
+            zone.size
+        };
+        let size = market_info.round_size(raw_size);
+
+        if size <= 0.0 {
+            warn!("Calculated size is 0 for zone {}, skipping order", zone_idx);
+            return;
+        }
 
         let cloid = ctx.generate_cloid();
 

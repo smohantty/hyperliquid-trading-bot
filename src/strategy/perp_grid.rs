@@ -12,6 +12,7 @@ use std::time::Instant;
 
 use super::common;
 use super::types::{GridBias, ZoneMode};
+use crate::constants::{ACQUISITION_SPREAD, INVESTMENT_BUFFER_PERP};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 enum StrategyState {
@@ -125,6 +126,8 @@ impl PerpGridStrategy {
             return Err(anyhow!(msg));
         }
 
+        let adjusted_investment = INVESTMENT_BUFFER_PERP.markdown(self.config.total_investment);
+
         let size_per_zone = if self.config.is_isolated {
             // Isolated: Investment amount is margin. Position size depends on leverage?
             // "total_investment" usually means "Margin * Leverage" or "Available Balance"?
@@ -140,10 +143,10 @@ impl PerpGridStrategy {
                 / last_price;
             */
             // We should stick to existing logic but adjust zone count.
-            self.config.total_investment / zone_count as f64 / last_price
+            adjusted_investment / zone_count as f64 / last_price
         } else {
             // Cross: Similar logic
-            self.config.total_investment / zone_count as f64 / last_price
+            adjusted_investment / zone_count as f64 / last_price
         };
 
         // Round size
@@ -167,7 +170,8 @@ impl PerpGridStrategy {
         } else {
             0
         };
-        let investment_per_zone = self.config.total_investment / num_zones as f64;
+        let adjusted_investment = INVESTMENT_BUFFER_PERP.markdown(self.config.total_investment);
+        let investment_per_zone = adjusted_investment / num_zones as f64;
 
         let initial_price = self.config.trigger_price.unwrap_or(last_price);
 
@@ -357,7 +361,7 @@ impl PerpGridStrategy {
                 return market_info.round_price(candidates.into_iter().fold(0.0, f64::max));
             } else if !self.zones.is_empty() {
                 // Fallback: use first zone's buy price
-                return market_info.round_price(self.zones[0].buy_price);
+                return market_info.round_price(ACQUISITION_SPREAD.markdown(current_price));
             }
         } else {
             // SELL: Find nearest level ABOVE market to sell at (Limit Sell above market)
@@ -373,7 +377,7 @@ impl PerpGridStrategy {
                     .round_price(candidates.into_iter().fold(f64::INFINITY, f64::min));
             } else if !self.zones.is_empty() {
                 // Fallback: use last zone's sell price
-                return market_info.round_price(self.zones.last().unwrap().sell_price);
+                return market_info.round_price(ACQUISITION_SPREAD.markup(current_price));
             }
         }
 

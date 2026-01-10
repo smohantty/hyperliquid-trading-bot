@@ -1,9 +1,8 @@
-/// Central configuration constants for hyperliquid-trading-bot.
-///
-/// This module contains all tunable parameters and magic numbers used throughout
-/// the trading bot. Modify values here to adjust bot behavior without changing
-/// business logic.
-
+//! Central configuration constants for hyperliquid-trading-bot.
+//!
+//! This module contains all tunable parameters and magic numbers used throughout
+//! the trading bot. Modify values here to adjust bot behavior without changing
+//! business logic.
 // =============================================================================
 // STRATEGY CONSTANTS
 // =============================================================================

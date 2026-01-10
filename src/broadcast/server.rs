@@ -116,6 +116,7 @@ impl StatusBroadcaster {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_server(
     host: String,
     port: u16,
@@ -162,6 +163,7 @@ async fn run_server(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_connection(
     stream: TcpStream,
     peer_addr: SocketAddr,

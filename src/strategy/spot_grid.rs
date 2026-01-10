@@ -189,7 +189,7 @@ impl SpotGridStrategy {
         } else if let Some(count) = self.config.grid_count {
             // Use grid_count
             common::calculate_grid_prices(
-                self.config.grid_type.clone(),
+                self.config.grid_type,
                 self.config.lower_price,
                 self.config.upper_price,
                 count,

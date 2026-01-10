@@ -105,7 +105,7 @@ impl PerpGridStrategy {
             )
         } else {
             common::calculate_grid_prices(
-                self.config.grid_type.clone(),
+                self.config.grid_type,
                 self.config.lower_price,
                 self.config.upper_price,
                 self.config.grid_count,

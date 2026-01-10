@@ -81,6 +81,7 @@ impl OrderAuditLogger {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn log_fill(
         &self,
         symbol: &str,

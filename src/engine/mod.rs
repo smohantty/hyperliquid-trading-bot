@@ -121,7 +121,6 @@ impl Engine {
                                 let coin = asset.name.clone();
                                 let asset_index = asset.index as u32;
 
-                                if symbol == self.config.symbol() {}
                                 let sz_decimals = base.sz_decimals as u32;
                                 let price_decimals = 8u32.saturating_sub(sz_decimals);
 

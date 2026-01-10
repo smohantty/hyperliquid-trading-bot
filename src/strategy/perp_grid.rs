@@ -610,6 +610,7 @@ impl Strategy for PerpGridStrategy {
                 let (next_px, next_side, pnl) = {
                     let zone = &mut self.zones[zone_idx];
                     zone.cloid = None;
+                    zone.retry_count = 0; // Reset retry count on fill
 
                     // Validate fill assertions
                     Self::validate_fill_assertions(zone, fill, zone_idx);
@@ -701,7 +702,23 @@ impl Strategy for PerpGridStrategy {
         Ok(())
     }
 
-    fn on_order_failed(&mut self, _cloid: Cloid, _ctx: &mut StrategyContext) -> Result<()> {
+    fn on_order_failed(&mut self, cloid: Cloid, _ctx: &mut StrategyContext) -> Result<()> {
+        if let Some(zone_idx) = self.active_orders.remove(&cloid) {
+            if let Some(zone) = self.zones.get_mut(zone_idx) {
+                if zone.cloid == Some(cloid) {
+                    zone.cloid = None;
+                    zone.retry_count += 1;
+
+                    log::warn!(
+                        "[ORDER_FAILED] [PERP_GRID] GRID_ZONE_{} cloid: {} Retry count: {}/{}",
+                        zone_idx,
+                        cloid,
+                        zone.retry_count,
+                        crate::constants::MAX_ORDER_RETRIES
+                    );
+                }
+            }
+        }
         Ok(())
     }
 

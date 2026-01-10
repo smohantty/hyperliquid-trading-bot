@@ -293,30 +293,8 @@ impl PerpGridStrategy {
                     );
                     trigger
                 } else {
-                    let raw_price = if side.is_buy() {
-                        let grid_price = self
-                            .zones
-                            .iter()
-                            .map(|z| z.buy_price)
-                            .filter(|&p| p < market_price)
-                            .max_by(|a, b| a.partial_cmp(b).unwrap())
-                            .unwrap_or(market_price);
-
-                        let limit_price = market_price * (1.0 - 0.001);
-                        grid_price.max(limit_price)
-                    } else {
-                        let grid_price = self
-                            .zones
-                            .iter()
-                            .map(|z| z.sell_price)
-                            .filter(|&p| p > market_price)
-                            .min_by(|a, b| a.partial_cmp(b).unwrap())
-                            .unwrap_or(market_price);
-
-                        let limit_price = market_price * (1.0 + 0.001);
-                        grid_price.min(limit_price)
-                    };
-                    raw_price
+                    // Use helper function to calculate acquisition price
+                    self.calculate_acquisition_price(side, market_price, market_info)
                 };
 
                 (
@@ -946,7 +924,7 @@ mod tests {
             upper_price: range_high,
             lower_price: range_low,
             grid_type: GridType::Arithmetic,
-            grid_count: 5,
+            grid_count: 3,
             spread_bips: None,
             total_investment: 1000.0,
             grid_bias,

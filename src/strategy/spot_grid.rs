@@ -337,29 +337,15 @@ impl SpotGridStrategy {
         let quote_deficit = total_quote_required - available_quote;
 
         // Use trigger_price if available, otherwise last_price
-        let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
 
         if base_deficit > 0.0 {
             // Case 1: Not enough base asset (e.g. BTC) to cover the SELL levels.
             // Need to BUY base asset.
-            let mut acquisition_price = initial_price;
-
-            if let Some(trigger) = self.config.trigger_price {
-                acquisition_price = market_info.round_price(trigger);
-            } else {
-                let nearest_level = self
-                    .zones
-                    .iter()
-                    .filter(|z| z.buy_price < market_info.last_price)
-                    .map(|z| z.buy_price)
-                    .fold(0.0, f64::max);
-
-                if nearest_level > 0.0 {
-                    acquisition_price = market_info.round_price(nearest_level);
-                } else if !self.zones.is_empty() {
-                    acquisition_price = market_info.round_price(self.zones[0].buy_price);
-                }
-            }
+            let acquisition_price = self.calculate_acquisition_price(
+                OrderSide::Buy,
+                market_info.last_price,
+                market_info,
+            );
 
             let rounded_deficit = market_info.clamp_to_min_notional(
                 base_deficit,
@@ -399,26 +385,11 @@ impl SpotGridStrategy {
         } else if quote_deficit > 0.0 {
             // Case 2: Enough base asset, but NOT enough quote asset (e.g. USDC) for BUY levels.
             // Need to SELL some base asset to get quote.
-            let mut acquisition_price = initial_price;
-
-            if let Some(trigger) = self.config.trigger_price {
-                acquisition_price = market_info.round_price(trigger);
-            } else {
-                // Find nearest level ABOVE market to sell at
-                let nearest_sell_level = self
-                    .zones
-                    .iter()
-                    .filter(|z| z.sell_price > market_info.last_price)
-                    .map(|z| z.sell_price)
-                    .fold(f64::INFINITY, f64::min);
-
-                if nearest_sell_level.is_finite() {
-                    acquisition_price = market_info.round_price(nearest_sell_level);
-                } else if !self.zones.is_empty() {
-                    acquisition_price =
-                        market_info.round_price(self.zones.last().unwrap().sell_price);
-                }
-            }
+            let acquisition_price = self.calculate_acquisition_price(
+                OrderSide::Sell,
+                market_info.last_price,
+                market_info,
+            );
 
             let base_to_sell = quote_deficit / acquisition_price;
             let rounded_sell_sz = market_info.clamp_to_min_notional(

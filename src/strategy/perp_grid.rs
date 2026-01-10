@@ -97,30 +97,77 @@ impl PerpGridStrategy {
         };
 
         // Generate Levels
-        let prices: Vec<f64> = {
-            let market_info = ctx.market_info(&self.config.symbol).unwrap();
+        let prices = if let Some(spread) = self.config.spread_bips {
+            common::calculate_grid_prices_by_spread(
+                self.config.lower_price,
+                self.config.upper_price,
+                spread,
+            )
+        } else {
             common::calculate_grid_prices(
                 self.config.grid_type.clone(),
                 self.config.lower_price,
                 self.config.upper_price,
                 self.config.grid_count,
             )
-            .into_iter()
-            .map(|p| market_info.round_price(p))
-            .collect()
         };
 
-        let num_zones = self.config.grid_count as usize - 1;
-        let investment_per_zone = self.config.total_investment / num_zones as f64;
-
-        if investment_per_zone < MIN_NOTIONAL_VALUE {
-            let msg = format!(
-                "Investment per zone ({:.2}) is less than minimum order value ({}). Increase total_investment or decrease grid_count.",
-                investment_per_zone, MIN_NOTIONAL_VALUE
-            );
+        // Determine target size per zone
+        // If using spread_bips, zone count is derived from prices length
+        let zone_count = if prices.len() > 1 {
+            prices.len() - 1
+        } else {
+            0
+        };
+        if zone_count == 0 {
+            let msg = "Grid configuration resulted in 0 zones".to_string();
             error!("[PERP_GRID] {}", msg);
             return Err(anyhow!(msg));
         }
+
+        let size_per_zone = if self.config.is_isolated {
+            // Isolated: Investment amount is margin. Position size depends on leverage?
+            // "total_investment" usually means "Margin * Leverage" or "Available Balance"?
+            // Python implementation treats total_investment as "quote amount to use".
+            // Here, we calculate size in base asset.
+
+            // Simplified: total_investment / N zones / avg_price?
+            // Rust existing logic used: self.config.total_investment / (points.len() - 1) as f64 / current_price?
+            // Actually existing logic (lines 160+):
+            /*
+            let size_per_zone = self.config.total_investment
+                / self.config.grid_count as f64
+                / last_price;
+            */
+            // We should stick to existing logic but adjust zone count.
+            self.config.total_investment / zone_count as f64 / last_price
+        } else {
+            // Cross: Similar logic
+            self.config.total_investment / zone_count as f64 / last_price
+        };
+
+        // Round size
+        // Need market info to round size. ctx.market_info is needed but we are inside initialize_zones matching signature?
+        // initialize_zones(ctx) has ctx.
+        let market_info = ctx
+            .market_info(&self.config.symbol)
+            .ok_or(anyhow!("No market info"))?;
+        let size = market_info.round_size(size_per_zone);
+
+        if size * last_price < MIN_NOTIONAL_VALUE {
+            warn!(
+                "[PERP_GRID] Zone size {:.4} is very small (value < {})",
+                size, MIN_NOTIONAL_VALUE
+            );
+        }
+
+        // Define num_zones for loop
+        let num_zones = if prices.len() > 1 {
+            prices.len() - 1
+        } else {
+            0
+        };
+        let investment_per_zone = self.config.total_investment / num_zones as f64;
 
         let initial_price = self.config.trigger_price.unwrap_or(last_price);
 
@@ -899,7 +946,8 @@ mod tests {
             upper_price: range_high,
             lower_price: range_low,
             grid_type: GridType::Arithmetic,
-            grid_count: 3,
+            grid_count: 5,
+            spread_bips: None,
             total_investment: 1000.0,
             grid_bias,
             trigger_price,
@@ -967,6 +1015,7 @@ mod tests {
             total_investment: 100.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
+            spread_bips: None,
         };
 
         let mut strategy = PerpGridStrategy::new(config);
@@ -1071,6 +1120,7 @@ mod tests {
             total_investment: 100.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
+            spread_bips: None,
         };
 
         let mut strategy = PerpGridStrategy::new(config);
@@ -1502,6 +1552,7 @@ mod tests {
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
+            spread_bips: None,
         };
 
         let mut strategy = PerpGridStrategy::new(config);
@@ -1580,6 +1631,7 @@ mod tests {
             total_investment: 1000.0,
             grid_bias: GridBias::Short,
             trigger_price: None,
+            spread_bips: None,
         };
 
         let mut strategy = PerpGridStrategy::new(config);

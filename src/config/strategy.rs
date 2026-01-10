@@ -38,6 +38,8 @@ pub struct PerpGridConfig {
     pub lower_price: f64,
     pub grid_type: GridType,
     pub grid_count: u32,
+    #[serde(default)]
+    pub spread_bips: Option<f64>,
     pub total_investment: f64,
     pub grid_bias: GridBias,
     #[serde(default)]
@@ -321,6 +323,7 @@ mod tests {
             lower_price: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: 5,
+            spread_bips: None,
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
@@ -336,6 +339,7 @@ mod tests {
             lower_price: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: 5,
+            spread_bips: None,
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
@@ -378,6 +382,7 @@ mod tests {
             lower_price: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: 10,
+            spread_bips: None,
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
             trigger_price: None,

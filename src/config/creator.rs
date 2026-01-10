@@ -221,6 +221,7 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         upper_price,
         grid_type,
         grid_count,
+        spread_bips: None,
         total_investment,
         grid_bias,
         trigger_price,

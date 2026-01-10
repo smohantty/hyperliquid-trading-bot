@@ -21,9 +21,12 @@ impl CachedSummary {
         match self {
             CachedSummary::SpotGrid(s) => {
                 let spacing = format_spacing(s.grid_spacing_pct);
-                let total_pnl = s.realized_pnl + s.unrealized_pnl - s.total_fees;
-                let pnl_emoji = if total_pnl >= 0.0 { "🟢" } else { "🔴" };
-                let pnl_sign = if total_pnl >= 0.0 { "+" } else { "" };
+                let pnl_emoji = if s.total_profit >= 0.0 {
+                    "🟢"
+                } else {
+                    "🔴"
+                };
+                let pnl_sign = if s.total_profit >= 0.0 { "+" } else { "" };
 
                 // Get config specific details
                 let (investment, trigger) = match config {
@@ -49,14 +52,12 @@ impl CachedSummary {
                      🔄 Matched Trades: <code>{}</code>\n\n\
                      <b>💰 PROFIT & LOSS</b>\n\
                      Total: {} <b>{}{:.2}</b>\n\
-                     Realized: <b>{:.2}</b>\n\
-                     Unrealized: <b>{:.2}</b>\n\
+                     Matched: <b>{:.2}</b>\n\
                      Fees: <code>${:.2}</code>\n\n\
                      <b>📦 POSITION</b>\n\
-                     Size: <code>{:.4}</code>\n\
-                     Init Entry: <code>{}</code>\n\
-                     Avg Entry: <code>${:.2}</code>\n\
-                     Quote Bal: <code>${:.2}</code>\n\n\
+                     Base: <code>{:.4}</code>\n\
+                     Quote: <code>${:.2}</code>\n\
+                     Init Entry: <code>{}</code>\n\n\
                      <b>📐 GRID CONFIG</b>\n\
                      Range: <code>${} - ${}</code>\n\
                      Zones: <code>{}</code> ({} spacing)\n\
@@ -68,14 +69,12 @@ impl CachedSummary {
                     s.roundtrips,
                     pnl_emoji,
                     pnl_sign,
-                    total_pnl,
-                    s.realized_pnl,
-                    s.unrealized_pnl,
+                    s.total_profit,
+                    s.matched_profit,
                     s.total_fees,
                     s.position_size,
-                    init_entry_str,
-                    s.avg_entry_price,
                     s.quote_balance,
+                    init_entry_str,
                     format_price(s.range_low),
                     format_price(s.range_high),
                     s.grid_count,

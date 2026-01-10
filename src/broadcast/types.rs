@@ -60,11 +60,10 @@ pub struct SpotGridSummary {
 
     // Position
     pub position_size: f64, // Base asset inventory
-    pub avg_entry_price: f64,
 
-    // PnL
-    pub realized_pnl: f64,
-    pub unrealized_pnl: f64,
+    // PnL (aligned with Python)
+    pub matched_profit: f64, // Profit from completed roundtrips
+    pub total_profit: f64,   // current_equity - initial_equity - fees
     pub total_fees: f64,
     pub initial_entry_price: Option<f64>,
 

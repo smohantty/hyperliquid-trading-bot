@@ -27,14 +27,10 @@ struct GridZone {
     buy_price: f64,
     sell_price: f64,
     size: f64,
-    /// The side of the pending order for this zone (Buy at buy_price, Sell at sell_price)
     order_side: OrderSide,
     entry_price: f64,
     cloid: Option<Cloid>,
-
-    // Performance Metrics
     roundtrip_count: u32,
-    /// Track order failures for retry logic
     retry_count: u32,
 }
 
@@ -48,21 +44,20 @@ pub struct SpotGridStrategy {
     zones: Vec<GridZone>,
     active_orders: HashMap<Cloid, usize>,
     state: StrategyState,
-    trade_count: u32,
     initial_entry_price: Option<f64>,
     trigger_reference_price: Option<f64>,
     start_time: Instant,
 
-    // Performance Metrics (aligned with Python)
-    matched_profit: f64, // Profit from completed roundtrips
+    // Performance Metrics
+    matched_profit: f64,
     total_fees: f64,
-    initial_equity: f64, // Starting equity for total_profit calculation
+    initial_equity: f64,
 
     // Position Tracking
     inventory_base: f64,
     inventory_quote: f64,
 
-    // Acquisition State Tracking (aligned with Python)
+    // Acquisition State Tracking
     acquisition_target_size: f64,
     required_base: f64,
     required_quote: f64,
@@ -90,7 +85,6 @@ impl SpotGridStrategy {
             quote_asset,
             zones: Vec::new(),
             active_orders: HashMap::new(),
-            trade_count: 0,
             state: StrategyState::Initializing,
             initial_entry_price: None,
             trigger_reference_price: None,
@@ -100,7 +94,6 @@ impl SpotGridStrategy {
             initial_equity: 0.0,
             inventory_base: 0.0,
             inventory_quote: 0.0,
-            // Acquisition state tracking
             acquisition_target_size: 0.0,
             required_base: 0.0,
             required_quote: 0.0,
@@ -153,9 +146,6 @@ impl SpotGridStrategy {
         }
 
         // Upfront Total Investment Validation
-        // Calculate approx market value of our total holdings for this strategy.
-        // We use the initial_price (which considers trigger price) as that is the price
-        // at which the asset requirements are calculated.
         let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
         let total_wallet_value = (available_base * initial_price) + available_quote;
 
@@ -230,16 +220,13 @@ impl SpotGridStrategy {
             let lower = prices[i];
             let upper = prices[i + 1];
 
-            // Calculate size based on quote investment per zone
             let raw_size = quote_per_zone / lower;
             let size = market_info.round_size(raw_size);
 
-            // Zone ABOVE price line (buy_price > price): We acquired base at initial_price -> Sell at sell_price
-            // Zone AT or BELOW price line: We have quote, waiting to buy at buy_price
             let order_side = if lower > initial_price {
-                OrderSide::Sell // Zone above price line -> sell at upper, then ping-pong
+                OrderSide::Sell
             } else {
-                OrderSide::Buy // Zone at/below price line -> buy at lower, then ping-pong
+                OrderSide::Buy
             };
 
             if order_side.is_sell() {
@@ -274,8 +261,6 @@ impl SpotGridStrategy {
         ))
     }
 
-    /// Calculate optimal price for acquiring assets during initial setup.
-    /// Python equivalent: _calculate_acquisition_price
     fn calculate_acquisition_price(
         &self,
         side: OrderSide,
@@ -336,11 +321,7 @@ impl SpotGridStrategy {
         let base_deficit = total_base_required - available_base;
         let quote_deficit = total_quote_required - available_quote;
 
-        // Use trigger_price if available, otherwise last_price
-
         if base_deficit > 0.0 {
-            // Case 1: Not enough base asset (e.g. BTC) to cover the SELL levels.
-            // Need to BUY base asset.
             let acquisition_price = self.calculate_acquisition_price(
                 OrderSide::Buy,
                 market_info.last_price,
@@ -383,8 +364,6 @@ impl SpotGridStrategy {
                 return Ok(());
             }
         } else if quote_deficit > 0.0 {
-            // Case 2: Enough base asset, but NOT enough quote asset (e.g. USDC) for BUY levels.
-            // Need to SELL some base asset to get quote.
             let acquisition_price = self.calculate_acquisition_price(
                 OrderSide::Sell,
                 market_info.last_price,
@@ -451,28 +430,22 @@ impl SpotGridStrategy {
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) {
-        // Collect zone indices that need orders to avoid borrowing issues
         let zones_needing_orders: Vec<usize> = (0..self.zones.len())
             .filter(|&i| self.zones[i].cloid.is_none())
             .collect();
 
-        // Place orders for each zone
         for zone_idx in zones_needing_orders {
             self.place_zone_order(zone_idx, ctx);
         }
     }
 
-    /// Place an order for a zone based on its current state.
-    /// Python equivalent: place_zone_order
     fn place_zone_order(&mut self, zone_idx: usize, ctx: &mut StrategyContext) {
         let zone = &self.zones[zone_idx];
 
-        // Skip if already has an order
         if zone.cloid.is_some() {
             return;
         }
 
-        // Skip if exceeded max retries
         if zone.retry_count >= crate::constants::MAX_ORDER_RETRIES {
             return;
         }
@@ -485,10 +458,8 @@ impl SpotGridStrategy {
         };
         let size = zone.size;
 
-        // Generate cloid and place order
         let cloid = ctx.generate_cloid();
 
-        // Update zone state
         self.zones[zone_idx].cloid = Some(cloid);
         self.active_orders.insert(cloid, zone_idx);
 
@@ -525,7 +496,6 @@ impl SpotGridStrategy {
         );
         self.total_fees += fill.fee;
 
-        // Update Inventory
         if fill.side.is_buy() {
             self.inventory_base += fill.size;
             self.inventory_quote -= fill.price * fill.size;
@@ -534,8 +504,6 @@ impl SpotGridStrategy {
             self.inventory_quote += fill.price * fill.size;
         }
 
-        // Update entry_price for all zones waiting to sell to the actual fill price
-        // (they now have inventory at this cost basis)
         for zone in &mut self.zones {
             if zone.order_side.is_sell() {
                 zone.entry_price = fill.price;
@@ -561,19 +529,15 @@ impl SpotGridStrategy {
             zone_idx, fill.price, fill.size, fill.fee, next_price
         );
 
-        // Update Strategy Fees
         self.total_fees += fill.fee;
-        self.zones[zone_idx].retry_count = 0; // Reset retries on fill
+        self.zones[zone_idx].retry_count = 0;
 
-        // Buy Fill: Increase base inventory, decrease quote inventory
         self.inventory_base += fill.size;
         self.inventory_quote -= fill.price * fill.size;
 
-        // Update zone: now waiting to sell
         self.zones[zone_idx].order_side = OrderSide::Sell;
         self.zones[zone_idx].entry_price = fill.price;
 
-        // Place counter order (Sell at upper price)
         self.place_counter_order(zone_idx, next_price, OrderSide::Sell, ctx)
     }
 
@@ -592,23 +556,18 @@ impl SpotGridStrategy {
             zone_idx, fill.price, fill.size, pnl, fill.fee, next_price
         );
 
-        // Update Zone Metrics
         self.zones[zone_idx].roundtrip_count += 1;
-        self.zones[zone_idx].retry_count = 0; // Reset retries on fill
+        self.zones[zone_idx].retry_count = 0;
 
-        // Update Strategy Metrics
         self.matched_profit += pnl;
         self.total_fees += fill.fee;
 
-        // Sell Fill: Decrease Inventory, increase quote
         self.inventory_base = (self.inventory_base - fill.size).max(0.0);
         self.inventory_quote += fill.price * fill.size;
 
-        // Update zone: now waiting to buy
         self.zones[zone_idx].order_side = OrderSide::Buy;
         self.zones[zone_idx].entry_price = 0.0;
 
-        // Place counter order (Buy at lower price)
         self.place_counter_order(zone_idx, next_price, OrderSide::Buy, ctx)
     }
 
@@ -644,7 +603,6 @@ impl SpotGridStrategy {
     fn validate_fill(&self, zone_idx: usize, fill: &OrderFill) {
         let expected_side = self.zones[zone_idx].order_side;
 
-        // 1. Validate fill.side matches zone's pending order side
         if fill.side != expected_side {
             error!(
                 "[SPOT_GRID] ASSERTION FAILED: Zone {} expected side {:?} but got {:?}",
@@ -657,7 +615,6 @@ impl SpotGridStrategy {
             zone_idx, expected_side, fill.side
         );
 
-        // 2. Validate raw_dir if present (spot should be "Buy" or "Sell")
         if let Some(ref raw_dir) = fill.raw_dir {
             let expected_dir = if expected_side.is_buy() {
                 "Buy"
@@ -686,9 +643,6 @@ impl Strategy for SpotGridStrategy {
             }
             StrategyState::WaitingForTrigger => {
                 if let Some(trigger) = self.config.trigger_price {
-                    // Directional Trigger Logic
-                    // Requires start_price to be set during initialization
-
                     let start = self.trigger_reference_price.expect(
                         "Trigger reference price must be set when in WaitingForTrigger state",
                     );
@@ -703,7 +657,6 @@ impl Strategy for SpotGridStrategy {
                         self.refresh_orders(ctx);
                     }
                 } else {
-                    // Should not happen if state is WaitingForTrigger
                     self.state = StrategyState::Running;
                 }
             }
@@ -718,7 +671,6 @@ impl Strategy for SpotGridStrategy {
 
     fn on_order_filled(&mut self, fill: &OrderFill, ctx: &mut StrategyContext) -> Result<()> {
         if let Some(cloid_val) = fill.cloid {
-            // Check for Acquisition Fill
             if let StrategyState::AcquiringAssets { cloid: acq_cloid } = self.state {
                 if cloid_val == acq_cloid {
                     return self.handle_acquisition_fill(fill, ctx);
@@ -726,7 +678,6 @@ impl Strategy for SpotGridStrategy {
             }
 
             if let Some(zone_idx) = self.active_orders.remove(&cloid_val) {
-                // Validate Cloid
                 {
                     let zone = &self.zones[zone_idx];
                     if zone.cloid != Some(cloid_val) {
@@ -737,15 +688,11 @@ impl Strategy for SpotGridStrategy {
                     }
                 }
 
-                // Validate Fill Expectations
                 self.validate_fill(zone_idx, fill);
                 let expected_side = self.zones[zone_idx].order_side;
 
-                // Update Zone State
                 self.zones[zone_idx].cloid = None;
-                self.trade_count += 1;
 
-                // Route to appropriate fill handler
                 if expected_side.is_buy() {
                     self.handle_buy_fill(zone_idx, fill, ctx)?;
                 } else {
@@ -795,15 +742,11 @@ impl Strategy for SpotGridStrategy {
             .map(|m| m.last_price)
             .unwrap_or(0.0);
 
-        // Calculate total_profit: current_equity - initial_equity - fees
         let current_equity = (self.inventory_base * current_price) + self.inventory_quote;
         let total_profit = current_equity - self.initial_equity - self.total_fees;
 
-        // Calculate total roundtrips from zones
         let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
 
-        // Calculate grid spacing percentage
-        // Use zones.len() + 1 as effective grid_count (zones are between grid levels)
         let grid_count = (self.zones.len() + 1) as u32;
         let grid_spacing_pct = common::calculate_grid_spacing_pct(
             &self.config.grid_type,
@@ -840,26 +783,23 @@ impl Strategy for SpotGridStrategy {
         let zones = self
             .zones
             .iter()
-            .map(|z| {
-                // Spot grid: Buy = opening, Sell = closing
-                ZoneInfo {
-                    index: z.index,
-                    buy_price: z.buy_price,
-                    sell_price: z.sell_price,
-                    size: z.size,
-                    order_side: z.order_side.to_string(),
-                    has_order: z.cloid.is_some(),
-                    is_reduce_only: false, // Spot doesn't have reduce_only
-                    entry_price: z.entry_price,
-                    roundtrip_count: z.roundtrip_count,
-                }
+            .map(|z| ZoneInfo {
+                index: z.index,
+                buy_price: z.buy_price,
+                sell_price: z.sell_price,
+                size: z.size,
+                order_side: z.order_side.to_string(),
+                has_order: z.cloid.is_some(),
+                is_reduce_only: false,
+                entry_price: z.entry_price,
+                roundtrip_count: z.roundtrip_count,
             })
             .collect();
 
         GridState {
             symbol: self.config.symbol.clone(),
             strategy_type: "spot_grid".to_string(),
-            grid_bias: None, // Spot has no bias
+            grid_bias: None,
             zones,
         }
     }

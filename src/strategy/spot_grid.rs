@@ -151,7 +151,7 @@ impl SpotGridStrategy {
         self.initial_avail_base = available_base;
         self.initial_avail_quote = available_quote;
 
-        let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
+        let initial_price = self.config.trigger_price.unwrap_or(self.current_price);
         self.initial_equity = (self.inventory_base * initial_price) + self.inventory_quote;
 
         if self.inventory_base > 0.0 {
@@ -161,7 +161,7 @@ impl SpotGridStrategy {
             );
         }
 
-        let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
+        let initial_price = self.config.trigger_price.unwrap_or(self.current_price);
         let total_wallet_value = (available_base * initial_price) + available_quote;
 
         if total_wallet_value < self.config.total_investment {
@@ -220,7 +220,7 @@ impl SpotGridStrategy {
             return Err(anyhow!(msg));
         }
 
-        let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
+        let initial_price = self.config.trigger_price.unwrap_or(self.current_price);
 
         self.zones.clear();
         let mut total_base_required = 0.0;
@@ -335,11 +335,8 @@ impl SpotGridStrategy {
         if base_deficit > 0.0 {
             let base_deficit = FEE_BUFFER.markup(base_deficit);
 
-            let acquisition_price = self.calculate_acquisition_price(
-                OrderSide::Buy,
-                market_info.last_price,
-                market_info,
-            );
+            let acquisition_price =
+                self.calculate_acquisition_price(OrderSide::Buy, self.current_price, market_info);
 
             let rounded_deficit = market_info.clamp_to_min_notional(
                 base_deficit,
@@ -376,11 +373,8 @@ impl SpotGridStrategy {
                 return Ok(());
             }
         } else if quote_deficit > 0.0 {
-            let acquisition_price = self.calculate_acquisition_price(
-                OrderSide::Sell,
-                market_info.last_price,
-                market_info,
-            );
+            let acquisition_price =
+                self.calculate_acquisition_price(OrderSide::Sell, self.current_price, market_info);
 
             let base_to_sell = quote_deficit / acquisition_price;
             let rounded_sell_sz = market_info.clamp_to_min_notional(
@@ -426,11 +420,11 @@ impl SpotGridStrategy {
 
         if let Some(_trigger) = self.config.trigger_price {
             info!("[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state.");
-            self.trigger_reference_price = Some(market_info.last_price);
+            self.trigger_reference_price = Some(self.current_price);
             self.state = StrategyState::WaitingForTrigger;
         } else {
             info!("[SPOT_GRID] Assets verified. Starting Grid.");
-            self.transition_to_running(ctx, market_info.last_price);
+            self.transition_to_running(ctx, self.current_price);
         }
 
         Ok(())

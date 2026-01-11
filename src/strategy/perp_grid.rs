@@ -62,6 +62,9 @@ pub struct PerpGridStrategy {
     // Position Tracking
     position_size: f64,
     avg_entry_price: f64,
+
+    // Cached price from on_tick
+    current_price: f64,
 }
 
 impl PerpGridStrategy {
@@ -80,22 +83,15 @@ impl PerpGridStrategy {
             initial_equity: 0.0,
             position_size: 0.0,
             avg_entry_price: 0.0,
+            current_price: 0.0,
         }
     }
 
     fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         self.config.validate().map_err(|e| anyhow!(e))?;
 
-        // 1. Get initial data (scoped)
-        let last_price = {
-            let market_info = match ctx.market_info(&self.config.symbol) {
-                Some(i) => i,
-                None => {
-                    return Err(anyhow!("No market info for {}", self.config.symbol));
-                }
-            };
-            market_info.last_price
-        };
+        // 1. Get initial data (using cached current_price)
+        let last_price = self.current_price;
 
         // Generate Levels
         let prices = if let Some(spread) = self.config.spread_bips {
@@ -267,7 +263,7 @@ impl PerpGridStrategy {
 
             let (activation_price, target_size, side) = {
                 let market_info = ctx.market_info(&self.config.symbol).unwrap();
-                let market_price = market_info.last_price;
+                let market_price = self.current_price;
                 let side = if total_position_required > 0.0 {
                     OrderSide::Buy
                 } else {
@@ -577,12 +573,12 @@ impl PerpGridStrategy {
 
 impl Strategy for PerpGridStrategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()> {
+        self.current_price = price;
+
         match self.state {
             StrategyState::Initializing => {
-                if let Some(market_info) = ctx.market_info(&self.config.symbol) {
-                    if market_info.last_price > 0.0 {
-                        self.initialize_zones(ctx)?;
-                    }
+                if price > 0.0 {
+                    self.initialize_zones(ctx)?;
                 }
             }
             StrategyState::WaitingForTrigger => {
@@ -794,10 +790,7 @@ impl Strategy for PerpGridStrategy {
     fn get_summary(&self, ctx: &StrategyContext) -> StrategySummary {
         use crate::broadcast::types::PerpGridSummary;
 
-        let current_price = ctx
-            .market_info(&self.config.symbol)
-            .map(|m| m.last_price)
-            .unwrap_or(0.0);
+        let current_price = self.current_price;
 
         // Calculate total roundtrips from zones
         let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();

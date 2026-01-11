@@ -244,7 +244,7 @@ impl SpotGridStrategy {
                 size,
                 order_side,
                 entry_price: if order_side.is_sell() {
-                    initial_price
+                    lower // Use buy_price as entry_price for sell zones
                 } else {
                     0.0
                 },
@@ -308,6 +308,13 @@ impl SpotGridStrategy {
         }
 
         current_price
+    }
+
+    fn transition_to_running(&mut self, ctx: &mut StrategyContext, price: f64) {
+        self.initial_entry_price = Some(price);
+        self.initial_equity = (self.inventory_base * price) + self.inventory_quote;
+        self.state = StrategyState::Running;
+        self.refresh_orders(ctx);
     }
 
     fn check_initial_acquisition(
@@ -427,8 +434,7 @@ impl SpotGridStrategy {
         } else {
             // No Trigger, Assets OK -> Running
             info!("[SPOT_GRID] Assets verified. Starting Grid.");
-            self.initial_entry_price = Some(market_info.last_price);
-            self.state = StrategyState::Running;
+            self.transition_to_running(ctx, market_info.last_price);
         }
 
         Ok(())
@@ -521,22 +527,18 @@ impl SpotGridStrategy {
         self.total_fees += fill.fee;
 
         if fill.side.is_buy() {
-            self.inventory_base += fill.size;
-            self.inventory_quote -= fill.price * fill.size;
+            let new_real_base = self.initial_avail_base + fill.size;
+            let new_real_quote = self.initial_avail_quote - (fill.size * fill.price);
+            self.inventory_base = new_real_base.min(self.required_base).max(0.0);
+            self.inventory_quote = new_real_quote.min(self.required_quote).max(0.0);
         } else {
-            self.inventory_base = (self.inventory_base - fill.size).max(0.0);
-            self.inventory_quote += fill.price * fill.size;
+            let new_real_base = self.initial_avail_base - fill.size;
+            let new_real_quote = self.initial_avail_quote + (fill.size * fill.price);
+            self.inventory_base = new_real_base.min(self.required_base).max(0.0);
+            self.inventory_quote = new_real_quote.min(self.required_quote).max(0.0);
         }
 
-        for zone in &mut self.zones {
-            if zone.order_side.is_sell() {
-                zone.entry_price = fill.price;
-            }
-        }
-
-        self.initial_entry_price = Some(fill.price);
-        self.state = StrategyState::Running;
-        self.refresh_orders(ctx);
+        self.transition_to_running(ctx, fill.price);
         Ok(())
     }
 
@@ -676,9 +678,7 @@ impl Strategy for SpotGridStrategy {
                             "[SPOT_GRID] Price {} crossed trigger {}. Starting.",
                             price, trigger
                         );
-                        self.initial_entry_price = Some(price);
-                        self.state = StrategyState::Running;
-                        self.refresh_orders(ctx);
+                        self.transition_to_running(ctx, price);
                     }
                 } else {
                     self.state = StrategyState::Running;

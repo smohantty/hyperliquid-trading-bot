@@ -954,12 +954,13 @@ mod tests {
             )
             .unwrap();
 
-        // Verify that zones waiting to sell now have entry_price = fill_price
+        // Verify that zones waiting to sell have entry_price = zone's buy_price (not fill_price)
+        // This is the new behavior aligned with Python: entry_price represents the buy level for profit calculation
         for zone in &strategy.zones {
             if zone.order_side.is_sell() {
                 assert_eq!(
-                    zone.entry_price, fill_price,
-                    "Zone {} entry price mismatch",
+                    zone.entry_price, zone.buy_price,
+                    "Zone {} entry price should be buy_price",
                     zone.index
                 );
             }
@@ -1216,8 +1217,11 @@ mod tests {
             )
             .unwrap();
 
-        // After sell fill, inventory_base should be 95
-        assert_eq!(strategy.inventory_base, 95.0);
+        // After sell fill, inventory_base is capped to required_base (which is the base needed for sell zones)
+        // With grid [90-95], [95-100], [100-105], [105-110] at price 100:
+        // - Zones [100-105] and [105-110] have buy_price > 100, so they are SELL zones needing base
+        // inventory_base = min(initial_avail_base - fill.size, required_base)
+        assert_eq!(strategy.inventory_base, strategy.required_base);
         assert_eq!(strategy.state, StrategyState::Running);
     }
 

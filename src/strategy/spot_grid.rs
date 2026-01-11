@@ -63,6 +63,8 @@ pub struct SpotGridStrategy {
 
     grid_count: u32,
     grid_spacing_pct: (f64, f64),
+
+    market_info: Option<MarketInfo>,
 }
 
 impl SpotGridStrategy {
@@ -120,20 +122,21 @@ impl SpotGridStrategy {
             current_price: 0.0,
             grid_count,
             grid_spacing_pct,
+            market_info: None,
         }
     }
 
     fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         self.config.validate().map_err(|e| anyhow!(e))?;
 
-        let market_info = match ctx.market_info(&self.config.symbol) {
-            Some(info) => info.clone(),
-            None => {
-                return Err(anyhow!("No market info for {}", self.config.symbol));
-            }
-        };
+        if self.market_info.is_none() {
+            let info = ctx
+                .market_info(&self.config.symbol)
+                .ok_or_else(|| anyhow!("No market info for {}", self.config.symbol))?;
+            self.market_info = Some(info.clone());
+        }
 
-        let (total_base_required, total_quote_required) = self.calculate_grid_plan(&market_info)?;
+        let (total_base_required, total_quote_required) = self.calculate_grid_plan()?;
 
         self.required_base = total_base_required;
         self.required_quote = total_quote_required;
@@ -174,10 +177,15 @@ impl SpotGridStrategy {
             return Err(anyhow!(msg));
         }
 
-        self.check_initial_acquisition(ctx, &market_info, total_base_required, total_quote_required)
+        self.check_initial_acquisition(ctx, total_base_required, total_quote_required)
     }
 
-    fn calculate_grid_plan(&mut self, market_info: &MarketInfo) -> Result<(f64, f64)> {
+    fn calculate_grid_plan(&mut self) -> Result<(f64, f64)> {
+        let market_info = self
+            .market_info
+            .as_ref()
+            .expect("Market info should be initialized");
+
         let prices: Vec<f64> = if let Some(spread_bips) = self.config.spread_bips {
             common::calculate_grid_prices_by_spread(
                 self.config.lower_price,
@@ -270,12 +278,12 @@ impl SpotGridStrategy {
         ))
     }
 
-    fn calculate_acquisition_price(
-        &self,
-        side: OrderSide,
-        current_price: f64,
-        market_info: &MarketInfo,
-    ) -> f64 {
+    fn calculate_acquisition_price(&self, side: OrderSide, current_price: f64) -> f64 {
+        let market_info = self
+            .market_info
+            .as_ref()
+            .expect("Market info should be initialized");
+
         if let Some(trigger) = self.config.trigger_price {
             return market_info.round_price(trigger);
         }
@@ -322,10 +330,14 @@ impl SpotGridStrategy {
     fn check_initial_acquisition(
         &mut self,
         ctx: &mut StrategyContext,
-        market_info: &MarketInfo,
         total_base_required: f64,
         total_quote_required: f64,
     ) -> Result<()> {
+        let market_info = self
+            .market_info
+            .clone()
+            .expect("Market info should be initialized");
+
         let available_base = ctx.get_spot_available(&self.base_asset);
         let available_quote = ctx.get_spot_available(&self.quote_asset);
 
@@ -336,7 +348,7 @@ impl SpotGridStrategy {
             let base_deficit = FEE_BUFFER.markup(base_deficit);
 
             let acquisition_price =
-                self.calculate_acquisition_price(OrderSide::Buy, self.current_price, market_info);
+                self.calculate_acquisition_price(OrderSide::Buy, self.current_price);
 
             let rounded_deficit = market_info.clamp_to_min_notional(
                 base_deficit,
@@ -374,7 +386,7 @@ impl SpotGridStrategy {
             }
         } else if quote_deficit > 0.0 {
             let acquisition_price =
-                self.calculate_acquisition_price(OrderSide::Sell, self.current_price, market_info);
+                self.calculate_acquisition_price(OrderSide::Sell, self.current_price);
 
             let base_to_sell = quote_deficit / acquisition_price;
             let rounded_sell_sz = market_info.clamp_to_min_notional(
@@ -458,13 +470,10 @@ impl SpotGridStrategy {
             zone.sell_price
         };
 
-        let market_info = match ctx.market_info(&self.config.symbol) {
-            Some(i) => i,
-            None => {
-                error!("[SPOT_GRID] No market info for {}", self.config.symbol);
-                return;
-            }
-        };
+        let market_info = self
+            .market_info
+            .as_ref()
+            .expect("Market info should be initialized");
 
         let raw_size = if side.is_sell() {
             FEE_BUFFER.markdown(zone.size)

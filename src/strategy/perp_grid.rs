@@ -259,14 +259,11 @@ impl PerpGridStrategy {
         );
 
         if total_position_required.abs() > 0.0 {
-            // Trigger Logic moved to activation block
-
             // Acquire Immediately
             info!(
                 "[PERP_GRID] Acquiring initial position: {}",
                 total_position_required
             );
-            let cloid = ctx.generate_cloid();
 
             let (activation_price, target_size, side) = {
                 let market_info = ctx.market_info(&self.config.symbol).unwrap();
@@ -309,20 +306,20 @@ impl PerpGridStrategy {
             };
 
             if target_size > 0.0 {
-                self.state = StrategyState::AcquiringAssets { cloid, target_size };
                 info!(
                     "[ORDER_REQUEST] [PERP_GRID] REBALANCING: LIMIT {} {} {} @ {}",
                     side, target_size, self.config.symbol, activation_price
                 );
 
-                ctx.place_order(OrderRequest::Limit {
+                let cloid = ctx.place_order(OrderRequest::Limit {
                     symbol: self.config.symbol.clone(),
                     side,
                     price: activation_price,
                     sz: target_size,
                     reduce_only: false,
-                    cloid: Some(cloid),
+                    cloid: None,
                 });
+                self.state = StrategyState::AcquiringAssets { cloid, target_size };
                 return Ok(());
             }
         }
@@ -425,7 +422,6 @@ impl PerpGridStrategy {
         };
 
         let size = zone.size;
-        let cloid = ctx.generate_cloid();
 
         // Need market info for rounding
         let (rounded_price, rounded_size) =
@@ -439,28 +435,29 @@ impl PerpGridStrategy {
                 return;
             };
 
+        let cloid = ctx.place_order(OrderRequest::Limit {
+            symbol: self.config.symbol.clone(),
+            side,
+            price: rounded_price,
+            sz: rounded_size,
+            reduce_only,
+            cloid: None,
+        });
+
         // Update zone state
         self.zones[zone_idx].cloid = Some(cloid);
         self.active_orders.insert(cloid, zone_idx);
 
         info!(
-            "[ORDER_REQUEST] [PERP_GRID] GRID_ZONE_{}: LIMIT {} {} {} @ {}{}",
+            "[ORDER_REQUEST] [PERP_GRID] GRID_ZONE_{}: cloid: {} LIMIT {} {} {} @ {}{}",
             zone_idx,
+            cloid,
             side,
             rounded_size,
             self.config.symbol,
             rounded_price,
             if reduce_only { " (RO)" } else { "" }
         );
-
-        ctx.place_order(OrderRequest::Limit {
-            symbol: self.config.symbol.clone(),
-            side,
-            price: rounded_price,
-            sz: rounded_size,
-            reduce_only,
-            cloid: Some(cloid),
-        });
     }
 
     fn validate_fill_assertions(zone: &GridZone, fill: &OrderFill, zone_idx: usize) {
@@ -532,9 +529,6 @@ impl PerpGridStrategy {
         side: OrderSide,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
-        let zone = &mut self.zones[zone_idx];
-        let next_cloid = ctx.generate_cloid();
-
         let market_info = match ctx.market_info(&self.config.symbol) {
             Some(i) => i,
             None => {
@@ -543,42 +537,39 @@ impl PerpGridStrategy {
             }
         };
 
+        let zone = &self.zones[zone_idx];
         let (rounded_price, rounded_size) = (
             market_info.round_price(price),
             market_info.round_size(zone.size),
         );
 
         // Determine Reduce-Only for Counter Order
-        // Counter order is the "closing" or "next step" order.
-        // If we just filled Opening (WaitingBuy, LongBias), next is Closing (WaitingSell).
-        // So reduce_only logic should be standard:
-        // Long mode: Sell = Close (Reduce), Buy = Open.
-        // Short mode: Buy = Close (Reduce), Sell = Open.
         let reduce_only = match zone.mode {
             ZoneMode::Short => side.is_buy(), // Buying to close short
             ZoneMode::Long => side.is_sell(), // Selling to close long
         };
 
+        let next_cloid = ctx.place_order(OrderRequest::Limit {
+            symbol: self.config.symbol.clone(),
+            side,
+            price: rounded_price,
+            sz: rounded_size,
+            reduce_only,
+            cloid: None,
+        });
+
+        self.active_orders.insert(next_cloid, zone_idx);
+        self.zones[zone_idx].cloid = Some(next_cloid);
+
         info!(
-            "[ORDER_REQUEST] [PERP_GRID] COUNTER_ORDER: LIMIT {} {} {} @ {}{}",
+            "[ORDER_REQUEST] [PERP_GRID] COUNTER_ORDER: cloid: {} LIMIT {} {} {} @ {}{}",
+            next_cloid,
             side,
             rounded_size,
             self.config.symbol,
             rounded_price,
             if reduce_only { " (RO)" } else { "" }
         );
-
-        self.active_orders.insert(next_cloid, zone_idx);
-        zone.cloid = Some(next_cloid);
-
-        ctx.place_order(OrderRequest::Limit {
-            symbol: self.config.symbol.clone(),
-            side,
-            price: rounded_price,
-            sz: rounded_size,
-            reduce_only,
-            cloid: Some(next_cloid),
-        });
 
         Ok(())
     }

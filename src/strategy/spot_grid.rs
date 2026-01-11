@@ -400,17 +400,16 @@ impl SpotGridStrategy {
                     "[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT BUY {} {} @ {}",
                     rounded_deficit, self.base_asset, acquisition_price
                 );
-                let cloid = ctx.generate_cloid();
-                self.state = StrategyState::AcquiringAssets { cloid };
 
-                ctx.place_order(OrderRequest::Limit {
+                let cloid = ctx.place_order(OrderRequest::Limit {
                     symbol: self.config.symbol.clone(),
                     side: OrderSide::Buy,
                     price: acquisition_price,
                     sz: rounded_deficit,
                     reduce_only: false,
-                    cloid: Some(cloid),
+                    cloid: None,
                 });
+                self.state = StrategyState::AcquiringAssets { cloid };
                 return Ok(());
             }
         } else if quote_deficit > 0.0 {
@@ -448,17 +447,16 @@ impl SpotGridStrategy {
                     "[ORDER_REQUEST] [SPOT_GRID] REBALANCING: LIMIT SELL {} {} @ {}",
                     rounded_sell_sz, self.base_asset, acquisition_price
                 );
-                let cloid = ctx.generate_cloid();
-                self.state = StrategyState::AcquiringAssets { cloid };
 
-                ctx.place_order(OrderRequest::Limit {
+                let cloid = ctx.place_order(OrderRequest::Limit {
                     symbol: self.config.symbol.clone(),
                     side: OrderSide::Sell,
                     price: acquisition_price,
                     sz: rounded_sell_sz,
                     reduce_only: false,
-                    cloid: Some(cloid),
+                    cloid: None,
                 });
+                self.state = StrategyState::AcquiringAssets { cloid };
                 return Ok(());
             }
         }
@@ -530,7 +528,14 @@ impl SpotGridStrategy {
             return;
         }
 
-        let cloid = ctx.generate_cloid();
+        let cloid = ctx.place_order(OrderRequest::Limit {
+            symbol: self.config.symbol.clone(),
+            side,
+            price,
+            sz: size,
+            reduce_only: false,
+            cloid: None,
+        });
 
         self.zones[zone_idx].cloid = Some(cloid);
         self.active_orders.insert(cloid, zone_idx);
@@ -539,15 +544,6 @@ impl SpotGridStrategy {
             "[ORDER_REQUEST] [SPOT_GRID] GRID_ZONE_{} cloid: {} LIMIT {} {} {} @ {}",
             zone_idx, cloid, side, size, self.base_asset, price
         );
-
-        ctx.place_order(OrderRequest::Limit {
-            symbol: self.config.symbol.clone(),
-            side,
-            price,
-            sz: size,
-            reduce_only: false,
-            cloid: Some(cloid),
-        });
     }
 
     // =========================================================================
@@ -651,24 +647,23 @@ impl SpotGridStrategy {
         ctx: &mut StrategyContext,
     ) -> Result<()> {
         let zone = &mut self.zones[zone_idx];
-        let next_cloid = ctx.generate_cloid();
 
-        info!(
-            "[ORDER_REQUEST] [SPOT_GRID] COUNTER_ORDER: LIMIT {} {} {} @ {}",
-            side, zone.size, self.config.symbol, price
-        );
-
-        self.active_orders.insert(next_cloid, zone_idx);
-        zone.cloid = Some(next_cloid);
-
-        ctx.place_order(OrderRequest::Limit {
+        let next_cloid = ctx.place_order(OrderRequest::Limit {
             symbol: self.config.symbol.clone(),
             side,
             price,
             sz: zone.size,
             reduce_only: false,
-            cloid: Some(next_cloid),
+            cloid: None,
         });
+
+        self.active_orders.insert(next_cloid, zone_idx);
+        self.zones[zone_idx].cloid = Some(next_cloid);
+
+        info!(
+            "[ORDER_REQUEST] [SPOT_GRID] COUNTER_ORDER: cloid: {} LIMIT {} {} {} @ {}",
+            next_cloid, side, self.zones[zone_idx].size, self.config.symbol, price
+        );
 
         Ok(())
     }

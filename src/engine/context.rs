@@ -101,16 +101,20 @@ impl StrategyContext {
         self.markets.get_mut(symbol)
     }
 
-    pub fn place_order(&mut self, order: OrderRequest) {
+    pub fn place_order(&mut self, mut order: OrderRequest) -> Cloid {
+        let cloid = Cloid::new();
+        // Set the cloid on the order
+        match &mut order {
+            OrderRequest::Limit { cloid: c, .. } => *c = Some(cloid),
+            OrderRequest::Market { cloid: c, .. } => *c = Some(cloid),
+            OrderRequest::Cancel { .. } => {} // Cancel already has cloid
+        }
         self.order_queue.push(order);
+        cloid
     }
 
     pub fn cancel_order(&mut self, cloid: Cloid) {
         self.cancellation_queue.push(cloid);
-    }
-
-    pub fn generate_cloid(&mut self) -> Cloid {
-        Cloid::new()
     }
 
     // --- Balance Accessors ---

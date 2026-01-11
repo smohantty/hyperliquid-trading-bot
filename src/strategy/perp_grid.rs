@@ -837,7 +837,7 @@ mod tests {
         symbol: &str,
         grid_bias: GridBias,
         trigger_price: Option<f64>,
-        last_price: f64,
+        _last_price: f64,
         range_low: f64,
         range_high: f64,
     ) -> (PerpGridStrategy, StrategyContext) {
@@ -848,10 +848,6 @@ mod tests {
         );
         let mut ctx = StrategyContext::new(markets);
         ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
-
-        if let Some(info) = ctx.market_info_mut(symbol) {
-            info.last_price = last_price;
-        }
 
         let config = PerpGridConfig {
             symbol: symbol.to_string(),
@@ -877,10 +873,7 @@ mod tests {
             symbol.to_string(),
             MarketInfo::new(symbol.to_string(), "HYPE".to_string(), 0, 2, 2),
         );
-        let mut ctx = StrategyContext::new(markets);
-        if let Some(info) = ctx.market_info_mut(symbol) {
-            info.last_price = 100.0;
-        }
+        let ctx = StrategyContext::new(markets);
         ctx
     }
 
@@ -934,10 +927,6 @@ mod tests {
 
         let mut strategy = PerpGridStrategy::new(config);
 
-        // Set last_price to 99 so zone [100-120] is above price (Sell)
-        if let Some(info) = ctx.market_info_mut(&symbol) {
-            info.last_price = 99.0;
-        }
         strategy.on_tick(99.0, &mut ctx).unwrap();
 
         let cloid = match strategy.state {
@@ -1040,9 +1029,6 @@ mod tests {
         let mut strategy = PerpGridStrategy::new(config);
 
         // Set last_price to 99 so zone [100-120] is above price (Sell)
-        if let Some(info) = ctx.market_info_mut(&symbol) {
-            info.last_price = 99.0;
-        }
         strategy.on_tick(99.0, &mut ctx).unwrap();
 
         // 1. Initial State: Empty position
@@ -1443,10 +1429,6 @@ mod tests {
         let mut ctx = StrategyContext::new(markets);
         ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
 
-        if let Some(info) = ctx.market_info_mut("BTC") {
-            info.last_price = 105.0;
-        }
-
         let config = PerpGridConfig {
             symbol: "BTC".to_string(),
             leverage: 1,
@@ -1521,10 +1503,6 @@ mod tests {
         );
         let mut ctx = StrategyContext::new(markets);
         ctx.update_perp_balance("USDC".to_string(), 10000.0, 10000.0);
-
-        if let Some(info) = ctx.market_info_mut("BTC") {
-            info.last_price = 95.0;
-        }
 
         let config = PerpGridConfig {
             symbol: "BTC".to_string(),

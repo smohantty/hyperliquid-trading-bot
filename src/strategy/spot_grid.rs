@@ -798,7 +798,7 @@ mod tests {
         trigger_price: Option<f64>,
         base_balance: f64,
         quote_balance: f64,
-        last_price: f64,
+        _last_price: f64,
     ) -> (SpotGridStrategy, StrategyContext) {
         let config = SpotGridConfig {
             symbol: "HYPE/USDC".to_string(),
@@ -820,10 +820,6 @@ mod tests {
         let mut ctx = StrategyContext::new(markets);
         ctx.update_spot_balance("HYPE".to_string(), base_balance, base_balance);
         ctx.update_spot_balance("USDC".to_string(), quote_balance, quote_balance);
-
-        if let Some(info) = ctx.market_info_mut("HYPE/USDC") {
-            info.last_price = last_price;
-        }
 
         (strategy, ctx)
     }

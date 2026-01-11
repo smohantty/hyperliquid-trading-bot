@@ -10,7 +10,6 @@ pub struct MarketInfo {
     pub asset_index: u32,
     pub sz_decimals: u32,
     pub price_decimals: u32,
-    pub last_price: f64,
 }
 
 fn round_to_decimals(value: f64, decimals: u32) -> f64 {
@@ -43,7 +42,6 @@ impl MarketInfo {
             asset_index,
             sz_decimals,
             price_decimals,
-            last_price: 0.0,
         }
     }
 

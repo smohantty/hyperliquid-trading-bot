@@ -343,12 +343,6 @@ impl Engine {
         exchange_client: &ExchangeClient,
         coin: &str,
     ) -> Result<()> {
-        let target_symbol = self.config.symbol();
-        // Update Market Info
-        if let Some(info) = runtime.ctx.market_info_mut(target_symbol) {
-            info.last_price = mid_price;
-        }
-
         // Broadcast Market Update (Real-time)
         // Optimization: Could throttle this if it's too much data, but mid_price updates are usually manageable
         self.broadcaster

@@ -104,12 +104,8 @@ impl SimulationEngine {
         self.current_price = price;
 
         // Update market info with current price
-        let target_symbol = self.config.symbol();
-        if let Some(ctx) = &mut self.ctx {
-            if let Some(info) = ctx.market_info_mut(target_symbol) {
-                info.last_price = price;
-            }
 
+        if let Some(ctx) = &mut self.ctx {
             // Run strategy tick
             strategy.on_tick(price, ctx)?;
         }

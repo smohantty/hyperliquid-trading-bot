@@ -13,6 +13,9 @@ use std::str::FromStr;
 use tracing::{debug, error, info, warn};
 
 // Updated imports based on documentation discovery
+use crate::constants::{
+    BALANCE_REFRESH_INTERVAL, RECONCILIATION_INTERVAL, STATUS_SUMMARY_INTERVAL,
+};
 use hyperliquid_rust_sdk::{ClientLimit, ClientOrder, ClientOrderRequest, UserData};
 
 struct PendingOrder {
@@ -298,10 +301,10 @@ impl Engine {
         info!("Subscribed to UserEvents for {:?}.", user_address);
 
         let mut runtime = EngineRuntime::new(ctx);
-        let mut balance_refresh_timer = tokio::time::interval(std::time::Duration::from_secs(30));
-        let mut status_summary_timer =
-            tokio::time::interval(std::time::Duration::from_millis(1000)); // 1Hz status update
-        let mut reconciliation_timer = tokio::time::interval(std::time::Duration::from_secs(60));
+
+        let mut balance_refresh_timer = tokio::time::interval(BALANCE_REFRESH_INTERVAL);
+        let mut status_summary_timer = tokio::time::interval(STATUS_SUMMARY_INTERVAL);
+        let mut reconciliation_timer = tokio::time::interval(RECONCILIATION_INTERVAL);
 
         // Broadcast Config
         let mut config_json = serde_json::to_value(&self.config).unwrap_or(serde_json::Value::Null);

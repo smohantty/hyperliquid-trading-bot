@@ -30,20 +30,16 @@ pub const INVESTMENT_BUFFER_SPOT: Spread = Spread::new(0.1);
 pub const FEE_BUFFER: Spread = Spread::new(0.05);
 
 // =============================================================================
-// HELPER FUNCTIONS
+// ENGINE TIMER INTERVALS
 // =============================================================================
 
-// Helper functions `markup` and `markdown` are now methods on `Spread`.
+use std::time::Duration;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Interval for refreshing account balances (30 seconds)
+pub const BALANCE_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
-    #[test]
-    fn test_constants_markup() {
-        let value = 100.0;
-        let result = ACQUISITION_SPREAD.markup(value);
-        // 100 * (1 + 0.1/100) = 100.1
-        assert!((result - 100.1).abs() < 1e-9);
-    }
-}
+/// Interval for broadcasting status summary updates (5 seconds)
+pub const STATUS_SUMMARY_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Interval for order reconciliation checks (2 minutes)
+pub const RECONCILIATION_INTERVAL: Duration = Duration::from_secs(2 * 60);

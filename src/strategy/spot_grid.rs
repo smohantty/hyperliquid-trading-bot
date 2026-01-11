@@ -35,13 +35,11 @@ struct GridZone {
     retry_count: u32,
 }
 
-#[allow(dead_code)]
 pub struct SpotGridStrategy {
     pub config: SpotGridConfig,
     base_asset: String,
     quote_asset: String,
 
-    // Internal State
     zones: Vec<GridZone>,
     active_orders: HashMap<Cloid, usize>,
     state: StrategyState,
@@ -49,37 +47,26 @@ pub struct SpotGridStrategy {
     trigger_reference_price: Option<f64>,
     start_time: Instant,
 
-    // Performance Metrics
     matched_profit: f64,
     total_fees: f64,
     initial_equity: f64,
 
-    // Position Tracking
     inventory_base: f64,
     inventory_quote: f64,
 
-    // Acquisition State Tracking
-    acquisition_target_size: f64,
     required_base: f64,
     required_quote: f64,
     initial_avail_base: f64,
     initial_avail_quote: f64,
 
-    // Current Price
     current_price: f64,
 
-    // Grid Configuration (cached)
     grid_count: u32,
     grid_spacing_pct: (f64, f64),
 }
 
 impl SpotGridStrategy {
-    // =========================================================================
-    // INITIALIZATION
-    // =========================================================================
-
     pub fn new(config: SpotGridConfig) -> Self {
-        // Parse symbol (e.g., "HYPE/USDC")
         let parts: Vec<&str> = config.symbol.split('/').collect();
         let (base_asset, quote_asset) = if parts.len() == 2 {
             (parts[0].to_string(), parts[1].to_string())
@@ -91,7 +78,6 @@ impl SpotGridStrategy {
             (config.symbol.clone(), "USDC".to_string())
         };
 
-        // Calculate grid_count and grid_spacing_pct
         let (grid_count, grid_spacing_pct) = if let Some(spread_bips) = config.spread_bips {
             let prices = common::calculate_grid_prices_by_spread(
                 config.lower_price,
@@ -126,7 +112,7 @@ impl SpotGridStrategy {
             initial_equity: 0.0,
             inventory_base: 0.0,
             inventory_quote: 0.0,
-            acquisition_target_size: 0.0,
+
             required_base: 0.0,
             required_quote: 0.0,
             initial_avail_base: 0.0,
@@ -136,10 +122,6 @@ impl SpotGridStrategy {
             grid_spacing_pct,
         }
     }
-
-    // =========================================================================
-    // GRID SETUP & INITIALIZATION
-    // =========================================================================
 
     fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         self.config.validate().map_err(|e| anyhow!(e))?;
@@ -151,10 +133,8 @@ impl SpotGridStrategy {
             }
         };
 
-        // 1. Generate Zones
         let (total_base_required, total_quote_required) = self.calculate_grid_plan(&market_info)?;
 
-        // Store required amounts in struct for debugging/state inspection
         self.required_base = total_base_required;
         self.required_quote = total_quote_required;
 
@@ -163,17 +143,14 @@ impl SpotGridStrategy {
             self.base_asset, total_base_required, self.quote_asset, total_quote_required
         );
 
-        // Track initial inventory (critical for PnL tracking)
         let available_base = ctx.get_spot_available(&self.base_asset);
         let available_quote = ctx.get_spot_available(&self.quote_asset);
         self.inventory_base = available_base;
         self.inventory_quote = available_quote;
 
-        // Store initial available amounts for acquisition tracking
         self.initial_avail_base = available_base;
         self.initial_avail_quote = available_quote;
 
-        // Calculate and store initial equity
         let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
         self.initial_equity = (self.inventory_base * initial_price) + self.inventory_quote;
 
@@ -184,7 +161,6 @@ impl SpotGridStrategy {
             );
         }
 
-        // Upfront Total Investment Validation
         let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
         let total_wallet_value = (available_base * initial_price) + available_quote;
 
@@ -198,15 +174,11 @@ impl SpotGridStrategy {
             return Err(anyhow!(msg));
         }
 
-        // 2. Check Assets & Rebalance if necessary
         self.check_initial_acquisition(ctx, &market_info, total_base_required, total_quote_required)
     }
 
-    /// Calculate grid plan - generates zones based on grid_count OR spread_bips
     fn calculate_grid_plan(&mut self, market_info: &MarketInfo) -> Result<(f64, f64)> {
-        // Generate price levels based on config
         let prices: Vec<f64> = if let Some(spread_bips) = self.config.spread_bips {
-            // Use spread_bips to calculate levels
             common::calculate_grid_prices_by_spread(
                 self.config.lower_price,
                 self.config.upper_price,
@@ -216,7 +188,6 @@ impl SpotGridStrategy {
             .map(|p| market_info.round_price(p))
             .collect()
         } else if let Some(count) = self.config.grid_count {
-            // Use grid_count
             common::calculate_grid_prices(
                 self.config.grid_type,
                 self.config.lower_price,
@@ -249,7 +220,6 @@ impl SpotGridStrategy {
             return Err(anyhow!(msg));
         }
 
-        // Use trigger_price if available, otherwise last_price
         let initial_price = self.config.trigger_price.unwrap_or(market_info.last_price);
 
         self.zones.clear();
@@ -294,7 +264,6 @@ impl SpotGridStrategy {
 
         info!("[SPOT_GRID] Grid Plan: {} zones generated", num_zones);
 
-        // Normalize total requirement to exchange precision
         Ok((
             market_info.round_size(total_base_required),
             total_quote_required,
@@ -307,13 +276,11 @@ impl SpotGridStrategy {
         current_price: f64,
         market_info: &MarketInfo,
     ) -> f64 {
-        // If trigger_price is set, use it
         if let Some(trigger) = self.config.trigger_price {
             return market_info.round_price(trigger);
         }
 
         if side.is_buy() {
-            // Find nearest level LOWER than market to buy at (Limit Buy below market)
             let candidates: Vec<f64> = self
                 .zones
                 .iter()
@@ -324,11 +291,9 @@ impl SpotGridStrategy {
             if !candidates.is_empty() {
                 return market_info.round_price(candidates.into_iter().fold(0.0, f64::max));
             } else if !self.zones.is_empty() {
-                // Fallback: Price is below grid. Return markdown of current price for BUY.
                 return market_info.round_price(ACQUISITION_SPREAD.markdown(current_price));
             }
         } else {
-            // SELL: Find nearest level ABOVE market to sell at (Limit Sell above market)
             let candidates: Vec<f64> = self
                 .zones
                 .iter()
@@ -340,7 +305,6 @@ impl SpotGridStrategy {
                 return market_info
                     .round_price(candidates.into_iter().fold(f64::INFINITY, f64::min));
             } else if !self.zones.is_empty() {
-                // Fallback: Price is above grid. Return markup of current price for SELL.
                 return market_info.round_price(ACQUISITION_SPREAD.markup(current_price));
             }
         }
@@ -369,7 +333,6 @@ impl SpotGridStrategy {
         let quote_deficit = total_quote_required - available_quote;
 
         if base_deficit > 0.0 {
-            // Add fee buffer
             let base_deficit = FEE_BUFFER.markup(base_deficit);
 
             let acquisition_price = self.calculate_acquisition_price(
@@ -461,24 +424,17 @@ impl SpotGridStrategy {
             }
         }
 
-        // No Deficit (or negligible)
         if let Some(_trigger) = self.config.trigger_price {
-            // Passive Wait Mode
             info!("[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state.");
             self.trigger_reference_price = Some(market_info.last_price);
             self.state = StrategyState::WaitingForTrigger;
         } else {
-            // No Trigger, Assets OK -> Running
             info!("[SPOT_GRID] Assets verified. Starting Grid.");
             self.transition_to_running(ctx, market_info.last_price);
         }
 
         Ok(())
     }
-
-    // =========================================================================
-    // ORDER MANAGEMENT
-    // =========================================================================
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) {
         let zones_needing_orders: Vec<usize> = (0..self.zones.len())
@@ -545,10 +501,6 @@ impl SpotGridStrategy {
             zone_idx, cloid, side, size, self.base_asset, price
         );
     }
-
-    // =========================================================================
-    // INTERNAL HELPERS
-    // =========================================================================
 
     fn handle_acquisition_fill(
         &mut self,
@@ -672,10 +624,6 @@ impl SpotGridStrategy {
     }
 }
 
-// =============================================================================
-// STRATEGY LIFECYCLE (Trait Implementation)
-// =============================================================================
-
 impl Strategy for SpotGridStrategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()> {
         self.current_price = price;
@@ -684,9 +632,7 @@ impl Strategy for SpotGridStrategy {
             StrategyState::Initializing => {
                 self.initialize_zones(ctx)?;
             }
-            StrategyState::AcquiringAssets { .. } => {
-                // Handled in on_order_filled or wait for transition
-            }
+            StrategyState::AcquiringAssets { .. } => {}
             StrategyState::WaitingForTrigger => {
                 if let (Some(trigger), Some(start)) =
                     (self.config.trigger_price, self.trigger_reference_price)
@@ -794,7 +740,6 @@ impl Strategy for SpotGridStrategy {
 
         let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
 
-        // Calculate uptime
         let uptime = common::format_uptime(self.start_time.elapsed());
 
         StrategySummary::SpotGrid(SpotGridSummary {

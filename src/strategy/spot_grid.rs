@@ -67,6 +67,10 @@ pub struct SpotGridStrategy {
 }
 
 impl SpotGridStrategy {
+    // =========================================================================
+    // INITIALIZATION
+    // =========================================================================
+
     pub fn new(config: SpotGridConfig) -> Self {
         // Parse symbol (e.g., "HYPE/USDC")
         let parts: Vec<&str> = config.symbol.split('/').collect();
@@ -102,6 +106,10 @@ impl SpotGridStrategy {
             initial_avail_quote: 0.0,
         }
     }
+
+    // =========================================================================
+    // GRID SETUP & INITIALIZATION
+    // =========================================================================
 
     fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         self.config.validate().map_err(|e| anyhow!(e))?;
@@ -440,6 +448,10 @@ impl SpotGridStrategy {
         Ok(())
     }
 
+    // =========================================================================
+    // ORDER MANAGEMENT
+    // =========================================================================
+
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) {
         let zones_needing_orders: Vec<usize> = (0..self.zones.len())
             .filter(|&i| self.zones[i].cloid.is_none())
@@ -507,6 +519,10 @@ impl SpotGridStrategy {
             cloid: Some(cloid),
         });
     }
+
+    // =========================================================================
+    // INTERNAL HELPERS
+    // =========================================================================
 
     fn handle_acquisition_fill(
         &mut self,
@@ -656,6 +672,10 @@ impl SpotGridStrategy {
         }
     }
 }
+
+// =============================================================================
+// STRATEGY LIFECYCLE (Trait Implementation)
+// =============================================================================
 
 impl Strategy for SpotGridStrategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()> {

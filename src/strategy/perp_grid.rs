@@ -65,6 +65,8 @@ pub struct PerpGridStrategy {
 
     // Cached price from on_tick
     current_price: f64,
+
+    market_info: Option<MarketInfo>,
 }
 
 impl PerpGridStrategy {
@@ -84,6 +86,7 @@ impl PerpGridStrategy {
             position_size: 0.0,
             avg_entry_price: 0.0,
             current_price: 0.0,
+            market_info: None,
         }
     }
 
@@ -124,9 +127,14 @@ impl PerpGridStrategy {
 
         let size_per_zone = adjusted_investment / zone_count as f64 / last_price;
 
-        let market_info = ctx
-            .market_info(&self.config.symbol)
-            .ok_or(anyhow!("No market info"))?;
+        if self.market_info.is_none() {
+            let info = ctx
+                .market_info(&self.config.symbol)
+                .ok_or(anyhow!("No market info"))?;
+            self.market_info = Some(info.clone());
+        }
+
+        let market_info = self.market_info.as_ref().unwrap();
         let size = market_info.round_size(size_per_zone);
 
         if size * last_price < MIN_NOTIONAL_VALUE {
@@ -169,7 +177,6 @@ impl PerpGridStrategy {
             let mid_price = (lower + upper) / 2.0;
 
             let size = {
-                let market_info = ctx.market_info(&self.config.symbol).unwrap();
                 let raw_size = investment_per_zone / mid_price;
                 market_info.clamp_to_min_notional(raw_size, mid_price, MIN_NOTIONAL_VALUE)
             };
@@ -224,7 +231,6 @@ impl PerpGridStrategy {
             );
 
             let (activation_price, target_size, side) = {
-                let market_info = ctx.market_info(&self.config.symbol).unwrap();
                 let market_price = self.current_price;
                 let side = if total_position_required > 0.0 {
                     OrderSide::Buy
@@ -252,7 +258,7 @@ impl PerpGridStrategy {
                     );
                     trigger
                 } else {
-                    self.calculate_acquisition_price(side, market_price, market_info)
+                    self.calculate_acquisition_price(side, market_price)
                 };
 
                 (
@@ -290,12 +296,8 @@ impl PerpGridStrategy {
     }
 
     /// Calculate optimal price for acquiring assets during initial setup.
-    fn calculate_acquisition_price(
-        &self,
-        side: OrderSide,
-        current_price: f64,
-        market_info: &MarketInfo,
-    ) -> f64 {
+    fn calculate_acquisition_price(&self, side: OrderSide, current_price: f64) -> f64 {
+        let market_info = self.market_info.as_ref().unwrap();
         if let Some(trigger) = self.config.trigger_price {
             return market_info.round_price(trigger);
         }
@@ -369,16 +371,13 @@ impl PerpGridStrategy {
 
         let size = zone.size;
 
-        let (rounded_price, rounded_size) =
-            if let Some(market_info) = ctx.market_info(&self.config.symbol) {
-                (market_info.round_price(price), market_info.round_size(size))
-            } else {
-                error!(
-                    "[PERP_GRID] No market info for {} in place_zone_order",
-                    self.config.symbol
-                );
-                return;
-            };
+        let (rounded_price, rounded_size) = {
+            let market_info = self
+                .market_info
+                .as_ref()
+                .expect("Market info should be initialized");
+            (market_info.round_price(price), market_info.round_size(size))
+        };
 
         let cloid = ctx.place_order(OrderRequest::Limit {
             symbol: self.config.symbol.clone(),
@@ -473,13 +472,10 @@ impl PerpGridStrategy {
         side: OrderSide,
         ctx: &mut StrategyContext,
     ) -> Result<()> {
-        let market_info = match ctx.market_info(&self.config.symbol) {
-            Some(i) => i,
-            None => {
-                error!("[PERP_GRID] No market info for {}", self.config.symbol);
-                return Err(anyhow!("No market info for {}", self.config.symbol));
-            }
-        };
+        let market_info = self
+            .market_info
+            .as_ref()
+            .expect("Market info should be initialized");
 
         let zone = &self.zones[zone_idx];
         let (rounded_price, rounded_size) = (

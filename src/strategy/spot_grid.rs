@@ -219,13 +219,13 @@ impl SpotGridStrategy {
         let mut total_quote_required = 0.0;
 
         for i in 0..num_zones {
-            let lower = prices[i];
-            let upper = prices[i + 1];
+            let zone_buy_price = prices[i];
+            let zone_sell_price = prices[i + 1];
 
-            let raw_size = quote_per_zone / lower;
+            let raw_size = quote_per_zone / zone_buy_price;
             let size = market_info.round_size(raw_size);
 
-            let order_side = if lower > initial_price {
+            let order_side = if zone_buy_price > initial_price {
                 OrderSide::Sell
             } else {
                 OrderSide::Buy
@@ -234,17 +234,17 @@ impl SpotGridStrategy {
             if order_side.is_sell() {
                 total_base_required += size;
             } else {
-                total_quote_required += size * lower;
+                total_quote_required += size * zone_buy_price;
             }
 
             self.zones.push(GridZone {
                 index: i,
-                buy_price: lower,
-                sell_price: upper,
+                buy_price: zone_buy_price,
+                sell_price: zone_sell_price,
                 size,
                 order_side,
                 entry_price: if order_side.is_sell() {
-                    lower // Use buy_price as entry_price for sell zones
+                    zone_buy_price
                 } else {
                     0.0
                 },

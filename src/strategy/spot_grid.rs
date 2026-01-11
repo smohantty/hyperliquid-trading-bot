@@ -606,7 +606,8 @@ impl SpotGridStrategy {
         self.zones[zone_idx].order_side = OrderSide::Sell;
         self.zones[zone_idx].entry_price = fill.price;
 
-        self.place_counter_order(zone_idx, next_price, OrderSide::Sell, ctx)
+        self.place_zone_order(zone_idx, ctx);
+        Ok(())
     }
 
     fn handle_sell_fill(
@@ -636,37 +637,10 @@ impl SpotGridStrategy {
         self.zones[zone_idx].order_side = OrderSide::Buy;
         self.zones[zone_idx].entry_price = 0.0;
 
-        self.place_counter_order(zone_idx, next_price, OrderSide::Buy, ctx)
-    }
-
-    fn place_counter_order(
-        &mut self,
-        zone_idx: usize,
-        price: f64,
-        side: OrderSide,
-        ctx: &mut StrategyContext,
-    ) -> Result<()> {
-        let zone = &mut self.zones[zone_idx];
-
-        let next_cloid = ctx.place_order(OrderRequest::Limit {
-            symbol: self.config.symbol.clone(),
-            side,
-            price,
-            sz: zone.size,
-            reduce_only: false,
-            cloid: None,
-        });
-
-        self.active_orders.insert(next_cloid, zone_idx);
-        self.zones[zone_idx].cloid = Some(next_cloid);
-
-        info!(
-            "[ORDER_REQUEST] [SPOT_GRID] COUNTER_ORDER: cloid: {} LIMIT {} {} {} @ {}",
-            next_cloid, side, self.zones[zone_idx].size, self.config.symbol, price
-        );
-
+        self.place_zone_order(zone_idx, ctx);
         Ok(())
     }
+
     fn validate_fill(&self, zone_idx: usize, fill: &OrderFill) {
         let expected_side = self.zones[zone_idx].order_side;
 

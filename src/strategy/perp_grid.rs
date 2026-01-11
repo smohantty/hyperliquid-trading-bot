@@ -90,10 +90,8 @@ impl PerpGridStrategy {
     fn initialize_zones(&mut self, ctx: &mut StrategyContext) -> Result<()> {
         self.config.validate().map_err(|e| anyhow!(e))?;
 
-        // 1. Get initial data (using cached current_price)
         let last_price = self.current_price;
 
-        // Generate Levels
         let prices = if let Some(spread) = self.config.spread_bips {
             common::calculate_grid_prices_by_spread(
                 self.config.lower_price,
@@ -124,30 +122,8 @@ impl PerpGridStrategy {
 
         let adjusted_investment = INVESTMENT_BUFFER_PERP.markdown(self.config.total_investment);
 
-        let size_per_zone = if self.config.is_isolated {
-            // Isolated: Investment amount is margin. Position size depends on leverage?
-            // "total_investment" usually means "Margin * Leverage" or "Available Balance"?
-            // Python implementation treats total_investment as "quote amount to use".
-            // Here, we calculate size in base asset.
+        let size_per_zone = adjusted_investment / zone_count as f64 / last_price;
 
-            // Simplified: total_investment / N zones / avg_price?
-            // Rust existing logic used: self.config.total_investment / (points.len() - 1) as f64 / current_price?
-            // Actually existing logic (lines 160+):
-            /*
-            let size_per_zone = self.config.total_investment
-                / self.config.grid_count as f64
-                / last_price;
-            */
-            // We should stick to existing logic but adjust zone count.
-            adjusted_investment / zone_count as f64 / last_price
-        } else {
-            // Cross: Similar logic
-            adjusted_investment / zone_count as f64 / last_price
-        };
-
-        // Round size
-        // Need market info to round size. ctx.market_info is needed but we are inside initialize_zones matching signature?
-        // initialize_zones(ctx) has ctx.
         let market_info = ctx
             .market_info(&self.config.symbol)
             .ok_or(anyhow!("No market info"))?;
@@ -160,7 +136,6 @@ impl PerpGridStrategy {
             );
         }
 
-        // Define num_zones for loop
         let num_zones = if prices.len() > 1 {
             prices.len() - 1
         } else {
@@ -171,7 +146,6 @@ impl PerpGridStrategy {
 
         let initial_price = self.config.trigger_price.unwrap_or(last_price);
 
-        // Validation: Check if wallet has enough margin
         let wallet_balance = ctx.get_perp_available("USDC");
         let max_notional = wallet_balance * self.config.leverage as f64;
 
@@ -184,7 +158,6 @@ impl PerpGridStrategy {
             return Err(anyhow!(msg));
         }
 
-        // Set initial equity for PnL tracking
         self.initial_equity = wallet_balance;
 
         self.zones.clear();
@@ -201,29 +174,19 @@ impl PerpGridStrategy {
                 market_info.clamp_to_min_notional(raw_size, mid_price, MIN_NOTIONAL_VALUE)
             };
 
-            // Zone classification based on price line:
-            // - Zone ABOVE price: buy_price > initial_price (both bounds > price)
-            // - Zone BELOW price: sell_price < initial_price (both bounds < price)
-            // - Zone CONTAINS price: buy_price <= initial_price <= sell_price
             let (order_side, mode) = match self.config.grid_bias {
                 GridBias::Long => {
-                    // Long bias: acquire long positions above price, wait to open below
-                    // Zone ABOVE price (lower > price): Have long → Sell to close
-                    // Zone AT/BELOW price (lower <= price): No position → Buy to open
                     if lower > initial_price {
-                        (OrderSide::Sell, ZoneMode::Long) // Zone above → close long
+                        (OrderSide::Sell, ZoneMode::Long)
                     } else {
-                        (OrderSide::Buy, ZoneMode::Long) // Zone at/below → open long
+                        (OrderSide::Buy, ZoneMode::Long)
                     }
                 }
                 GridBias::Short => {
-                    // Short bias: acquire short positions below price, wait to open above
-                    // Zone BELOW price (upper < price): Have short → Buy to close
-                    // Zone AT/ABOVE price (upper >= price): No position → Sell to open
                     if upper < initial_price {
-                        (OrderSide::Buy, ZoneMode::Short) // Zone below → close short
+                        (OrderSide::Buy, ZoneMode::Short)
                     } else {
-                        (OrderSide::Sell, ZoneMode::Short) // Zone at/above → open short
+                        (OrderSide::Sell, ZoneMode::Short)
                     }
                 }
             };
@@ -232,7 +195,7 @@ impl PerpGridStrategy {
                 total_position_required += size;
             }
             if mode == ZoneMode::Short && order_side.is_buy() {
-                total_position_required -= size; // Short position needed (negative size)
+                total_position_required -= size;
             }
 
             self.zones.push(GridZone {
@@ -255,7 +218,6 @@ impl PerpGridStrategy {
         );
 
         if total_position_required.abs() > 0.0 {
-            // Acquire Immediately
             info!(
                 "[PERP_GRID] Acquiring initial position: {}",
                 total_position_required
@@ -290,7 +252,6 @@ impl PerpGridStrategy {
                     );
                     trigger
                 } else {
-                    // Use helper function to calculate acquisition price
                     self.calculate_acquisition_price(side, market_price, market_info)
                 };
 
@@ -329,20 +290,17 @@ impl PerpGridStrategy {
     }
 
     /// Calculate optimal price for acquiring assets during initial setup.
-    /// Python equivalent: _calculate_acquisition_price
     fn calculate_acquisition_price(
         &self,
         side: OrderSide,
         current_price: f64,
         market_info: &MarketInfo,
     ) -> f64 {
-        // If trigger_price is set, use it
         if let Some(trigger) = self.config.trigger_price {
             return market_info.round_price(trigger);
         }
 
         if side.is_buy() {
-            // Find nearest level LOWER than market to buy at (Limit Buy below market)
             let candidates: Vec<f64> = self
                 .zones
                 .iter()
@@ -353,11 +311,9 @@ impl PerpGridStrategy {
             if !candidates.is_empty() {
                 return market_info.round_price(candidates.into_iter().fold(0.0, f64::max));
             } else if !self.zones.is_empty() {
-                // Fallback: use first zone's buy price
                 return market_info.round_price(ACQUISITION_SPREAD.markdown(current_price));
             }
         } else {
-            // SELL: Find nearest level ABOVE market to sell at (Limit Sell above market)
             let candidates: Vec<f64> = self
                 .zones
                 .iter()
@@ -369,7 +325,6 @@ impl PerpGridStrategy {
                 return market_info
                     .round_price(candidates.into_iter().fold(f64::INFINITY, f64::min));
             } else if !self.zones.is_empty() {
-                // Fallback: use last zone's sell price
                 return market_info.round_price(ACQUISITION_SPREAD.markup(current_price));
             }
         }
@@ -378,12 +333,10 @@ impl PerpGridStrategy {
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) -> Result<()> {
-        // Collect zone indices that need orders to avoid borrowing issues
         let zones_needing_orders: Vec<usize> = (0..self.zones.len())
             .filter(|&i| self.zones[i].cloid.is_none())
             .collect();
 
-        // Place orders for each zone
         for zone_idx in zones_needing_orders {
             self.place_zone_order(zone_idx, ctx);
         }
@@ -391,16 +344,13 @@ impl PerpGridStrategy {
     }
 
     /// Place an order for a zone based on its current state.
-    /// Python equivalent: place_zone_order
     fn place_zone_order(&mut self, zone_idx: usize, ctx: &mut StrategyContext) {
         let zone = &self.zones[zone_idx];
 
-        // Skip if already has an order
         if zone.cloid.is_some() {
             return;
         }
 
-        // Skip if exceeded max retries
         if zone.retry_count >= crate::constants::MAX_ORDER_RETRIES {
             return;
         }
@@ -419,7 +369,6 @@ impl PerpGridStrategy {
 
         let size = zone.size;
 
-        // Need market info for rounding
         let (rounded_price, rounded_size) =
             if let Some(market_info) = ctx.market_info(&self.config.symbol) {
                 (market_info.round_price(price), market_info.round_size(size))
@@ -440,7 +389,6 @@ impl PerpGridStrategy {
             cloid: None,
         });
 
-        // Update zone state
         self.zones[zone_idx].cloid = Some(cloid);
         self.active_orders.insert(cloid, zone_idx);
 
@@ -1385,9 +1333,6 @@ mod tests {
             create_test_setup("TEST", GridBias::Short, None, 105.0, 90.0, 110.0);
         strategy.on_tick(105.0, &mut ctx).unwrap();
         // grid_count needs to match 3 for helper but original test used 3.
-        // wait, helper hardcodes grid_count=3.
-        // Original used grid_count=3, lower=90, upper=110.
-        // helper works.
 
         // Handle acquisition for short bias
         if let StrategyState::AcquiringAssets { cloid, target_size } = strategy.state {
@@ -1488,12 +1433,7 @@ mod tests {
     #[test]
     fn test_long_bias_zone_classification_at_boundary() {
         // Grid: 90-110, count=5 (zones: [90-95], [95-100], [100-105], [105-110])
-        // Helper creates grid_count=3 by default. We need to manually setup this one because count differs.
-        // So we KEEP the manual setup for this test as it relies on specific grid geometry (5 zones).
-        // Wait, helper hardcodes grid_count=3.
-        // I should NOT use helper here unless I update helper to accept grid_count.
-        // For now, I will leave this test as is or update helper.
-        // Updating helper is better. I will update helper to accept grid_count.
+        // We need to manually setup this one because count differs from helper default.
 
         let mut markets = HashMap::new();
         markets.insert(

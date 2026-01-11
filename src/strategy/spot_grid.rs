@@ -67,6 +67,10 @@ pub struct SpotGridStrategy {
 
     // Current Price
     current_price: f64,
+
+    // Grid Configuration (cached)
+    grid_count: u32,
+    grid_spacing_pct: (f64, f64),
 }
 
 impl SpotGridStrategy {
@@ -85,6 +89,26 @@ impl SpotGridStrategy {
                 config.symbol
             );
             (config.symbol.clone(), "USDC".to_string())
+        };
+
+        // Calculate grid_count and grid_spacing_pct
+        let (grid_count, grid_spacing_pct) = if let Some(spread_bips) = config.spread_bips {
+            let prices = common::calculate_grid_prices_by_spread(
+                config.lower_price,
+                config.upper_price,
+                spread_bips,
+            );
+            let spacing = spread_bips / 100.0;
+            (prices.len() as u32, (spacing, spacing))
+        } else {
+            let count = config.grid_count.unwrap_or(2);
+            let spacing = common::calculate_grid_spacing_pct(
+                &config.grid_type,
+                config.lower_price,
+                config.upper_price,
+                count,
+            );
+            (count, spacing)
         };
 
         Self {
@@ -108,6 +132,8 @@ impl SpotGridStrategy {
             initial_avail_base: 0.0,
             initial_avail_quote: 0.0,
             current_price: 0.0,
+            grid_count,
+            grid_spacing_pct,
         }
     }
 
@@ -711,6 +737,10 @@ impl Strategy for SpotGridStrategy {
     }
 
     fn on_order_filled(&mut self, fill: &OrderFill, ctx: &mut StrategyContext) -> Result<()> {
+        if self.state == StrategyState::Initializing {
+            return Ok(());
+        }
+
         if let Some(cloid_val) = fill.cloid {
             if let StrategyState::AcquiringAssets { cloid: acq_cloid } = self.state {
                 if cloid_val == acq_cloid {
@@ -756,6 +786,10 @@ impl Strategy for SpotGridStrategy {
     }
 
     fn on_order_failed(&mut self, cloid: Cloid, _ctx: &mut StrategyContext) -> Result<()> {
+        if self.state == StrategyState::Initializing {
+            return Ok(());
+        }
+
         if let Some(zone_idx) = self.active_orders.remove(&cloid) {
             if let Some(zone) = self.zones.get_mut(zone_idx) {
                 if zone.cloid == Some(cloid) {
@@ -775,26 +809,21 @@ impl Strategy for SpotGridStrategy {
         Ok(())
     }
 
-    fn get_summary(&self, ctx: &StrategyContext) -> StrategySummary {
+    fn get_summary(&self, _ctx: &StrategyContext) -> StrategySummary {
+        if self.state == StrategyState::Initializing {
+            panic!("Strategy not initialized");
+        }
+
         use crate::broadcast::types::SpotGridSummary;
 
-        let current_price = ctx
-            .market_info(&self.config.symbol)
-            .map(|m| m.last_price)
-            .unwrap_or(0.0);
-
-        let current_equity = (self.inventory_base * current_price) + self.inventory_quote;
-        let total_profit = current_equity - self.initial_equity - self.total_fees;
+        let total_profit = if self.state == StrategyState::Running {
+            let current_equity = (self.inventory_base * self.current_price) + self.inventory_quote;
+            current_equity - self.initial_equity - self.total_fees
+        } else {
+            0.0
+        };
 
         let total_roundtrips: u32 = self.zones.iter().map(|z| z.roundtrip_count).sum();
-
-        let grid_count = (self.zones.len() + 1) as u32;
-        let grid_spacing_pct = common::calculate_grid_spacing_pct(
-            &self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
-            grid_count,
-        );
 
         // Calculate uptime
         let uptime = common::format_uptime(self.start_time.elapsed());
@@ -808,17 +837,21 @@ impl Strategy for SpotGridStrategy {
             total_profit,
             total_fees: self.total_fees,
             initial_entry_price: self.initial_entry_price,
-            grid_count: self.zones.len() as u32,
+            grid_count: self.grid_count,
             range_low: self.config.lower_price,
             range_high: self.config.upper_price,
-            grid_spacing_pct,
+            grid_spacing_pct: self.grid_spacing_pct,
             roundtrips: total_roundtrips,
-            base_balance: ctx.get_spot_total(&self.base_asset),
-            quote_balance: ctx.get_spot_total(&self.quote_asset),
+            base_balance: self.inventory_base,
+            quote_balance: self.inventory_quote,
         })
     }
 
     fn get_grid_state(&self, _ctx: &StrategyContext) -> GridState {
+        if self.state == StrategyState::Initializing {
+            panic!("Strategy not initialized");
+        }
+
         use crate::broadcast::types::ZoneInfo;
 
         let zones = self

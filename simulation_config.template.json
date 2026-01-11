@@ -1,0 +1,12 @@
+{
+    "// SIMULATION ENGINE CONFIGURATION": "This file configures the simulation/paper trading engine",
+    "// balance_mode options": "'real' (use exchange balance), 'unlimited' (1M each), 'override' (use balances below)",
+    "balance_mode": "unlimited",
+    "// balances - Only used when balance_mode is 'override'": "Specify per-asset balances. Unlisted assets use real balance.",
+    "balances": {
+        "USDC": 10000.0,
+        "HYPE": 500.0
+    },
+    "// unlimited_amount": "Default balance for all assets in unlimited mode",
+    "unlimited_amount": 1000000.0
+}

@@ -2,10 +2,15 @@ use anyhow::Result;
 use clap::Parser;
 use hyperliquid_trading_bot::broadcast::StatusBroadcaster;
 use hyperliquid_trading_bot::config::broadcast::load_broadcast_config;
+use hyperliquid_trading_bot::config::exchange::ExchangeConfig;
+use hyperliquid_trading_bot::config::simulation::load_simulation_config;
+use hyperliquid_trading_bot::config::strategy::StrategyConfig;
 use hyperliquid_trading_bot::config::{exchange::load_exchange_config, load_config};
+use hyperliquid_trading_bot::engine::simulation::SimulationEngine;
 use hyperliquid_trading_bot::engine::Engine;
 use hyperliquid_trading_bot::reporter::telegram::TelegramReporter;
 use hyperliquid_trading_bot::strategy::init_strategy;
+use hyperliquid_trading_bot::ui::console::ConsoleRenderer;
 use log::{error, info}; // Keep this import
 
 #[derive(Parser, Debug)]
@@ -22,6 +27,10 @@ struct Args {
 
     #[arg(long)]
     ws_port: Option<u16>,
+
+    /// Run in simulation mode (dry run preview)
+    #[arg(long)]
+    dry_run: bool,
 }
 
 use tracing_subscriber::layer::SubscriberExt;
@@ -108,6 +117,13 @@ async fn main() -> Result<()> {
         exchange_config.network
     );
 
+    // --- DRY RUN MODE ---
+    if args.dry_run {
+        info!("[SIMULATION] Running in dry-run mode...");
+        return run_simulation(config, exchange_config).await;
+    }
+
+    // --- LIVE TRADING MODE ---
     // Load broadcast configuration (Telegram & WebSocket)
     let broadcast_config = match load_broadcast_config(args.ws_port) {
         Ok(c) => c,
@@ -190,6 +206,50 @@ async fn main() -> Result<()> {
 
         std::process::exit(1);
     }
+
+    Ok(())
+}
+
+/// Run simulation (dry run) mode.
+async fn run_simulation(config: StrategyConfig, exchange_config: ExchangeConfig) -> Result<()> {
+    // Load simulation config
+    let sim_config = load_simulation_config(None);
+    info!("[SIMULATION] Mode: balance={:?}", sim_config.balance_mode);
+
+    // Initialize strategy
+    let mut strategy = match init_strategy(config.clone()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Strategy initialization failed: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Initialize simulation engine
+    let mut engine = SimulationEngine::new(config.clone(), exchange_config, sim_config);
+
+    if let Err(e) = engine.initialize().await {
+        error!("Simulation engine initialization failed: {}", e);
+        std::process::exit(1);
+    }
+
+    // Run single step
+    let current_price = match engine.run_single_step(&mut strategy).await {
+        Ok(price) => price,
+        Err(e) => {
+            error!("Simulation run failed: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Render results
+    ConsoleRenderer::render(
+        engine.config(),
+        engine.get_summary(strategy.as_ref()).as_ref(),
+        engine.get_grid_state(strategy.as_ref()).as_ref(),
+        &engine.get_orders(),
+        Some(current_price),
+    );
 
     Ok(())
 }

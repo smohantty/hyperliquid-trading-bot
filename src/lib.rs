@@ -7,3 +7,4 @@ pub mod logging;
 pub mod model;
 pub mod reporter;
 pub mod strategy;
+pub mod ui;

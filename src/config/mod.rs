@@ -6,6 +6,7 @@ use std::fs;
 pub mod broadcast;
 pub mod creator;
 pub mod exchange;
+pub mod simulation;
 pub mod strategy;
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 pub mod context;
+pub mod simulation;
 
 use crate::config::strategy::StrategyConfig;
 use crate::engine::context::{MarketInfo, StrategyContext};

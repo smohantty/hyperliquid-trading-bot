@@ -26,5 +26,5 @@ if [ $# -eq 0 ]; then
     exec cargo run -- --dry-run --config configs/spot_HYPE.toml
 else
     echo ""
-    exec cargo run -- --dry-run "$@"
+    exec cargo run -- --dry-run --config "$@"
 fi

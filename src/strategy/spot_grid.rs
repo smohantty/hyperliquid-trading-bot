@@ -64,6 +64,9 @@ pub struct SpotGridStrategy {
     required_quote: f64,
     initial_avail_base: f64,
     initial_avail_quote: f64,
+
+    // Current Price
+    current_price: f64,
 }
 
 impl SpotGridStrategy {
@@ -104,6 +107,7 @@ impl SpotGridStrategy {
             required_quote: 0.0,
             initial_avail_base: 0.0,
             initial_avail_quote: 0.0,
+            current_price: 0.0,
         }
     }
 
@@ -679,7 +683,8 @@ impl SpotGridStrategy {
 
 impl Strategy for SpotGridStrategy {
     fn on_tick(&mut self, price: f64, ctx: &mut StrategyContext) -> Result<()> {
-        // State Machine
+        self.current_price = price;
+
         match self.state {
             StrategyState::Initializing => {
                 self.initialize_zones(ctx)?;
@@ -688,23 +693,15 @@ impl Strategy for SpotGridStrategy {
                 // Handled in on_order_filled or wait for transition
             }
             StrategyState::WaitingForTrigger => {
-                if let Some(trigger) = self.config.trigger_price {
-                    let start = self.trigger_reference_price.expect(
-                        "Trigger reference price must be set when in WaitingForTrigger state",
-                    );
-
+                if let (Some(trigger), Some(start)) =
+                    (self.config.trigger_price, self.trigger_reference_price)
+                {
                     if common::check_trigger(price, trigger, start) {
-                        info!(
-                            "[SPOT_GRID] Price {} crossed trigger {}. Starting.",
-                            price, trigger
-                        );
+                        info!("[SPOT_GRID] [Triggered] at {}", price);
                         self.transition_to_running(ctx, price);
                     }
-                } else {
-                    self.state = StrategyState::Running;
                 }
             }
-
             StrategyState::Running => {
                 self.refresh_orders(ctx);
             }

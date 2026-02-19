@@ -14,6 +14,15 @@ pub enum GridBias {
     Short,
 }
 
+impl GridBias {
+    pub fn as_str(&self) -> &str {
+        match self {
+            GridBias::Long => "long",
+            GridBias::Short => "short",
+        }
+    }
+}
+
 /// The operational mode of a grid zone - determines position direction
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]

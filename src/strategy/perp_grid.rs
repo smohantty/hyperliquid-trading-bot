@@ -771,10 +771,11 @@ impl Strategy for PerpGridStrategy {
             position_side: position_side.to_string(),
             avg_entry_price: self.avg_entry_price,
             matched_profit: self.matched_profit,
+            total_profit: self.matched_profit + unrealized_pnl - self.total_fees,
             unrealized_pnl,
             total_fees: self.total_fees,
             leverage: self.config.leverage,
-            grid_bias: format!("{:?}", self.config.grid_bias),
+            grid_bias: self.config.grid_bias.as_str().to_string(),
             grid_count: self.zones.len() as u32,
             range_low: self.config.lower_price,
             range_high: self.config.upper_price,
@@ -815,7 +816,7 @@ impl Strategy for PerpGridStrategy {
         GridState {
             symbol: self.config.symbol.clone(),
             strategy_type: "perp_grid".to_string(),
-            grid_bias: Some(format!("{:?}", self.config.grid_bias)),
+            grid_bias: Some(self.config.grid_bias.as_str().to_string()),
             zones,
         }
     }

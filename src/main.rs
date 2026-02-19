@@ -8,7 +8,6 @@ use hyperliquid_trading_bot::config::strategy::StrategyConfig;
 use hyperliquid_trading_bot::config::{exchange::load_exchange_config, load_config};
 use hyperliquid_trading_bot::engine::simulation::SimulationEngine;
 use hyperliquid_trading_bot::engine::Engine;
-use hyperliquid_trading_bot::reporter::telegram::TelegramReporter;
 use hyperliquid_trading_bot::strategy::init_strategy;
 use hyperliquid_trading_bot::ui::console::ConsoleRenderer;
 use log::{error, info}; // Keep this import
@@ -124,7 +123,7 @@ async fn main() -> Result<()> {
     }
 
     // --- LIVE TRADING MODE ---
-    // Load broadcast configuration (Telegram & WebSocket)
+    // Load broadcast configuration (WebSocket)
     let broadcast_config = match load_broadcast_config(args.ws_port) {
         Ok(c) => c,
         Err(e) => {
@@ -139,7 +138,6 @@ async fn main() -> Result<()> {
         config.symbol()
     );
 
-    // Default port 9000 if not specified
     let ws_config = Some(broadcast_config.websocket.clone());
     let broadcaster = StatusBroadcaster::new(ws_config.clone());
     if let Some(conf) = ws_config {
@@ -149,36 +147,16 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Initialize Telegram Reporter
-    let mut reporter_handle = None;
-    if let Some(telegram_config) = broadcast_config.telegram {
-        match TelegramReporter::new(broadcaster.subscribe(), telegram_config, config.clone()) {
-            Ok(reporter) => {
-                info!("Telegram Reporter initialized. Spawning background task...");
-                reporter_handle = Some(tokio::spawn(reporter.run()));
-            }
-            Err(e) => {
-                error!("Failed to initialize Telegram Reporter: {}", e);
-            }
-        }
-    }
-
     // Initialize Strategy
     let strategy = match init_strategy(config.clone()) {
         Ok(s) => s,
         Err(e) => {
             error!("Strategy initialization failed: {}", e);
-            // Broadcast Error to Reporters
+            // Broadcast Error to WebSocket clients
             broadcaster.send(hyperliquid_trading_bot::broadcast::types::WSEvent::Error(
                 e.to_string(),
             ));
-
-            if let Some(handle) = reporter_handle {
-                info!("Waiting for Telegram Reporter to shut down...");
-                let _ = tokio::time::timeout(std::time::Duration::from_secs(10), handle).await;
-            } else {
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             std::process::exit(1);
         }
     };
@@ -189,21 +167,11 @@ async fn main() -> Result<()> {
     // Run Engine
     if let Err(e) = engine.run(strategy).await {
         error!("Engine error: {}", e);
-        // Broadcast Error to Reporters
+        // Broadcast Error to WebSocket clients
         broadcaster.send(hyperliquid_trading_bot::broadcast::types::WSEvent::Error(
             e.to_string(),
         ));
-
-        // Wait for Telegram Reporter to finish sending the message
-        if let Some(handle) = reporter_handle {
-            info!("Waiting for Telegram Reporter to shut down...");
-            // Allow up to 10 seconds for the message to send
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(10), handle).await;
-        } else {
-            // Fallback if no reporter
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-        }
-
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         std::process::exit(1);
     }
 

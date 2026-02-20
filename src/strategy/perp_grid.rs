@@ -97,15 +97,15 @@ impl PerpGridStrategy {
 
         let prices = if let Some(spread) = self.config.spread_bips {
             common::calculate_grid_prices_by_spread(
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 spread,
             )
         } else {
             common::calculate_grid_prices(
                 self.config.grid_type,
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 self.config.grid_count,
             )
         };
@@ -755,8 +755,8 @@ impl Strategy for PerpGridStrategy {
         // Calculate grid spacing percentage
         let grid_spacing_pct = common::calculate_grid_spacing_pct(
             &self.config.grid_type,
-            self.config.lower_price,
-            self.config.upper_price,
+            self.config.grid_range_low,
+            self.config.grid_range_high,
             self.config.grid_count,
         );
 
@@ -777,8 +777,8 @@ impl Strategy for PerpGridStrategy {
             leverage: self.config.leverage,
             grid_bias: self.config.grid_bias.as_str().to_string(),
             grid_count: self.zones.len() as u32,
-            range_low: self.config.lower_price,
-            range_high: self.config.upper_price,
+            grid_range_low: self.config.grid_range_low,
+            grid_range_high: self.config.grid_range_high,
             grid_spacing_pct,
             roundtrips: total_roundtrips,
             margin_balance: ctx.get_perp_available("USDC"),
@@ -835,8 +835,8 @@ mod tests {
         grid_bias: GridBias,
         trigger_price: Option<f64>,
         _last_price: f64,
-        range_low: f64,
-        range_high: f64,
+        grid_range_low: f64,
+        grid_range_high: f64,
     ) -> (PerpGridStrategy, StrategyContext) {
         let mut markets = HashMap::new();
         markets.insert(
@@ -850,8 +850,8 @@ mod tests {
             symbol: symbol.to_string(),
             leverage: 10,
             is_isolated: true,
-            upper_price: range_high,
-            lower_price: range_low,
+            grid_range_high: grid_range_high,
+            grid_range_low: grid_range_low,
             grid_type: GridType::Arithmetic,
             grid_count: 3,
             spread_bips: None,
@@ -883,8 +883,8 @@ mod tests {
             GridBias::Long,
             None,
             99.0,  // last_price
-            90.0,  // lower_price
-            110.0, // upper_price
+            90.0,  // grid_range_low
+            110.0, // grid_range_high
         );
         // Use price 99 (inside zone [90-100], below zone [100-110])
         strategy.on_tick(99.0, &mut ctx).unwrap();
@@ -912,8 +912,8 @@ mod tests {
             symbol: symbol.clone(),
             leverage: 1,
             is_isolated: true,
-            upper_price: 120.0,
-            lower_price: 80.0,
+            grid_range_high: 120.0,
+            grid_range_low: 80.0,
             grid_type: GridType::Arithmetic,
             grid_count: 3, // 80, 100, 120 -> zones: [80-100], [100-120]
             total_investment: 100.0,
@@ -1013,8 +1013,8 @@ mod tests {
             symbol: symbol.clone(),
             leverage: 1,
             is_isolated: true,
-            upper_price: 120.0,
-            lower_price: 80.0,
+            grid_range_high: 120.0,
+            grid_range_low: 80.0,
             grid_type: GridType::Arithmetic,
             grid_count: 3, // 80, 100, 120 -> zones: [80-100], [100-120]
             total_investment: 100.0,
@@ -1430,8 +1430,8 @@ mod tests {
             symbol: "BTC".to_string(),
             leverage: 1,
             is_isolated: false,
-            upper_price: 110.0,
-            lower_price: 90.0,
+            grid_range_high: 110.0,
+            grid_range_low: 90.0,
             grid_type: GridType::Arithmetic,
             grid_count: 5, // 4 zones: [90-95], [95-100], [100-105], [105-110]
             total_investment: 1000.0,
@@ -1505,8 +1505,8 @@ mod tests {
             symbol: "BTC".to_string(),
             leverage: 1,
             is_isolated: false,
-            upper_price: 110.0,
-            lower_price: 90.0,
+            grid_range_high: 110.0,
+            grid_range_low: 90.0,
             grid_type: GridType::Arithmetic,
             grid_count: 5, // 4 zones: [90-95], [95-100], [100-105], [105-110]
             total_investment: 1000.0,

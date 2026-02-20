@@ -69,8 +69,8 @@ pub struct SpotGridSummary {
 
     // Grid metrics
     pub grid_count: u32,
-    pub range_low: f64,
-    pub range_high: f64,
+    pub grid_range_low: f64,
+    pub grid_range_high: f64,
     pub grid_spacing_pct: (f64, f64), // (min%, max%) - same for geometric, different for arithmetic
     pub roundtrips: u32,              // Completed buy→sell cycles
 
@@ -101,8 +101,8 @@ pub struct PerpGridSummary {
     pub leverage: u32,
     pub grid_bias: String, // "long", "short", "neutral"
     pub grid_count: u32,
-    pub range_low: f64,
-    pub range_high: f64,
+    pub grid_range_low: f64,
+    pub grid_range_high: f64,
     pub grid_spacing_pct: (f64, f64), // (min%, max%) - same for geometric, different for arithmetic
     pub roundtrips: u32,
 
@@ -210,8 +210,8 @@ mod schema_tests {
         let config = serde_json::json!({
             "type": "spot_grid",
             "symbol": "ETH/USDC",
-            "upper_price": 4000.0,
-            "lower_price": 3000.0,
+            "grid_range_high": 4000.0,
+            "grid_range_low": 3000.0,
             "grid_type": "arithmetic",
             "grid_count": 10,
             "total_investment": 1000.0
@@ -226,8 +226,8 @@ mod schema_tests {
             "type": "perp_grid",
             "symbol": "HYPE",
             "leverage": 5,
-            "upper_price": 30.0,
-            "lower_price": 20.0,
+            "grid_range_high": 30.0,
+            "grid_range_low": 20.0,
             "grid_type": "geometric",
             "grid_count": 20,
             "total_investment": 5000.0,
@@ -258,8 +258,8 @@ mod schema_tests {
             total_fees: 3.12,
             initial_entry_price: Some(3500.0),
             grid_count: 10,
-            range_low: 3000.0,
-            range_high: 4000.0,
+            grid_range_low: 3000.0,
+            grid_range_high: 4000.0,
             grid_spacing_pct: (1.05, 1.05),
             roundtrips: 12,
             base_balance: 1.5,
@@ -284,8 +284,8 @@ mod schema_tests {
             leverage: 5,
             grid_bias: "long".to_string(),
             grid_count: 20,
-            range_low: 20.0,
-            range_high: 30.0,
+            grid_range_low: 20.0,
+            grid_range_high: 30.0,
             grid_spacing_pct: (0.5, 0.5),
             roundtrips: 8,
             margin_balance: 1135.20,

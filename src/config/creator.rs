@@ -65,14 +65,14 @@ fn create_spot_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         })
         .interact_text()?;
 
-    let lower_price: f64 = Input::with_theme(theme)
+    let grid_range_low: f64 = Input::with_theme(theme)
         .with_prompt("Lower Price")
         .interact_text()?;
 
-    let upper_price: f64 = Input::with_theme(theme)
+    let grid_range_high: f64 = Input::with_theme(theme)
         .with_prompt("Upper Price")
         .validate_with(|input: &f64| -> Result<(), &str> {
-            if *input > lower_price {
+            if *input > grid_range_low {
                 Ok(())
             } else {
                 Err("Upper price must be greater than lower price")
@@ -118,8 +118,8 @@ fn create_spot_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
 
     Ok(StrategyConfig::SpotGrid(SpotGridConfig {
         symbol,
-        upper_price,
-        lower_price,
+        grid_range_high,
+        grid_range_low,
         grid_type,
         grid_count: Some(grid_count),
         spread_bips: None,
@@ -149,14 +149,14 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         .default(true)
         .interact()?;
 
-    let lower_price: f64 = Input::with_theme(theme)
+    let grid_range_low: f64 = Input::with_theme(theme)
         .with_prompt("Lower Price")
         .interact_text()?;
 
-    let upper_price: f64 = Input::with_theme(theme)
+    let grid_range_high: f64 = Input::with_theme(theme)
         .with_prompt("Upper Price")
         .validate_with(|input: &f64| -> Result<(), &str> {
-            if *input > lower_price {
+            if *input > grid_range_low {
                 Ok(())
             } else {
                 Err("Upper price must be greater than lower price")
@@ -217,8 +217,8 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         symbol,
         leverage,
         is_isolated,
-        lower_price,
-        upper_price,
+        grid_range_low,
+        grid_range_high,
         grid_type,
         grid_count,
         spread_bips: None,
@@ -232,8 +232,8 @@ fn generate_default_filename(config: &StrategyConfig) -> String {
     match config {
         StrategyConfig::SpotGrid(SpotGridConfig {
             symbol,
-            upper_price,
-            lower_price,
+            grid_range_high,
+            grid_range_low,
             grid_type,
             ..
         }) => {
@@ -241,20 +241,20 @@ fn generate_default_filename(config: &StrategyConfig) -> String {
             let asset = symbol.split('/').next().unwrap_or(symbol);
             format!(
                 "{}_Spot_{:?}_{}_{}.toml",
-                asset, grid_type, lower_price, upper_price
+                asset, grid_type, grid_range_low, grid_range_high
             )
         }
         StrategyConfig::PerpGrid(PerpGridConfig {
             symbol,
             leverage,
             grid_bias,
-            lower_price,
-            upper_price,
+            grid_range_low,
+            grid_range_high,
             ..
         }) => {
             format!(
                 "{}_Perp_{:?}_{}x_{}_{}.toml",
-                symbol, grid_bias, leverage, lower_price, upper_price
+                symbol, grid_bias, leverage, grid_range_low, grid_range_high
             )
         }
     }

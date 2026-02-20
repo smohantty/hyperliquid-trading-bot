@@ -82,8 +82,8 @@ impl SpotGridStrategy {
 
         let (grid_count, grid_spacing_pct) = if let Some(spread_bips) = config.spread_bips {
             let prices = common::calculate_grid_prices_by_spread(
-                config.lower_price,
-                config.upper_price,
+                config.grid_range_low,
+                config.grid_range_high,
                 spread_bips,
             );
             let spacing = spread_bips / 100.0;
@@ -92,8 +92,8 @@ impl SpotGridStrategy {
             let count = config.grid_count.unwrap_or(2);
             let spacing = common::calculate_grid_spacing_pct(
                 &config.grid_type,
-                config.lower_price,
-                config.upper_price,
+                config.grid_range_low,
+                config.grid_range_high,
                 count,
             );
             (count, spacing)
@@ -188,8 +188,8 @@ impl SpotGridStrategy {
 
         let prices: Vec<f64> = if let Some(spread_bips) = self.config.spread_bips {
             common::calculate_grid_prices_by_spread(
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 spread_bips,
             )
             .into_iter()
@@ -198,8 +198,8 @@ impl SpotGridStrategy {
         } else if let Some(count) = self.config.grid_count {
             common::calculate_grid_prices(
                 self.config.grid_type,
-                self.config.lower_price,
-                self.config.upper_price,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
                 count,
             )
             .into_iter()
@@ -755,8 +755,8 @@ impl Strategy for SpotGridStrategy {
             total_fees: self.total_fees,
             initial_entry_price: self.initial_entry_price,
             grid_count: self.grid_count,
-            range_low: self.config.lower_price,
-            range_high: self.config.upper_price,
+            grid_range_low: self.config.grid_range_low,
+            grid_range_high: self.config.grid_range_high,
             grid_spacing_pct: self.grid_spacing_pct,
             roundtrips: total_roundtrips,
             base_balance: self.inventory_base,
@@ -811,8 +811,8 @@ mod tests {
     ) -> (SpotGridStrategy, StrategyContext) {
         let config = SpotGridConfig {
             symbol: "HYPE/USDC".to_string(),
-            upper_price: 110.0,
-            lower_price: 90.0,
+            grid_range_high: 110.0,
+            grid_range_low: 90.0,
             grid_type: GridType::Arithmetic,
             grid_count: Some(5),
             spread_bips: None,

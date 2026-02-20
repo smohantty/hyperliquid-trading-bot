@@ -1,8 +1,8 @@
 type = "perp_grid"
 symbol = "BTC"
 leverage = 10
-upper_price = 89500.0
-lower_price = 87000.0
+grid_range_high = 89500.0
+grid_range_low = 87000.0
 grid_type = "geometric"
 grid_count = 20
 total_investment = 8000.0

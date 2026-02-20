@@ -14,8 +14,8 @@ pub enum StrategyConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SpotGridConfig {
     pub symbol: String,
-    pub upper_price: f64,
-    pub lower_price: f64,
+    pub grid_range_high: f64,
+    pub grid_range_low: f64,
     pub grid_type: GridType,
     /// Number of grid levels. Either grid_count OR spread_bips must be provided.
     #[serde(default)]
@@ -34,8 +34,8 @@ pub struct PerpGridConfig {
     pub leverage: u32,
     #[serde(default = "default_is_isolated")]
     pub is_isolated: bool,
-    pub upper_price: f64,
-    pub lower_price: f64,
+    pub grid_range_high: f64,
+    pub grid_range_low: f64,
     pub grid_type: GridType,
     pub grid_count: u32,
     #[serde(default)]
@@ -107,20 +107,20 @@ impl SpotGridConfig {
             }
         }
 
-        if self.upper_price <= self.lower_price {
+        if self.grid_range_high <= self.grid_range_low {
             return Err(anyhow::anyhow!(
                 "Upper price {} must be greater than lower price {}.",
-                self.upper_price,
-                self.lower_price
+                self.grid_range_high,
+                self.grid_range_low
             ));
         }
         if let Some(trigger) = self.trigger_price {
-            if trigger < self.lower_price || trigger > self.upper_price {
+            if trigger < self.grid_range_low || trigger > self.grid_range_high {
                 return Err(anyhow::anyhow!(
                     "Trigger price {} is outside the grid range [{}, {}].",
                     trigger,
-                    self.lower_price,
-                    self.upper_price
+                    self.grid_range_low,
+                    self.grid_range_high
                 ));
             }
             if trigger <= 0.0 {
@@ -156,20 +156,20 @@ impl PerpGridConfig {
                 self.grid_count
             ));
         }
-        if self.upper_price <= self.lower_price {
+        if self.grid_range_high <= self.grid_range_low {
             return Err(anyhow::anyhow!(
                 "Upper price {} must be greater than lower price {}.",
-                self.upper_price,
-                self.lower_price
+                self.grid_range_high,
+                self.grid_range_low
             ));
         }
         if let Some(trigger) = self.trigger_price {
-            if trigger < self.lower_price || trigger > self.upper_price {
+            if trigger < self.grid_range_low || trigger > self.grid_range_high {
                 return Err(anyhow::anyhow!(
                     "Trigger price {} is outside the grid range [{}, {}].",
                     trigger,
-                    self.lower_price,
-                    self.upper_price
+                    self.grid_range_low,
+                    self.grid_range_high
                 ));
             }
             if trigger <= 0.0 {
@@ -195,8 +195,8 @@ pub fn print_strategy_help() {
     println!("   Description: A grid trading strategy for spot markets.");
     println!("   Parameters:");
     println!("     - symbol (String): The trading pair symbol (e.g., 'ETH/USDC').");
-    println!("     - upper_price (f64): The upper bound of the grid range.");
-    println!("     - lower_price (f64): The lower bound of the grid range.");
+    println!("     - grid_range_high (f64): The upper bound of the grid range.");
+    println!("     - grid_range_low (f64): The lower bound of the grid range.");
     println!("     - grid_type (String): 'arithmetic' or 'geometric'.");
     println!("     - grid_count (u32): Number of grid levels.");
     println!("     - total_investment (f64): Total base asset value to invest.");
@@ -209,8 +209,8 @@ pub fn print_strategy_help() {
     println!("     - symbol (String): The trading pair symbol (e.g., 'BTC').");
     println!("     - leverage (u32): Leverage multiplier (1-50x).");
     println!("     - is_isolated (bool): Isolated margin mode (default: true).");
-    println!("     - upper_price (f64): The upper bound of the grid range.");
-    println!("     - lower_price (f64): The lower bound of the grid range.");
+    println!("     - grid_range_high (f64): The upper bound of the grid range.");
+    println!("     - grid_range_low (f64): The lower bound of the grid range.");
     println!("     - grid_type (String): 'arithmetic' or 'geometric'.");
     println!("     - grid_count (u32): Number of grid levels.");
     println!(
@@ -229,8 +229,8 @@ mod tests {
     fn test_validation_upper_less_than_lower() {
         let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
-            upper_price: 1000.0,
-            lower_price: 2000.0,
+            grid_range_high: 1000.0,
+            grid_range_low: 2000.0,
             grid_type: GridType::Arithmetic,
             grid_count: Some(10),
             spread_bips: None,
@@ -249,8 +249,8 @@ mod tests {
     fn test_validation_trigger_out_of_bounds() {
         let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
-            upper_price: 2000.0,
-            lower_price: 1000.0,
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: Some(10),
             spread_bips: None,
@@ -266,8 +266,8 @@ mod tests {
     fn test_validation_grid_count_too_low() {
         let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
-            upper_price: 2000.0,
-            lower_price: 1000.0,
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: Some(2),
             spread_bips: None,
@@ -286,8 +286,8 @@ mod tests {
     fn test_validation_invalid_symbol_format() {
         let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTCUSDC".to_string(), // Missing '/'
-            upper_price: 2000.0,
-            lower_price: 1000.0,
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: Some(5),
             spread_bips: None,
@@ -301,8 +301,8 @@ mod tests {
     fn test_validation_negative_investment() {
         let config = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
-            upper_price: 2000.0,
-            lower_price: 1000.0,
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: Some(5),
             spread_bips: None,
@@ -319,8 +319,8 @@ mod tests {
             symbol: "BTC".to_string(),
             leverage: 0,
             is_isolated: true,
-            upper_price: 2000.0,
-            lower_price: 1000.0,
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: 5,
             spread_bips: None,
@@ -335,8 +335,8 @@ mod tests {
             symbol: "BTC".to_string(),
             leverage: 51,
             is_isolated: true,
-            upper_price: 2000.0,
-            lower_price: 1000.0,
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: 5,
             spread_bips: None,
@@ -351,8 +351,8 @@ mod tests {
     fn test_validation_valid_configs() {
         let spot = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "BTC/USDC".to_string(),
-            upper_price: 2000.0,
-            lower_price: 1000.0,
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: Some(10),
             spread_bips: None,
@@ -364,8 +364,8 @@ mod tests {
         // Test with spread_bips instead of grid_count
         let spot_bips = StrategyConfig::SpotGrid(SpotGridConfig {
             symbol: "ETH/USDC".to_string(),
-            upper_price: 2000.0,
-            lower_price: 1000.0,
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
             grid_type: GridType::Geometric,
             grid_count: None,
             spread_bips: Some(100.0), // 1%
@@ -378,8 +378,8 @@ mod tests {
             symbol: "BTC".to_string(),
             leverage: 10,
             is_isolated: true,
-            upper_price: 2000.0,
-            lower_price: 1000.0,
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
             grid_count: 10,
             spread_bips: None,

@@ -75,7 +75,10 @@ impl ConsoleRenderer {
                     println!("Grid Count:  {}", len);
                 }
 
-                println!("Range:       {:.6} - {:.6}", c.lower_price, c.upper_price);
+                println!(
+                    "Range:       {:.6} - {:.6}",
+                    c.grid_range_low, c.grid_range_high
+                );
 
                 if let Some(trigger) = c.trigger_price {
                     println!("Trigger:     {:.6}", trigger);
@@ -96,7 +99,10 @@ impl ConsoleRenderer {
                 // grid_count is u32 (not Option) for PerpGridConfig
                 println!("Grid Count:  {}", c.grid_count);
 
-                println!("Range:       {:.6} - {:.6}", c.lower_price, c.upper_price);
+                println!(
+                    "Range:       {:.6} - {:.6}",
+                    c.grid_range_low, c.grid_range_high
+                );
 
                 if let Some(trigger) = c.trigger_price {
                     println!("Trigger:     {:.6}", trigger);

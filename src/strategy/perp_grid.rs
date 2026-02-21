@@ -52,6 +52,7 @@ pub struct PerpGridStrategy {
     state: StrategyState,
     initial_entry_price: Option<f64>,
     trigger_reference_price: Option<f64>,
+    trigger_activated: bool,
     start_time: Instant,
 
     // Performance Metrics
@@ -62,6 +63,7 @@ pub struct PerpGridStrategy {
     // Position Tracking
     position_size: f64,
     avg_entry_price: f64,
+    target_position_size: f64,
 
     // Cached price from on_tick
     current_price: f64,
@@ -79,12 +81,14 @@ impl PerpGridStrategy {
             state: StrategyState::Initializing,
             initial_entry_price: None,
             trigger_reference_price: None,
+            trigger_activated: false,
             start_time: Instant::now(),
             matched_profit: 0.0,
             total_fees: 0.0,
             initial_equity: 0.0,
             position_size: 0.0,
             avg_entry_price: 0.0,
+            target_position_size: 0.0,
             current_price: 0.0,
             market_info: None,
         }
@@ -223,71 +227,95 @@ impl PerpGridStrategy {
             "[PERP_GRID] Setup completed. Net position required: {}",
             total_position_required
         );
+        self.target_position_size = total_position_required;
+        self.check_initial_acquisition(ctx, total_position_required, true)
+    }
 
-        if total_position_required.abs() > 0.0 {
+    fn check_initial_acquisition(
+        &mut self,
+        ctx: &mut StrategyContext,
+        target_position: f64,
+        allow_wait_for_trigger: bool,
+    ) -> Result<()> {
+        if self.config.trigger_price.is_some() && self.trigger_reference_price.is_none() {
+            self.trigger_reference_price = Some(self.current_price);
             info!(
-                "[PERP_GRID] Acquiring initial position: {}",
-                total_position_required
+                "[PERP_GRID] Trigger reference initialized trigger_price={:?} reference_price={:?}",
+                self.config.trigger_price, self.trigger_reference_price
             );
-
-            let (activation_price, target_size, side) = {
-                let market_price = self.current_price;
-                let side = if total_position_required > 0.0 {
-                    OrderSide::Buy
-                } else {
-                    OrderSide::Sell
-                };
-
-                let price_to_use = if let Some(trigger) = self.config.trigger_price {
-                    let is_safe_limit = match side {
-                        OrderSide::Buy => trigger < market_price,
-                        OrderSide::Sell => trigger > market_price,
-                    };
-
-                    if !is_safe_limit {
-                        let msg = format!(
-                            "Invalid Trigger Price! Side: {}, Trigger: {}, Market: {}. Bot requires a resting limit order (Buy < Market or Sell > Market).",
-                            side, trigger, market_price
-                        );
-                        error!("[PERP_GRID] {}", msg);
-                        return Err(anyhow!(msg));
-                    }
-                    info!(
-                        "[PERP_GRID] Using Trigger Price {} for initial entry.",
-                        trigger
-                    );
-                    trigger
-                } else {
-                    self.calculate_acquisition_price(side, market_price)
-                };
-
-                (
-                    market_info.round_price(price_to_use),
-                    market_info.round_size(total_position_required.abs()),
-                    side,
-                )
-            };
-
-            if target_size > 0.0 {
-                info!(
-                    "[ORDER_REQUEST] [PERP_GRID] REBALANCING: LIMIT {} {} {} @ {}",
-                    side, target_size, self.config.symbol, activation_price
-                );
-
-                let cloid = ctx.place_order(OrderRequest::Limit {
-                    symbol: self.config.symbol.clone(),
-                    side,
-                    price: activation_price,
-                    sz: target_size,
-                    reduce_only: false,
-                    cloid: None,
-                });
-                self.state = StrategyState::AcquiringAssets { cloid, target_size };
-                return Ok(());
-            }
         }
 
-        self.initial_entry_price = Some(initial_price);
+        let needed_change = target_position - self.position_size;
+        if needed_change.abs() < f64::EPSILON {
+            if self.config.trigger_price.is_some()
+                && allow_wait_for_trigger
+                && !self.is_trigger_satisfied(self.current_price)
+            {
+                info!(
+                    "[PERP_GRID] Position sufficient. Entering WaitingForTrigger state trigger={:?} reference={:?}",
+                    self.config.trigger_price, self.trigger_reference_price
+                );
+                self.state = StrategyState::WaitingForTrigger;
+                return Ok(());
+            }
+
+            self.initial_entry_price = Some(self.current_price);
+            self.state = StrategyState::Running;
+            if let Err(e) = self.refresh_orders(ctx) {
+                warn!("[PERP_GRID] Failed to refresh orders: {}", e);
+            }
+            return Ok(());
+        }
+
+        let side = if needed_change > 0.0 {
+            OrderSide::Buy
+        } else {
+            OrderSide::Sell
+        };
+
+        let (should_acquire_now, policy_reason) =
+            self.acquisition_policy_decision(side, allow_wait_for_trigger);
+        info!(
+            "[PERP_GRID] [ACQUISITION_POLICY] side={} action={} reason={} current={} trigger={:?} reference={:?}",
+            side,
+            if should_acquire_now { "acquire_now" } else { "wait_for_trigger" },
+            policy_reason,
+            self.current_price,
+            self.config.trigger_price,
+            self.trigger_reference_price
+        );
+        if !should_acquire_now {
+            self.state = StrategyState::WaitingForTrigger;
+            return Ok(());
+        }
+
+        let market_info = self
+            .market_info
+            .as_ref()
+            .expect("Market info should be initialized");
+        let activation_price =
+            market_info.round_price(self.calculate_acquisition_price(side, self.current_price));
+        let target_size = market_info.round_size(needed_change.abs());
+
+        if target_size > 0.0 {
+            info!(
+                "[ORDER_REQUEST] [PERP_GRID] REBALANCING: LIMIT {} {} {} @ {}",
+                side, target_size, self.config.symbol, activation_price
+            );
+
+            let cloid = ctx.place_order(OrderRequest::Limit {
+                symbol: self.config.symbol.clone(),
+                side,
+                price: activation_price,
+                sz: target_size,
+                reduce_only: false,
+                cloid: None,
+            });
+            self.state = StrategyState::AcquiringAssets { cloid, target_size };
+            return Ok(());
+        }
+
+        self.initial_entry_price = Some(self.current_price);
         self.state = StrategyState::Running;
         if let Err(e) = self.refresh_orders(ctx) {
             warn!("[PERP_GRID] Failed to refresh orders: {}", e);
@@ -295,12 +323,66 @@ impl PerpGridStrategy {
         Ok(())
     }
 
+    fn is_trigger_satisfied(&mut self, price: f64) -> bool {
+        let Some(trigger) = self.config.trigger_price else {
+            return true;
+        };
+        if self.trigger_activated {
+            return true;
+        }
+        let Some(reference) = self.trigger_reference_price else {
+            return false;
+        };
+        let is_hit = common::check_trigger(price, trigger, reference);
+        if is_hit {
+            self.trigger_activated = true;
+        }
+        is_hit
+    }
+
+    fn acquisition_policy_decision(
+        &mut self,
+        side: OrderSide,
+        allow_wait_for_trigger: bool,
+    ) -> (bool, &'static str) {
+        if self.config.trigger_price.is_none() {
+            return (true, "no_trigger");
+        }
+        if self.is_trigger_satisfied(self.current_price) {
+            return (true, "trigger_satisfied");
+        }
+        if !allow_wait_for_trigger {
+            return (true, "trigger_fired_resume_acquire_now");
+        }
+
+        let trigger = self.config.trigger_price.expect("checked above");
+        if side.is_buy() {
+            if self.current_price < trigger {
+                return (true, "buy_below_trigger_acquire_now");
+            }
+            return (false, "buy_above_trigger_wait");
+        }
+
+        if self.current_price > trigger {
+            return (true, "sell_above_trigger_acquire_now");
+        }
+        (false, "sell_below_trigger_wait")
+    }
+
+    fn resume_deferred_acquisition_after_trigger(
+        &mut self,
+        ctx: &mut StrategyContext,
+    ) -> Result<()> {
+        info!(
+            "[PERP_GRID] [TRIGGER_RESUME] recompute needed_change target={} position={}",
+            self.target_position_size, self.position_size
+        );
+        self.check_initial_acquisition(ctx, self.target_position_size, false)
+    }
+
     /// Calculate optimal price for acquiring assets during initial setup.
     fn calculate_acquisition_price(&self, side: OrderSide, current_price: f64) -> f64 {
         let market_info = self.market_info.as_ref().unwrap();
-        if let Some(trigger) = self.config.trigger_price {
-            return market_info.round_price(trigger);
-        }
 
         if side.is_buy() {
             let candidates: Vec<f64> = self
@@ -527,21 +609,15 @@ impl Strategy for PerpGridStrategy {
             }
             StrategyState::WaitingForTrigger => {
                 if let Some(trigger) = self.config.trigger_price {
-                    // Need start_price to know direction??
-                    // initialize_zones sets self.start_price
-                    let start = self.trigger_reference_price.expect(
-                        "Trigger reference price must be set when in WaitingForTrigger state",
-                    );
-
-                    if common::check_trigger(price, trigger, start) {
+                    if self.trigger_reference_price.is_none() {
+                        self.trigger_reference_price = Some(price);
+                    }
+                    if self.is_trigger_satisfied(price) {
                         info!(
                             "[PERP_GRID] Price {} crossed trigger {}. Starting.",
                             price, trigger
                         );
-
-                        info!("[PERP_GRID] Triggered! Re-initializing zones for accurate state.");
-                        self.zones.clear();
-                        self.initialize_zones(ctx)?;
+                        self.resume_deferred_acquisition_after_trigger(ctx)?;
                     }
                 } else {
                     self.state = StrategyState::Running;
@@ -605,6 +681,21 @@ impl Strategy for PerpGridStrategy {
                         }
                     }
 
+                    if self.config.trigger_price.is_some()
+                        && !self.is_trigger_satisfied(self.current_price)
+                    {
+                        info!(
+                            "[PERP_GRID] [ACQUISITION] post_fill action=wait_for_trigger current={} trigger={:?} reference={:?}",
+                            self.current_price, self.config.trigger_price, self.trigger_reference_price
+                        );
+                        self.state = StrategyState::WaitingForTrigger;
+                        return Ok(());
+                    }
+
+                    info!(
+                        "[PERP_GRID] [ACQUISITION] post_fill action=running current={} trigger={:?} reference={:?}",
+                        self.current_price, self.config.trigger_price, self.trigger_reference_price
+                    );
                     self.initial_entry_price = Some(fill.price);
                     self.state = StrategyState::Running;
                     self.refresh_orders(ctx)?;
@@ -900,6 +991,110 @@ mod tests {
             }
             _ => panic!("Should be acquiring assets, got {:?}", strategy.state),
         }
+    }
+
+    #[test]
+    fn test_perp_trigger_buy_below_uses_market_price_not_trigger() {
+        let symbol = "HYPE".to_string();
+        let (mut strategy, mut ctx) =
+            create_test_setup(&symbol, GridBias::Long, Some(95.0), 90.0, 90.0, 110.0);
+
+        strategy.on_tick(90.0, &mut ctx).unwrap();
+        match strategy.state {
+            StrategyState::AcquiringAssets { .. } => (),
+            _ => panic!("Expected AcquiringAssets, got {:?}", strategy.state),
+        }
+        assert_eq!(ctx.order_queue.len(), 1);
+        match &ctx.order_queue[0] {
+            crate::model::OrderRequest::Limit { side, price, .. } => {
+                assert!(side.is_buy());
+                assert_eq!(*price, 89.91); // markdown fallback from current=90
+                assert_ne!(*price, 95.0); // must not force trigger price
+            }
+            _ => panic!("Expected Limit order"),
+        }
+    }
+
+    #[test]
+    fn test_perp_trigger_buy_above_waits_then_acquires() {
+        let symbol = "HYPE".to_string();
+        let (mut strategy, mut ctx) =
+            create_test_setup(&symbol, GridBias::Long, Some(95.0), 100.0, 90.0, 110.0);
+
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+        assert!(matches!(strategy.state, StrategyState::WaitingForTrigger));
+        assert_eq!(ctx.order_queue.len(), 0);
+
+        strategy.on_tick(94.0, &mut ctx).unwrap();
+        assert!(matches!(
+            strategy.state,
+            StrategyState::AcquiringAssets { .. }
+        ));
+        assert_eq!(ctx.order_queue.len(), 1);
+        match &ctx.order_queue[0] {
+            crate::model::OrderRequest::Limit { side, price, .. } => {
+                assert!(side.is_buy());
+                assert_eq!(*price, 90.0);
+                assert_ne!(*price, 95.0);
+            }
+            _ => panic!("Expected Limit order"),
+        }
+    }
+
+    #[test]
+    fn test_perp_trigger_sell_below_waits_then_acquires() {
+        let symbol = "HYPE".to_string();
+        let (mut strategy, mut ctx) =
+            create_test_setup(&symbol, GridBias::Short, Some(105.0), 100.0, 90.0, 110.0);
+
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+        assert!(matches!(strategy.state, StrategyState::WaitingForTrigger));
+        assert_eq!(ctx.order_queue.len(), 0);
+
+        strategy.on_tick(106.0, &mut ctx).unwrap();
+        assert!(matches!(
+            strategy.state,
+            StrategyState::AcquiringAssets { .. }
+        ));
+        assert_eq!(ctx.order_queue.len(), 1);
+        match &ctx.order_queue[0] {
+            crate::model::OrderRequest::Limit { side, price, .. } => {
+                assert!(side.is_sell());
+                assert_eq!(*price, 110.0);
+                assert_ne!(*price, 105.0);
+            }
+            _ => panic!("Expected Limit order"),
+        }
+    }
+
+    #[test]
+    fn test_perp_post_fill_waits_if_trigger_not_hit() {
+        let symbol = "HYPE".to_string();
+        let (mut strategy, mut ctx) =
+            create_test_setup(&symbol, GridBias::Long, Some(95.0), 90.0, 90.0, 110.0);
+
+        strategy.on_tick(90.0, &mut ctx).unwrap();
+        let (acq_cloid, target_size) = match strategy.state {
+            StrategyState::AcquiringAssets { cloid, target_size } => (cloid, target_size),
+            _ => panic!("Expected AcquiringAssets, got {:?}", strategy.state),
+        };
+
+        strategy
+            .on_order_filled(
+                &OrderFill {
+                    side: OrderSide::Buy,
+                    size: target_size,
+                    price: 90.0,
+                    fee: 0.0,
+                    cloid: Some(acq_cloid),
+                    reduce_only: None,
+                    raw_dir: None,
+                },
+                &mut ctx,
+            )
+            .unwrap();
+
+        assert!(matches!(strategy.state, StrategyState::WaitingForTrigger));
     }
 
     #[test]

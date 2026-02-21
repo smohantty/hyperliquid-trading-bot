@@ -45,6 +45,7 @@ pub struct SpotGridStrategy {
     state: StrategyState,
     initial_entry_price: Option<f64>,
     trigger_reference_price: Option<f64>,
+    trigger_activated: bool,
     start_time: Instant,
 
     matched_profit: f64,
@@ -108,6 +109,7 @@ impl SpotGridStrategy {
             state: StrategyState::Initializing,
             initial_entry_price: None,
             trigger_reference_price: None,
+            trigger_activated: false,
             start_time: Instant::now(),
             matched_profit: 0.0,
             total_fees: 0.0,
@@ -177,7 +179,7 @@ impl SpotGridStrategy {
             return Err(anyhow!(msg));
         }
 
-        self.check_initial_acquisition(ctx, total_base_required, total_quote_required)
+        self.check_initial_acquisition(ctx, total_base_required, total_quote_required, true)
     }
 
     fn calculate_grid_plan(&mut self) -> Result<(f64, f64)> {
@@ -284,10 +286,6 @@ impl SpotGridStrategy {
             .as_ref()
             .expect("Market info should be initialized");
 
-        if let Some(trigger) = self.config.trigger_price {
-            return market_info.round_price(trigger);
-        }
-
         if side.is_buy() {
             let candidates: Vec<f64> = self
                 .zones
@@ -332,19 +330,47 @@ impl SpotGridStrategy {
         ctx: &mut StrategyContext,
         total_base_required: f64,
         total_quote_required: f64,
+        allow_wait_for_trigger: bool,
     ) -> Result<()> {
         let market_info = self
             .market_info
             .clone()
             .expect("Market info should be initialized");
 
+        if self.config.trigger_price.is_some() && self.trigger_reference_price.is_none() {
+            self.trigger_reference_price = Some(self.current_price);
+            info!(
+                "[SPOT_GRID] Trigger reference initialized trigger_price={:?} reference_price={:?}",
+                self.config.trigger_price, self.trigger_reference_price
+            );
+        }
+
         let available_base = ctx.get_spot_available(&self.base_asset);
         let available_quote = ctx.get_spot_available(&self.quote_asset);
+
+        self.inventory_base = available_base.min(total_base_required);
+        self.inventory_quote = available_quote.min(total_quote_required);
 
         let base_deficit = total_base_required - available_base;
         let quote_deficit = total_quote_required - available_quote;
 
         if base_deficit > 0.0 {
+            let (should_acquire_now, policy_reason) =
+                self.acquisition_policy_decision(OrderSide::Buy, allow_wait_for_trigger);
+            info!(
+                "[SPOT_GRID] [ACQUISITION_POLICY] side={} action={} reason={} current={} trigger={:?} reference={:?}",
+                OrderSide::Buy,
+                if should_acquire_now { "acquire_now" } else { "wait_for_trigger" },
+                policy_reason,
+                self.current_price,
+                self.config.trigger_price,
+                self.trigger_reference_price
+            );
+            if !should_acquire_now {
+                self.state = StrategyState::WaitingForTrigger;
+                return Ok(());
+            }
+
             let base_deficit = FEE_BUFFER.markup(base_deficit);
 
             let acquisition_price =
@@ -373,6 +399,8 @@ impl SpotGridStrategy {
                     rounded_deficit, self.base_asset, acquisition_price
                 );
 
+                self.initial_avail_base = available_base;
+                self.initial_avail_quote = available_quote;
                 let cloid = ctx.place_order(OrderRequest::Limit {
                     symbol: self.config.symbol.clone(),
                     side: OrderSide::Buy,
@@ -385,6 +413,22 @@ impl SpotGridStrategy {
                 return Ok(());
             }
         } else if quote_deficit > 0.0 {
+            let (should_acquire_now, policy_reason) =
+                self.acquisition_policy_decision(OrderSide::Sell, allow_wait_for_trigger);
+            info!(
+                "[SPOT_GRID] [ACQUISITION_POLICY] side={} action={} reason={} current={} trigger={:?} reference={:?}",
+                OrderSide::Sell,
+                if should_acquire_now { "acquire_now" } else { "wait_for_trigger" },
+                policy_reason,
+                self.current_price,
+                self.config.trigger_price,
+                self.trigger_reference_price
+            );
+            if !should_acquire_now {
+                self.state = StrategyState::WaitingForTrigger;
+                return Ok(());
+            }
+
             let acquisition_price =
                 self.calculate_acquisition_price(OrderSide::Sell, self.current_price);
 
@@ -417,6 +461,8 @@ impl SpotGridStrategy {
                     rounded_sell_sz, self.base_asset, acquisition_price
                 );
 
+                self.initial_avail_base = available_base;
+                self.initial_avail_quote = available_quote;
                 let cloid = ctx.place_order(OrderRequest::Limit {
                     symbol: self.config.symbol.clone(),
                     side: OrderSide::Sell,
@@ -430,9 +476,11 @@ impl SpotGridStrategy {
             }
         }
 
-        if let Some(_trigger) = self.config.trigger_price {
+        if self.config.trigger_price.is_some()
+            && allow_wait_for_trigger
+            && !self.is_trigger_satisfied(self.current_price)
+        {
             info!("[SPOT_GRID] Assets sufficient. Entering WaitingForTrigger state.");
-            self.trigger_reference_price = Some(self.current_price);
             self.state = StrategyState::WaitingForTrigger;
         } else {
             info!("[SPOT_GRID] Assets verified. Starting Grid.");
@@ -440,6 +488,65 @@ impl SpotGridStrategy {
         }
 
         Ok(())
+    }
+
+    fn is_trigger_satisfied(&mut self, price: f64) -> bool {
+        let Some(trigger) = self.config.trigger_price else {
+            return true;
+        };
+        if self.trigger_activated {
+            return true;
+        }
+        let Some(reference) = self.trigger_reference_price else {
+            return false;
+        };
+        let is_hit = common::check_trigger(price, trigger, reference);
+        if is_hit {
+            self.trigger_activated = true;
+        }
+        is_hit
+    }
+
+    fn acquisition_policy_decision(
+        &mut self,
+        side: OrderSide,
+        allow_wait_for_trigger: bool,
+    ) -> (bool, &'static str) {
+        if self.config.trigger_price.is_none() {
+            return (true, "no_trigger");
+        }
+        if self.is_trigger_satisfied(self.current_price) {
+            return (true, "trigger_satisfied");
+        }
+        if !allow_wait_for_trigger {
+            return (true, "trigger_fired_resume_acquire_now");
+        }
+
+        let trigger = self.config.trigger_price.expect("checked above");
+        if side.is_buy() {
+            if self.current_price < trigger {
+                return (true, "buy_below_trigger_acquire_now");
+            }
+            return (false, "buy_above_trigger_wait");
+        }
+
+        if self.current_price > trigger {
+            return (true, "sell_above_trigger_acquire_now");
+        }
+        (false, "sell_below_trigger_wait")
+    }
+
+    fn resume_deferred_acquisition_after_trigger(
+        &mut self,
+        ctx: &mut StrategyContext,
+    ) -> Result<()> {
+        let available_base = ctx.get_spot_available(&self.base_asset);
+        let available_quote = ctx.get_spot_available(&self.quote_asset);
+        info!(
+            "[SPOT_GRID] [TRIGGER_RESUME] recompute deficits available_base={} available_quote={} required_base={} required_quote={}",
+            available_base, available_quote, self.required_base, self.required_quote
+        );
+        self.check_initial_acquisition(ctx, self.required_base, self.required_quote, false)
     }
 
     fn refresh_orders(&mut self, ctx: &mut StrategyContext) {
@@ -535,6 +642,19 @@ impl SpotGridStrategy {
             self.inventory_quote = new_real_quote.min(self.required_quote).max(0.0);
         }
 
+        if self.config.trigger_price.is_some() && !self.is_trigger_satisfied(self.current_price) {
+            info!(
+                "[SPOT_GRID] [ACQUISITION] post_fill action=wait_for_trigger current={} trigger={:?} reference={:?}",
+                self.current_price, self.config.trigger_price, self.trigger_reference_price
+            );
+            self.state = StrategyState::WaitingForTrigger;
+            return Ok(());
+        }
+
+        info!(
+            "[SPOT_GRID] [ACQUISITION] post_fill action=running current={} trigger={:?} reference={:?}",
+            self.current_price, self.config.trigger_price, self.trigger_reference_price
+        );
         self.transition_to_running(ctx, fill.price);
         Ok(())
     }
@@ -637,12 +757,16 @@ impl Strategy for SpotGridStrategy {
             }
             StrategyState::AcquiringAssets { .. } => {}
             StrategyState::WaitingForTrigger => {
-                if let (Some(trigger), Some(start)) =
-                    (self.config.trigger_price, self.trigger_reference_price)
-                {
-                    if common::check_trigger(price, trigger, start) {
-                        info!("[SPOT_GRID] [Triggered] at {}", price);
-                        self.transition_to_running(ctx, price);
+                if self.config.trigger_price.is_some() {
+                    if self.trigger_reference_price.is_none() {
+                        self.trigger_reference_price = Some(price);
+                    }
+                    if self.is_trigger_satisfied(price) {
+                        info!(
+                            "[SPOT_GRID] [Triggered] at {} trigger={:?} reference={:?}",
+                            price, self.config.trigger_price, self.trigger_reference_price
+                        );
+                        self.resume_deferred_acquisition_after_trigger(ctx)?;
                     }
                 }
             }
@@ -868,7 +992,7 @@ mod tests {
     #[test]
     fn test_spot_grid_acquisition_trigger() {
         // Scenario: Low Assets. Trigger defined.
-        // Expect: Immediate buy order @ TriggerPrice. State -> AcquiringAssets.
+        // Expect: Immediate buy order at market/grid-nearest price (not trigger).
         //
         // Grid zones with grid_count=5: [90-95], [95-100], [100-105], [105-110]
         // trigger_price=104 means initial_price=104
@@ -888,7 +1012,7 @@ mod tests {
         assert_eq!(ctx.order_queue.len(), 1);
         match &ctx.order_queue[0] {
             crate::model::OrderRequest::Limit { price, .. } => {
-                assert_eq!(*price, 104.0); // Should be trigger price
+                assert_eq!(*price, 95.0); // Nearest buy level below current (100)
             }
             _ => panic!("Expected Limit order"),
         }
@@ -917,6 +1041,9 @@ mod tests {
             )
             .unwrap();
 
+        // Trigger is still not satisfied (current=100 < trigger=104), so we wait.
+        assert!(matches!(strategy.state, StrategyState::WaitingForTrigger));
+
         // Verify that zones waiting to sell have entry_price = zone's buy_price (not fill_price)
         // This is the new behavior aligned with Python: entry_price represents the buy level for profit calculation
         for zone in &strategy.zones {
@@ -929,6 +1056,55 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_spot_grid_buy_deficit_above_trigger_waits_then_acquires() {
+        let (mut strategy, mut ctx) = create_test_setup(Some(104.0), 0.0, 2000.0, 106.0);
+
+        strategy.on_tick(106.0, &mut ctx).unwrap();
+        assert!(matches!(strategy.state, StrategyState::WaitingForTrigger));
+        assert_eq!(ctx.order_queue.len(), 0);
+
+        strategy.on_tick(103.0, &mut ctx).unwrap();
+        assert!(matches!(
+            strategy.state,
+            StrategyState::AcquiringAssets { .. }
+        ));
+        assert_eq!(ctx.order_queue.len(), 1);
+        match &ctx.order_queue[0] {
+            crate::model::OrderRequest::Limit { side, price, .. } => {
+                assert!(side.is_buy());
+                assert_eq!(*price, 100.0); // nearest level below current=103
+                assert_ne!(*price, 104.0); // must not force trigger price
+            }
+            _ => panic!("Expected Limit order"),
+        }
+    }
+
+    #[test]
+    fn test_spot_grid_sell_deficit_below_trigger_waits_then_acquires() {
+        let (mut strategy, mut ctx) = create_test_setup(Some(104.0), 200.0, 0.0, 100.0);
+
+        strategy.on_tick(100.0, &mut ctx).unwrap();
+        assert!(matches!(strategy.state, StrategyState::WaitingForTrigger));
+        assert_eq!(ctx.order_queue.len(), 0);
+
+        strategy.on_tick(105.0, &mut ctx).unwrap();
+        assert!(matches!(
+            strategy.state,
+            StrategyState::AcquiringAssets { .. }
+        ));
+        assert_eq!(ctx.order_queue.len(), 1);
+        match &ctx.order_queue[0] {
+            crate::model::OrderRequest::Limit { side, price, .. } => {
+                assert!(side.is_sell());
+                assert_eq!(*price, 110.0); // nearest sell level above current=105
+                assert_ne!(*price, 104.0); // must not force trigger price
+            }
+            _ => panic!("Expected Limit order"),
+        }
+    }
+
     #[test]
     fn test_spot_grid_performance_tracking() {
         // Scenario: verify PnL/Fee/Roundtrip tracking
@@ -1047,8 +1223,8 @@ mod tests {
         }
         assert!(!strategy.zones.is_empty(), "Zones should be initialized");
 
-        // After initialization, inventory_quote should be set
-        assert_eq!(strategy.inventory_quote, 2000.0);
+        // After initialization, tracked quote inventory is capped to grid-required quote
+        assert_eq!(strategy.inventory_quote, strategy.required_quote);
 
         // 2. Buy 10 @ 100
         let zone_idx = 0;
@@ -1162,8 +1338,8 @@ mod tests {
             _ => panic!("Lost state"),
         };
 
-        // Before fill, inventory_base was 100
-        assert_eq!(strategy.inventory_base, 100.0);
+        // Before fill, tracked base inventory is capped to grid-required base
+        assert_eq!(strategy.inventory_base, strategy.required_base);
 
         strategy
             .on_order_filled(
@@ -1314,6 +1490,6 @@ mod tests {
         // Tick to init
         strategy.on_tick(100.0, &mut ctx).unwrap();
 
-        assert_eq!(strategy.inventory_base, 10.0);
+        assert_eq!(strategy.inventory_base, strategy.required_base);
     }
 }

@@ -5,7 +5,6 @@ You are working on a high-performance, event-driven trading bot for Hyperliquid 
 The codebase is written in **Rust** and uses `tokio` for concurrency.
 Key dependencies:
 -   `hyperliquid_rust_sdk` for exchange interaction.
--   `teloxide` for Telegram integration.
 -   `tracing` for structured logging.
 
 ### System Architecture Summary
@@ -65,14 +64,12 @@ You must strictly follow this process for every user request involving code chan
     *   Strategies process `on_tick` and `on_order_filled` and return standard actions.
 *   **Broadcasting**: Status updates should be sent via the `StatusBroadcaster` (`src/broadcast/`).
 *   **Safety**: All `Result`s must be handled. Avoid `unwrap()` in critical paths.
-*   **Telegram**: Be aware of the `TelegramReporter`. If you change `StatusSummary`, check if it affects the Telegram `/status` output or notifications. Keep the reporter robust (don't let it crash the Engine).
 
 ## 4. Key Locations
 *   **Config**: `src/config/`
 *   **Engine**: `src/engine/`
 *   **Strategies**: `src/strategy/`
 *   **Broadcasting**: `src/broadcast/`
-*   **Reporters**: `src/reporter/` (Telegram)
 *   **Logging**: `src/logging/` (Audit)
 *   **Core Types**: `src/model.rs`
 *   **Frontend**: `frontend/` (Vite + Electron)

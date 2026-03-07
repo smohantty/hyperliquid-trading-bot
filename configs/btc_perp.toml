@@ -1,3 +1,8 @@
+name = "btc-perp-grid"
+account = "perp_account"
+websocket_port = 9002
+
+[strategy]
 type = "perp_grid"
 symbol = "BTC"
 leverage = 10
@@ -7,4 +12,3 @@ grid_type = "geometric"
 grid_count = 20
 total_investment = 8000.0
 grid_bias = "short"
-

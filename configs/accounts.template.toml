@@ -1,0 +1,11 @@
+[accounts.spot_account]
+network = "mainnet"
+master_account_address = "0xMasterAccountAddress..."
+sub_account_address = "0xSpotSubAccountAddress..."
+api_wallet_private_key = "0xYourSpotApiWalletPrivateKey"
+
+[accounts.perp_account]
+network = "mainnet"
+master_account_address = "0xMasterAccountAddress..."
+sub_account_address = "0xPerpSubAccountAddress..."
+api_wallet_private_key = "0xYourPerpApiWalletPrivateKey"

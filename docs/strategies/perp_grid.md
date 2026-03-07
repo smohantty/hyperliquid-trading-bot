@@ -9,8 +9,8 @@ A grid strategy designed for Perpetual Futures, supporting Leverage and Long/Sho
 | `symbol` | String | Perp pair (e.g., "HYPE"). |
 | `leverage` | u32 | Leverage multiplier (e.g., 10x). |
 | `grid_bias` | Enum | `Neutral`, `Long`, or `Short`. Determines initial positioning. |
-| `upper_price` | f64 | Highest price of range. |
-| `lower_price` | f64 | Lowest price of range. |
+| `grid_range_high` | f64 | Highest price of range. |
+| `grid_range_low` | f64 | Lowest price of range. |
 | `grid_count` | u32 | Number of levels. |
 | `total_investment` | f64 | Margin (Collateral) allocated. |
 | `trigger_price` | Option<f64> | (Optional) Activation price. |

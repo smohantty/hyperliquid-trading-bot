@@ -195,7 +195,7 @@ impl SimulationEngine {
     }
 
     async fn fetch_balances(&self, info_client: &mut InfoClient, ctx: &mut StrategyContext) {
-        let user_address = match H160::from_str(&self.exchange_config.master_account_address) {
+        let user_address = match H160::from_str(self.exchange_config.trading_account_address()) {
             Ok(addr) => addr,
             Err(e) => {
                 error!("[SIMULATION] Invalid account address: {}", e);

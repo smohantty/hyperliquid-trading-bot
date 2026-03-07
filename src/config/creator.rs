@@ -1,3 +1,4 @@
+use crate::config::bot::BotConfig;
 use crate::config::strategy::{GridBias, GridType, PerpGridConfig, SpotGridConfig, StrategyConfig};
 use anyhow::Result;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
@@ -13,13 +14,40 @@ pub fn create_config() -> Result<()> {
         .items(&strategy_types)
         .interact()?;
 
-    let config = if selection == 0 {
+    let strategy = if selection == 0 {
         create_spot_grid(&theme)?
     } else {
         create_perp_grid(&theme)?
     };
 
-    let default_filename = generate_default_filename(&config);
+    let name: String = Input::with_theme(&theme)
+        .with_prompt("Bot name")
+        .interact_text()?;
+
+    let account: String = Input::with_theme(&theme)
+        .with_prompt("Account profile name")
+        .interact_text()?;
+
+    let websocket_port_raw: String = Input::with_theme(&theme)
+        .with_prompt("WebSocket port (blank for default 9000)")
+        .allow_empty(true)
+        .interact_text()?;
+
+    let websocket_port = if websocket_port_raw.trim().is_empty() {
+        None
+    } else {
+        Some(websocket_port_raw.trim().parse::<u16>()?)
+    };
+
+    let config = BotConfig {
+        name,
+        account,
+        websocket_port,
+        strategy,
+    };
+    config.validate()?;
+
+    let default_filename = generate_default_filename(&config.strategy);
 
     let filename: String = Input::with_theme(&theme)
         .with_prompt("Configuration filename")
@@ -228,8 +256,8 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
     }))
 }
 
-fn generate_default_filename(config: &StrategyConfig) -> String {
-    match config {
+fn generate_default_filename(strategy: &StrategyConfig) -> String {
+    match strategy {
         StrategyConfig::SpotGrid(SpotGridConfig {
             symbol,
             grid_range_high,

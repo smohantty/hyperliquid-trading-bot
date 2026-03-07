@@ -7,8 +7,8 @@ A classic mean-reversion strategy that buys low and sells high within a defined 
 | Parameter | Type | Description |
 | :--- | :--- | :--- |
 | `symbol` | String | Trading pair (e.g., "HYPE/USDC"). |
-| `upper_price` | f64 | The highest price of the grid range. Above this, the bot holds all Quote. |
-| `lower_price` | f64 | The lowest price of the grid range. Below this, the bot holds all Base. |
+| `grid_range_high` | f64 | The highest price of the grid range. Above this, the bot holds all Quote. |
+| `grid_range_low` | f64 | The lowest price of the grid range. Below this, the bot holds all Base. |
 | `grid_count` | u32 | Number of price levels. Creates `grid_count - 1` trading zones. |
 | `total_investment` | f64 | Total Quote amount allocated to this strategy. |
 | `grid_type` | Enum | `Arithmetic` (equal price difference) or `Geometric` (equal ratio). |

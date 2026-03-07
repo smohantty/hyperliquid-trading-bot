@@ -109,8 +109,8 @@ Sent immediately upon connection. Contains the full strategy configuration.
     // {
     //   "type": "spot_grid",
     //   "symbol": "HYPE/USDC",
-    //   "upper_price": 110.0,
-    //   "lower_price": 90.0,
+    //   "grid_range_high": 110.0,
+    //   "grid_range_low": 90.0,
     //   "grid_type": "arithmetic", // or "geometric"
     //   "grid_count": 50,
     //   "total_investment": 1000.0,
@@ -123,8 +123,8 @@ Sent immediately upon connection. Contains the full strategy configuration.
     //   "symbol": "HYPE",
     //   "leverage": 10,
     //   "is_isolated": true,
-    //   "upper_price": 120.0,
-    //   "lower_price": 80.0,
+    //   "grid_range_high": 120.0,
+    //   "grid_range_low": 80.0,
     //   "grid_type": "arithmetic",
     //   "grid_count": 50,
     //   "total_investment": 1000.0, // Notional Value

@@ -39,7 +39,7 @@ Hyperliquid Exchange (WebSocket)
             -> StrategyContext.order_queue
                 -> Engine -> Hyperliquid Exchange
     -> StatusBroadcaster (port 9000)
-        -> Dashboard / Telegram Daemon / CLI clients
+        -> Dashboard / external daemons / CLI clients
 ```
 
 ### Key Patterns
@@ -53,7 +53,7 @@ Hyperliquid Exchange (WebSocket)
 ## Development Commands
 - **Build:** `cargo build --release`
 - **Run live:** `cargo run --release -- --config configs/btc_perp.toml`
-- **Run with custom WS port:** `cargo run --release -- --config <file> --ws-port 8080`
+- **Run with custom accounts registry:** `cargo run --release -- --config <file> --accounts-file ~/.config/hyperliquid/accounts.toml`
 - **Dry run:** `cargo run --release -- --config <file> --dry-run`
 - **Create config interactively:** `cargo run --release -- --create`
 - **List strategies:** `cargo run --release -- --list-strategies`
@@ -65,29 +65,42 @@ Hyperliquid Exchange (WebSocket)
 - **Stop:** `./deployment/stop.sh`
 
 ## Config Files
-- Strategy configs: TOML in `configs/` (symbol, grid params, leverage, investment)
-- Exchange config: `.env` with `HYPERLIQUID_WALLET_CONFIG_FILE=./wallet_config.json`
-- Wallet config: `wallet_config.json` (master account address + agent private keys for mainnet/testnet)
+- Strategy configs: TOML in `configs/` (`name`, `account`, `[strategy]`)
+- Account registry: `~/.config/hyperliquid/accounts.toml` by default, or `--accounts-file <path>`
+- Account secrets: API wallet private keys stored inline in the account registry; keep that file permissioned tightly
 
 ### Strategy Config Examples
 ```toml
+# Accounts registry
+[accounts.spot_account]
+network = "mainnet"
+master_account_address = "0xMasterAccountAddress..."
+sub_account_address = "0xSpotSubAccountAddress..."
+api_wallet_private_key = "0xYourSpotApiWalletPrivateKey"
+
 # Spot Grid
+name = "hype-spot-grid"
+account = "spot_account"
+
 [strategy]
-type = "SpotGrid"
+type = "spot_grid"
 symbol = "HYPE/USDC"
-upper_price = 20.0
-lower_price = 10.0
+grid_range_high = 20.0
+grid_range_low = 10.0
 grid_count = 50
 total_investment = 1000.0
-grid_type = "Arithmetic"  # or "Geometric"
+grid_type = "arithmetic"  # or "geometric"
 
 # Perp Grid
+name = "btc-perp-grid"
+account = "perp_account"
+
 [strategy]
 type = "perp_grid"
 symbol = "BTC"
 leverage = 10
-upper_price = 89500.0
-lower_price = 87000.0
+grid_range_high = 89500.0
+grid_range_low = 87000.0
 grid_type = "geometric"
 grid_count = 20
 total_investment = 8000.0
@@ -97,7 +110,7 @@ grid_bias = "short"  # or "long"
 ## Code Style Rules
 - All `Result`s must be handled. Avoid `unwrap()` in critical paths.
 - Strategies must never call exchange APIs -- use StrategyContext only.
-- Do not modify `.env` or `wallet_config.json` with real keys.
+- Do not commit or modify real secrets under `~/.config/hyperliquid/`.
 - Documentation updates required when changing behavior (see `docs/`).
 - `schema/bot-ws-schema/schema/events.json` is the Single Source of Truth for WebSocket events.
 
@@ -159,4 +172,3 @@ src/
 - **lighter-trading-bot** -- Parallel bot for Lighter.xyz DEX (Python, same strategy concepts)
 - **bot-ws-schema** -- Shared WebSocket event schema (git submodule at `schema/bot-ws-schema/`)
 - **bot-dashboard** -- React/Electron real-time dashboard (consumes WS events)
-- **bot-telegram-daemon** -- Telegram monitoring daemon (consumes WS events)

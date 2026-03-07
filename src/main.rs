@@ -1,11 +1,11 @@
 use anyhow::Result;
 use clap::Parser;
 use hyperliquid_trading_bot::broadcast::StatusBroadcaster;
+use hyperliquid_trading_bot::config::bot::BotConfig;
 use hyperliquid_trading_bot::config::broadcast::load_broadcast_config;
 use hyperliquid_trading_bot::config::exchange::ExchangeConfig;
 use hyperliquid_trading_bot::config::simulation::load_simulation_config;
-use hyperliquid_trading_bot::config::strategy::StrategyConfig;
-use hyperliquid_trading_bot::config::{exchange::load_exchange_config, load_config};
+use hyperliquid_trading_bot::config::{exchange::load_exchange_config, load_bot_config};
 use hyperliquid_trading_bot::engine::simulation::SimulationEngine;
 use hyperliquid_trading_bot::engine::Engine;
 use hyperliquid_trading_bot::strategy::init_strategy;
@@ -25,7 +25,7 @@ struct Args {
     create: bool,
 
     #[arg(long)]
-    ws_port: Option<u16>,
+    accounts_file: Option<String>,
 
     /// Run in simulation mode (dry run preview)
     #[arg(long)]
@@ -101,16 +101,17 @@ async fn main() -> Result<()> {
 
     // Load configuration
     info!("Loading config from: {}", config_path);
-    let config = load_config(&config_path)?;
+    let bot_config = load_bot_config(&config_path)?;
 
     // Load exchange configuration
-    let exchange_config = match load_exchange_config() {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Failed to load exchange config: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let exchange_config =
+        match load_exchange_config(&bot_config.account, args.accounts_file.as_deref()) {
+            Ok(c) => c,
+            Err(e) => {
+                error!("Failed to load exchange config: {}", e);
+                std::process::exit(1);
+            }
+        };
     info!(
         "Exchange config loaded for network: {}",
         exchange_config.network
@@ -119,23 +120,20 @@ async fn main() -> Result<()> {
     // --- DRY RUN MODE ---
     if args.dry_run {
         info!("[SIMULATION] Running in dry-run mode...");
-        return run_simulation(config, exchange_config).await;
+        return run_simulation(bot_config, exchange_config).await;
     }
 
     // --- LIVE TRADING MODE ---
     // Load broadcast configuration (WebSocket)
-    let broadcast_config = match load_broadcast_config(args.ws_port) {
-        Ok(c) => c,
-        Err(e) => {
-            error!("Failed to load broadcast config: {}", e);
-            std::process::exit(1);
-        }
-    };
+    let broadcast_config = load_broadcast_config(bot_config.websocket_port());
 
     info!(
-        "Starting {} Strategy for {}",
-        config.type_name(),
-        config.symbol()
+        "Starting bot '{}' with {} Strategy for {} on account '{}' (ws port {})",
+        bot_config.name,
+        bot_config.strategy.type_name(),
+        bot_config.strategy.symbol(),
+        bot_config.account,
+        bot_config.websocket_port()
     );
 
     let ws_config = Some(broadcast_config.websocket.clone());
@@ -148,7 +146,7 @@ async fn main() -> Result<()> {
     }
 
     // Initialize Strategy
-    let strategy = match init_strategy(config.clone()) {
+    let strategy = match init_strategy(bot_config.strategy.clone()) {
         Ok(s) => s,
         Err(e) => {
             error!("Strategy initialization failed: {}", e);
@@ -162,7 +160,12 @@ async fn main() -> Result<()> {
     };
 
     // Initialize Engine
-    let engine = Engine::new(config, exchange_config, broadcaster.clone(), audit_logger);
+    let engine = Engine::new(
+        bot_config.strategy,
+        exchange_config,
+        broadcaster.clone(),
+        audit_logger,
+    );
 
     // Run Engine
     if let Err(e) = engine.run(strategy).await {
@@ -179,13 +182,13 @@ async fn main() -> Result<()> {
 }
 
 /// Run simulation (dry run) mode.
-async fn run_simulation(config: StrategyConfig, exchange_config: ExchangeConfig) -> Result<()> {
+async fn run_simulation(bot_config: BotConfig, exchange_config: ExchangeConfig) -> Result<()> {
     // Load simulation config
     let sim_config = load_simulation_config(None);
     info!("[SIMULATION] Mode: balance={:?}", sim_config.balance_mode);
 
     // Initialize strategy
-    let mut strategy = match init_strategy(config.clone()) {
+    let mut strategy = match init_strategy(bot_config.strategy.clone()) {
         Ok(s) => s,
         Err(e) => {
             error!("Strategy initialization failed: {}", e);
@@ -194,7 +197,8 @@ async fn run_simulation(config: StrategyConfig, exchange_config: ExchangeConfig)
     };
 
     // Initialize simulation engine
-    let mut engine = SimulationEngine::new(config.clone(), exchange_config, sim_config);
+    let mut engine =
+        SimulationEngine::new(bot_config.strategy.clone(), exchange_config, sim_config);
 
     if let Err(e) = engine.initialize().await {
         error!("Simulation engine initialization failed: {}", e);

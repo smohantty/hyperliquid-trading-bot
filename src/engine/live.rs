@@ -15,7 +15,7 @@ use crate::logging::order_audit::OrderAuditLogger;
 use crate::model::{Cloid, OrderFill, OrderSide};
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
-use ethers::signers::LocalWallet;
+use ethers::signers::{LocalWallet, Signer};
 use ethers::types::H160;
 use hyperliquid_rust_sdk::{
     BaseUrl, ClientLimit, ClientOrder, ClientOrderRequest, ExchangeClient, InfoClient, UserData,
@@ -77,7 +77,11 @@ impl Engine {
         common::setup_info_client(&self.exchange_config.network).await
     }
 
-    async fn setup_exchange_client(&self, wallet: LocalWallet) -> Result<ExchangeClient> {
+    async fn setup_exchange_client(
+        &self,
+        wallet: LocalWallet,
+        vault_address: Option<H160>,
+    ) -> Result<ExchangeClient> {
         let base_url = if self.exchange_config.network == "mainnet" {
             BaseUrl::Mainnet
         } else {
@@ -85,11 +89,17 @@ impl Engine {
         };
         info!("Connecting to ExchangeClient...");
         info!(
-            "Using Agent Wallet to trade for Account: {}",
-            self.exchange_config.master_account_address
+            "Using account profile '{}' | API wallet {} | master account {} | trading account {} | vault routing {}",
+            self.exchange_config.account_name,
+            wallet.address(),
+            self.exchange_config.master_account_address,
+            self.exchange_config.trading_account_address(),
+            self.exchange_config
+                .vault_address()
+                .unwrap_or("none (master account mode)")
         );
 
-        ExchangeClient::new(None, wallet, Some(base_url), None, None)
+        ExchangeClient::new(None, wallet, Some(base_url), None, vault_address)
             .await
             .map_err(|e| anyhow!("Failed to connect ExchangeClient: {}", e))
     }
@@ -113,16 +123,24 @@ impl Engine {
     pub async fn run(&self, mut strategy: Box<dyn Strategy>) -> Result<()> {
         info!("Engine started for {}.", self.config.symbol());
 
-        let private_key = &self.exchange_config.private_key;
-        let wallet: LocalWallet = private_key
+        let api_wallet_private_key = &self.exchange_config.api_wallet_private_key;
+        let wallet: LocalWallet = api_wallet_private_key
             .parse()
-            .map_err(|e| anyhow!("Invalid private key: {}", e))?;
-        let user_address = H160::from_str(&self.exchange_config.master_account_address)
-            .map_err(|e| anyhow!("Invalid account address: {}", e))?;
+            .map_err(|e| anyhow!("Invalid API wallet private key: {}", e))?;
+
+        let user_address = H160::from_str(self.exchange_config.trading_account_address())
+            .map_err(|e| anyhow!("Invalid trading account address: {}", e))?;
+        let vault_address = self
+            .exchange_config
+            .vault_address()
+            .map(|addr| {
+                H160::from_str(addr).map_err(|e| anyhow!("Invalid vault address '{}': {}", addr, e))
+            })
+            .transpose()?;
 
         // 1. Setup Clients
         let mut info_client = self.setup_info_client().await?;
-        let exchange_client = self.setup_exchange_client(wallet.clone()).await?;
+        let exchange_client = self.setup_exchange_client(wallet, vault_address).await?;
 
         // 2. Load Metadata
         let markets = self.load_metadata(&mut info_client).await?;

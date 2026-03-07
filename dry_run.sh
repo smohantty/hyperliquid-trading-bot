@@ -5,12 +5,11 @@
 #        ./dry_run.sh --config path/to/config.toml
 #
 # Examples:
-#   ./dry_run.sh                             # Uses default strategy config
-#   ./dry_run.sh configs/spot_HYPE.toml      # Positional config
-#   ./dry_run.sh --config configs/spot_HYPE.toml  # Named config
+#   ./dry_run.sh                                             # Uses default strategy config
+#   ./dry_run.sh configs/hype_spot_geometric_20_24_40.toml   # Positional config
+#   ./dry_run.sh --config configs/hype_spot_geometric_20_24_40.toml  # Named config
 #
-# Simulation configuration is read from HYPERLIQUID_SIMULATION_CONFIG_FILE in .env
-# (default: simulation_config.json)
+# Simulation configuration is read from simulation_config.json in the current directory.
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"
@@ -21,9 +20,9 @@ echo "=========================================="
 
 # If no args provided, use default config
 if [ $# -eq 0 ]; then
-    echo "Strategy: configs/spot_HYPE.toml (default)"
+    echo "Strategy: configs/hype_spot_geometric_20_24_40.toml (default)"
     echo ""
-    exec cargo run -- --dry-run --config configs/spot_HYPE.toml
+    exec cargo run -- --dry-run --config configs/hype_spot_geometric_20_24_40.toml
 else
     echo ""
     exec cargo run -- --dry-run --config "$@"

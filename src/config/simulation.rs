@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
 use std::fs;
 use std::path::Path;
 
@@ -52,14 +51,12 @@ impl Default for SimulationConfig {
 ///
 /// Resolution order:
 /// 1. Explicit path argument
-/// 2. HYPERLIQUID_SIMULATION_CONFIG_FILE environment variable
-/// 3. Default: "simulation_config.json" in current directory
+/// 2. Default: "simulation_config.json" in current directory
 ///
 /// If the file doesn't exist, returns default configuration.
 pub fn load_simulation_config(path: Option<&str>) -> SimulationConfig {
     let config_path = path
         .map(String::from)
-        .or_else(|| env::var("HYPERLIQUID_SIMULATION_CONFIG_FILE").ok())
         .unwrap_or_else(|| "simulation_config.json".to_string());
 
     // If file doesn't exist, return defaults

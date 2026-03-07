@@ -19,8 +19,7 @@ An advanced, event-driven trading bot for the Hyperliquid exchange, written in R
 ### Prerequisites
 *   Rust (latest stable)
 *   A Hyperliquid Account (Mainnet or Testnet)
-*   A Hyperliquid Account (Mainnet or Testnet)
-*   **Wallet Configuration File**: A JSON file containing your Agent Private Key and Master Account Address.
+*   **Accounts Registry**: A TOML file outside the repo that stores named account profiles.
 
 ### Installation
 1.  Clone the repository:
@@ -34,30 +33,31 @@ An advanced, event-driven trading bot for the Hyperliquid exchange, written in R
     cargo build --release
     ```
 
-3.  Configure Environment:
-    
-    a. Create a `wallet_config.json` file (keep this secure!):
-    ```json
-    {
-      "master_account_address": "0xMasterWalletAddress...",
-      "agent_private_key": {
-          "mainnet": "0xMainnetAgentPrivateKey...",
-          "testnet": "0xTestnetAgentPrivateKey..."
-      }
-    }
+3.  Create your accounts registry at the default location:
+    ```text
+    ~/.config/hyperliquid/accounts.toml
     ```
 
-    b. Create a `.env` file in the root directory:
-    ```env
-    HYPERLIQUID_WALLET_CONFIG_FILE=./wallet_config.json
-    ```
+    Template:
+    [configs/accounts.template.toml](configs/accounts.template.toml)
+
+    Notes:
+    - `sub_account_address` is optional. If omitted, the bot trades the master account.
+    - The private key must belong to an API wallet approved by your Hyperliquid master account.
+    - The same API wallet can sign for a subaccount, but use a separate API wallet per live bot process to avoid nonce collisions.
+    - Because `accounts.toml` now contains secrets, keep file permissions tight, for example `chmod 600 ~/.config/hyperliquid/accounts.toml`.
+    - Do not use your master EOA private key.
 
 ### Running the Bot
 
-Run the bot using `cargo run`. You must specify a configuration file.
+Run the bot using `cargo run`. You must specify a strategy configuration file. The bot does not read runtime config from a `.env` file.
 
+```bash
 # General Usage
-cargo run --release -- --config <PATH_TO_CONFIG> [OPTIONS]
+cargo run --release -- --config <PATH_TO_STRATEGY_CONFIG> [OPTIONS]
+
+# Optional: override the accounts registry path
+cargo run --release -- --config <PATH_TO_STRATEGY_CONFIG> --accounts-file <PATH_TO_ACCOUNTS_TOML>
 ```
 
 ## Deployment (Production)
@@ -75,13 +75,13 @@ See using [**Deployment Guide**](DEPLOYMENT.md) for full details.
 
 **1. Run a Spot Grid Strategy:**
 ```bash
-cargo run --release -- --config configs/spot_grid.toml
+cargo run --release -- --config configs/hype_spot_geometric_20_24_40.toml
 ```
 
-**2. Run with specific WebSocket Port:**
-By default, the status server runs on port `9000`. You can change this:
+**2. Run with a bot-specific WebSocket Port:**
+Set `websocket_port` in the strategy config. If omitted, it defaults to `9000`.
 ```bash
-cargo run --release -- --config configs/my_perp.toml --ws-port 8080
+cargo run --release -- --config configs/btc_perp.toml
 ```
 
 ## Configuration
@@ -97,16 +97,20 @@ cargo run --release -- --create
 Follow the on-screen prompts to select your strategy type and parameters. The file will be saved to your specified path.
 
 ### Manual Configuration
-**Example `spot_grid.toml`**:
+**Example strategy config**:
 ```toml
+name = "hype-spot-grid"
+account = "spot_account"
+# websocket_port = 9001 # Optional, defaults to 9000
+
 [strategy]
-type = "SpotGrid"
+type = "spot_grid"
 symbol = "HYPE/USDC"
-upper_price = 20.0
-lower_price = 10.0
+grid_range_high = 20.0
+grid_range_low = 10.0
 grid_count = 50
 total_investment = 1000.0
-grid_type = "Arithmetic"
+grid_type = "arithmetic"
 # trigger_price = 15.0 # Optional start trigger
 ```
 
@@ -167,26 +171,6 @@ Simply execute the generated binary:
 *   **Live Grid Visualization** (Order Book style)
 *   **Active Strategy Configuration**
 *   **Connection Status Indicator**
-
-## Telegram Integration 📱
-The bot can send real-time notifications to your Telegram.
-
-### Setup
-1.  **Create a Bot**: Talk to [@BotFather](https://t.me/botfather) on Telegram to create a new bot and get a **Token**.
-2.  **Get Chat ID**:
-    *   Open your new bot in Telegram.
-    *   Click **Start** or send a message (e.g., "Hello").
-    *   Visit `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` in your browser.
-    *   Look for `"chat":{"id":12345678,...}` in the JSON response. This `12345678` is your `TELEGRAM_CHAT_ID`.
-3.  **Update `.env`**:
-    ```env
-    TELEGRAM_BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
-    TELEGRAM_CHAT_ID=123456789
-    ```
-
-### Usage
-*   **Notifications**: The bot sends a message automatically when an order is **FILLED**.
-*   **Commands**: Send `/status` to the bot to get a current snapshot of PnL, Price, and Inventory.
 
 ## License
 MIT

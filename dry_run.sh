@@ -22,8 +22,8 @@ echo "=========================================="
 if [ $# -eq 0 ]; then
     echo "Strategy: configs/hype_spot.toml (default)"
     echo ""
-    exec cargo run --release -- --dry-run --config configs/hype_spot.toml
+    exec cargo run --locked --release -- --dry-run --config configs/hype_spot.toml
 else
     echo ""
-    exec cargo run --release -- --dry-run --config "$@"
+    exec cargo run --locked --release -- --dry-run --config "$@"
 fi

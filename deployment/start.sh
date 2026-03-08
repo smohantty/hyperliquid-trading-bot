@@ -67,7 +67,7 @@ fi
 # Build release binary unless skipped
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
     echo "Building release binary..."
-    cargo build --release
+    cargo build --locked --release
 fi
 
 # Path to binary
@@ -75,7 +75,7 @@ BINARY="./target/release/hyperliquid-trading-bot"
 
 if [[ ! -f "$BINARY" ]]; then
     echo "Binary not found at $BINARY. Creating it now..."
-    cargo build --release
+    cargo build --locked --release
 fi
 
 RUN_ARGS=(--config "$CONFIG_PATH")

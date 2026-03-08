@@ -28,7 +28,8 @@ impl BotConfig {
     }
 
     pub fn websocket_port(&self) -> u16 {
-        self.websocket_port.unwrap_or(9000)
+        self.websocket_port
+            .unwrap_or_else(|| self.strategy.default_websocket_port())
     }
 
     pub fn simulation_config(&self) -> SimulationConfig {
@@ -116,5 +117,52 @@ total_investment = 985.0
         let sim = config.simulation_config();
         assert_eq!(sim.balances.get("USDC"), Some(&5000.0));
         assert_eq!(sim.balances.get("HYPE"), Some(&100.0));
+    }
+
+    #[test]
+    fn test_spot_strategy_defaults_to_port_8000() {
+        let config = BotConfig {
+            name: "spot-bot".to_string(),
+            account: "account1".to_string(),
+            websocket_port: None,
+            simulation: None,
+            strategy: StrategyConfig::SpotGrid(crate::config::strategy::SpotGridConfig {
+                symbol: "BTC/USDC".to_string(),
+                grid_range_high: 2000.0,
+                grid_range_low: 1000.0,
+                grid_type: crate::config::strategy::GridType::Arithmetic,
+                grid_count: Some(10),
+                spread_bips: None,
+                total_investment: 1000.0,
+                trigger_price: None,
+            }),
+        };
+
+        assert_eq!(config.websocket_port(), 8000);
+    }
+
+    #[test]
+    fn test_perp_strategy_defaults_to_port_8001() {
+        let config = BotConfig {
+            name: "perp-bot".to_string(),
+            account: "account1".to_string(),
+            websocket_port: None,
+            simulation: None,
+            strategy: StrategyConfig::PerpGrid(crate::config::strategy::PerpGridConfig {
+                symbol: "BTC".to_string(),
+                leverage: 10,
+                is_isolated: false,
+                grid_range_high: 89500.0,
+                grid_range_low: 87000.0,
+                grid_type: crate::config::strategy::GridType::Geometric,
+                grid_count: 20,
+                spread_bips: None,
+                total_investment: 8000.0,
+                grid_bias: crate::config::strategy::GridBias::Short,
+                trigger_price: None,
+            }),
+        };
+
+        assert_eq!(config.websocket_port(), 8001);
     }
 }

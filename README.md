@@ -79,7 +79,7 @@ cargo run --release -- --config configs/hype_spot_geometric_20_24_40.toml
 ```
 
 **2. Run with a bot-specific WebSocket Port:**
-Set `websocket_port` in the strategy config. If omitted, it defaults to `9000`.
+Set `websocket_port` in the strategy config. If omitted, it defaults to `8000` for spot strategies and `8001` for perp strategies.
 ```bash
 cargo run --release -- --config configs/btc_perp.toml
 ```
@@ -101,7 +101,7 @@ Follow the on-screen prompts to select your strategy type and parameters. The fi
 ```toml
 name = "hype-spot-grid"
 account = "spot_account"
-# websocket_port = 9001 # Optional, defaults to 9000
+# websocket_port = 8100 # Optional, defaults to 8000 for spot and 8001 for perp
 
 [simulation]
 USDC = 5000.0

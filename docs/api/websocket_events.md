@@ -1,9 +1,9 @@
 # WebSocket API & Event Formats
 
-The bot exposes a WebSocket server (default port `9000`) that broadcasts real-time updates. Frontend applications should consume these events to render the dashboard.
+The bot exposes a WebSocket server that broadcasts real-time updates. If `websocket_port` is omitted, the default is `8000` for spot strategies and `8001` for perp strategies. Frontend applications should consume these events to render the dashboard.
 
 ## Connection
-*   **URL**: `ws://<HOST>:<PORT>` (e.g., `ws://localhost:9000`)
+*   **URL**: `ws://<HOST>:<PORT>` (e.g., `ws://localhost:8000` for spot or `ws://localhost:8001` for perp)
 *   **Protocol**: JSON-based messages.
 *   **Schema**: [schema.json](./schema.json) offers a formal description of all events.
 

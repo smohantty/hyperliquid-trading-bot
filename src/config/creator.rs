@@ -29,7 +29,10 @@ pub fn create_config() -> Result<()> {
         .interact_text()?;
 
     let websocket_port_raw: String = Input::with_theme(&theme)
-        .with_prompt("WebSocket port (blank for default 9000)")
+        .with_prompt(format!(
+            "WebSocket port (blank for default {})",
+            strategy.default_websocket_port()
+        ))
         .allow_empty(true)
         .interact_text()?;
 

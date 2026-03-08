@@ -24,7 +24,7 @@ High-performance, event-driven trading bot for the Hyperliquid DEX. Supports Spo
 - **Strategy Types:** `src/strategy/types.rs` -- GridType, GridBias, ZoneMode, Spread, StrategyState, GridState
 - **Models:** `src/model.rs` -- Cloid (UUID-based), OrderSide, OrderFill, OrderRequest (Limit/Market/Cancel)
 - **Config:** `src/config/` -- TOML-based: strategy.rs (schemas + validation), exchange.rs, broadcast.rs, simulation.rs, creator.rs (interactive wizard)
-- **Broadcast:** `src/broadcast/server.rs` -- WebSocket status server (default port 9000), `types.rs` event types
+- **Broadcast:** `src/broadcast/server.rs` -- WebSocket status server (default port 8000 for spot / 8001 for perp), `types.rs` event types
 - **Logging:** `src/logging/order_audit.rs` -- CSV audit trail for orders
 - **UI:** `src/ui/console.rs` -- Console grid visualization for dry-run mode
 - **Error:** `src/error.rs` -- Error types
@@ -38,7 +38,7 @@ Hyperliquid Exchange (WebSocket)
         -> Strategy.on_order_failed(cloid)
             -> StrategyContext.order_queue
                 -> Engine -> Hyperliquid Exchange
-    -> StatusBroadcaster (port 9000)
+    -> StatusBroadcaster (default port 8000 spot / 8001 perp)
         -> Dashboard / external daemons / CLI clients
 ```
 
@@ -134,7 +134,7 @@ src/
 │   ├── common.rs          # Grid calculation utilities
 │   └── types.rs           # Strategy types & enums
 ├── broadcast/
-│   ├── server.rs          # WebSocket server (port 9000)
+│   ├── server.rs          # WebSocket server (default port 8000 for spot / 8001 for perp)
 │   └── types.rs           # Event type definitions
 ├── config/
 │   ├── mod.rs             # Config loading

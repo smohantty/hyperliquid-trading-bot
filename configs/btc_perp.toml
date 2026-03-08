@@ -1,6 +1,5 @@
 name = "btc-perp-grid"
 account = "perp_account"
-websocket_port = 9002
 
 [strategy]
 type = "perp_grid"

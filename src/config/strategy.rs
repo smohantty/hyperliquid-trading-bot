@@ -65,6 +65,13 @@ impl StrategyConfig {
         }
     }
 
+    pub fn default_websocket_port(&self) -> u16 {
+        match self {
+            StrategyConfig::SpotGrid(_) => 8000,
+            StrategyConfig::PerpGrid(_) => 8001,
+        }
+    }
+
     pub fn validate(&self) -> anyhow::Result<()> {
         match self {
             StrategyConfig::SpotGrid(c) => c.validate(),

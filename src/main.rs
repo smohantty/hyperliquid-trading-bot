@@ -36,12 +36,22 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::Layer;
 
+fn log_file_name(dry_run: bool) -> &'static str {
+    if dry_run {
+        "simulation.log"
+    } else {
+        "application.log"
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args = Args::parse();
+
     // ---------------------------------------------------------
     // 1. Setup Logging (Tracing)
     // ---------------------------------------------------------
-    let file_appender = tracing_appender::rolling::daily("logs", "application.log");
+    let file_appender = tracing_appender::rolling::daily("logs", log_file_name(args.dry_run));
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
     // Console Layer (Env Filter)
@@ -87,7 +97,11 @@ async fn main() -> Result<()> {
         );
     }));
 
-    let args = Args::parse();
+    info!(
+        "Initialized logging for mode={} file=logs/{}.*",
+        if args.dry_run { "simulation" } else { "live" },
+        log_file_name(args.dry_run)
+    );
 
     if args.list_strategies {
         hyperliquid_trading_bot::config::strategy::print_strategy_help();
@@ -181,6 +195,21 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::log_file_name;
+
+    #[test]
+    fn test_log_file_name_for_live_mode() {
+        assert_eq!(log_file_name(false), "application.log");
+    }
+
+    #[test]
+    fn test_log_file_name_for_dry_run_mode() {
+        assert_eq!(log_file_name(true), "simulation.log");
+    }
 }
 
 /// Run simulation (dry run) mode.

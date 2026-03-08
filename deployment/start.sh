@@ -97,7 +97,8 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
-printf -v TMUX_CMD 'exec %q ' "$BINARY" "${RUN_ARGS[@]}"
+printf -v TMUX_ARGS '%q ' "$BINARY" "${RUN_ARGS[@]}"
+TMUX_CMD="exec ${TMUX_ARGS}"
 
 echo "Starting new tmux session '$SESSION_NAME' with config: $CONFIG_PATH"
 tmux new-session -d -s "$SESSION_NAME" -c "$PROJECT_ROOT" "$TMUX_CMD"

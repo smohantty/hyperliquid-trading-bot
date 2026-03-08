@@ -266,6 +266,8 @@ impl Engine {
                  }
                  _ = tokio::signal::ctrl_c() => {
                     info!("Shutdown signal received. Stopping Engine...");
+                    self.cancel_pending_orders_on_shutdown(&runtime, &exchange_client, &string_coin)
+                        .await;
                     break;
                  }
                  Some(message) = receiver.recv() => {
@@ -278,6 +280,32 @@ impl Engine {
         }
         info!("Engine stopped gracefully.");
         Ok(())
+    }
+
+    fn collect_shutdown_cancel_cloids(runtime: &EngineRuntime) -> Vec<Cloid> {
+        let mut cloids: Vec<_> = runtime.pending_orders.keys().copied().collect();
+        cloids.sort_by_key(|cloid| cloid.to_string());
+        cloids
+    }
+
+    async fn cancel_pending_orders_on_shutdown(
+        &self,
+        runtime: &EngineRuntime,
+        exchange_client: &ExchangeClient,
+        coin: &str,
+    ) {
+        let cloids = Self::collect_shutdown_cancel_cloids(runtime);
+        if cloids.is_empty() {
+            info!("Shutdown cancel skipped: no pending orders tracked.");
+            return;
+        }
+
+        info!(
+            "Shutdown canceling {} pending orders before exit.",
+            cloids.len()
+        );
+        self.process_bulk_cancels(cloids, exchange_client, coin)
+            .await;
     }
 
     fn log_balances(&self, ctx: &StrategyContext) {
@@ -991,5 +1019,50 @@ impl Engine {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use uuid::Uuid;
+
+    fn pending_order(oid: Option<u64>) -> PendingOrder {
+        PendingOrder {
+            target_size: 1.0,
+            filled_size: 0.0,
+            weighted_avg_px: 0.0,
+            accumulated_fees: 0.0,
+            reduce_only: false,
+            oid,
+        }
+    }
+
+    #[test]
+    fn test_collect_shutdown_cancel_cloids_empty_when_no_pending_orders() {
+        let runtime = EngineRuntime::new(StrategyContext::new(HashMap::new()));
+
+        let cloids = Engine::collect_shutdown_cancel_cloids(&runtime);
+
+        assert!(cloids.is_empty());
+    }
+
+    #[test]
+    fn test_collect_shutdown_cancel_cloids_returns_sorted_pending_orders() {
+        let mut runtime = EngineRuntime::new(StrategyContext::new(HashMap::new()));
+        let cloid_b = Cloid::from_uuid(Uuid::from_u128(2));
+        let cloid_a = Cloid::from_uuid(Uuid::from_u128(1));
+
+        runtime
+            .pending_orders
+            .insert(cloid_b, pending_order(Some(22)));
+        runtime
+            .pending_orders
+            .insert(cloid_a, pending_order(Some(11)));
+
+        let cloids = Engine::collect_shutdown_cancel_cloids(&runtime);
+
+        assert_eq!(cloids, vec![cloid_a, cloid_b]);
     }
 }

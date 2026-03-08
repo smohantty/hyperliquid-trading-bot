@@ -852,11 +852,16 @@ impl Strategy for SpotGridStrategy {
     }
 
     fn get_summary(&self, _ctx: &StrategyContext) -> StrategySummary {
-        if self.state == StrategyState::Initializing {
-            panic!("Strategy not initialized");
-        }
-
         use crate::broadcast::types::SpotGridSummary;
+
+        let (base_balance, quote_balance) = if self.state == StrategyState::Initializing {
+            (
+                _ctx.get_spot_available(&self.base_asset),
+                _ctx.get_spot_available(&self.quote_asset),
+            )
+        } else {
+            (self.inventory_base, self.inventory_quote)
+        };
 
         let total_profit = if self.state == StrategyState::Running {
             let current_equity = (self.inventory_base * self.current_price) + self.inventory_quote;
@@ -883,16 +888,12 @@ impl Strategy for SpotGridStrategy {
             grid_range_high: self.config.grid_range_high,
             grid_spacing_pct: self.grid_spacing_pct,
             roundtrips: total_roundtrips,
-            base_balance: self.inventory_base,
-            quote_balance: self.inventory_quote,
+            base_balance,
+            quote_balance,
         })
     }
 
     fn get_grid_state(&self, _ctx: &StrategyContext) -> GridState {
-        if self.state == StrategyState::Initializing {
-            panic!("Strategy not initialized");
-        }
-
         use crate::broadcast::types::ZoneInfo;
 
         let zones = self
@@ -987,6 +988,29 @@ mod tests {
             StrategyState::Running => (),
             _ => panic!("Expected Running, got {:?}", strategy.state),
         }
+    }
+
+    #[test]
+    fn test_spot_grid_summary_before_first_tick_does_not_panic() {
+        let (strategy, ctx) = create_test_setup(None, 12.5, 345.0, 100.0);
+
+        let summary = strategy.get_summary(&ctx);
+        let grid_state = strategy.get_grid_state(&ctx);
+
+        match summary {
+            StrategySummary::SpotGrid(summary) => {
+                assert_eq!(summary.state, "Initializing");
+                assert_eq!(summary.base_balance, 12.5);
+                assert_eq!(summary.quote_balance, 345.0);
+                assert_eq!(summary.grid_count, 5);
+                assert_eq!(summary.roundtrips, 0);
+            }
+            _ => panic!("Expected spot summary"),
+        }
+
+        assert_eq!(grid_state.symbol, "HYPE/USDC");
+        assert_eq!(grid_state.strategy_type, "spot_grid");
+        assert!(grid_state.zones.is_empty());
     }
 
     #[test]

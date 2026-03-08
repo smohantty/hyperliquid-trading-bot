@@ -4,7 +4,6 @@ use hyperliquid_trading_bot::broadcast::StatusBroadcaster;
 use hyperliquid_trading_bot::config::bot::BotConfig;
 use hyperliquid_trading_bot::config::broadcast::load_broadcast_config;
 use hyperliquid_trading_bot::config::exchange::ExchangeConfig;
-use hyperliquid_trading_bot::config::simulation::load_simulation_config;
 use hyperliquid_trading_bot::config::{exchange::load_exchange_config, load_bot_config};
 use hyperliquid_trading_bot::engine::simulation::SimulationEngine;
 use hyperliquid_trading_bot::engine::Engine;
@@ -183,9 +182,11 @@ async fn main() -> Result<()> {
 
 /// Run simulation (dry run) mode.
 async fn run_simulation(bot_config: BotConfig, exchange_config: ExchangeConfig) -> Result<()> {
-    // Load simulation config
-    let sim_config = load_simulation_config(None);
-    info!("[SIMULATION] Mode: balance={:?}", sim_config.balance_mode);
+    let sim_config = bot_config.simulation_config();
+    info!(
+        "[SIMULATION] Starting dry-run with {} simulation balance patch(es)",
+        sim_config.balances.len()
+    );
 
     // Initialize strategy
     let mut strategy = match init_strategy(bot_config.strategy.clone()) {

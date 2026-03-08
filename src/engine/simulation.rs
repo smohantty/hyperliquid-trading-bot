@@ -4,7 +4,7 @@
 //! what orders would be placed without executing real trades.
 
 use crate::config::exchange::ExchangeConfig;
-use crate::config::simulation::{BalanceMode, SimulationConfig};
+use crate::config::simulation::SimulationConfig;
 use crate::config::strategy::StrategyConfig;
 use crate::engine::common;
 use crate::engine::context::{MarketInfo, StrategyContext};
@@ -49,8 +49,8 @@ impl SimulationEngine {
 
     /// Initialize the simulation engine.
     ///
-    /// Sets up API client, loads market metadata, and initializes balances
-    /// based on the configured balance mode.
+    /// Sets up API client, loads market metadata, fetches real balances,
+    /// and then applies any configured balance overrides.
     pub async fn initialize(&mut self) -> Result<()> {
         // 1. Setup Info Client
         let mut info_client = self.setup_info_client().await?;
@@ -69,21 +69,15 @@ impl SimulationEngine {
         // 3. Create Context
         let mut ctx = StrategyContext::new(self.markets.clone());
 
-        // 4. Initialize Balances Based on Mode
-        match self.sim_config.balance_mode {
-            BalanceMode::Real => {
-                info!("[SIMULATION] Using real balances from exchange");
-                self.fetch_balances(&mut info_client, &mut ctx).await;
-            }
-            BalanceMode::Unlimited => {
-                info!("[SIMULATION] Using unlimited balances");
-                self.inject_unlimited_balances(&mut ctx);
-            }
-            BalanceMode::Override => {
-                info!("[SIMULATION] Using real balances with overrides");
-                self.fetch_balances(&mut info_client, &mut ctx).await;
-                self.apply_balance_overrides(&mut ctx);
-            }
+        // 4. Initialize real balances, then apply overrides if present.
+        info!("[SIMULATION] Fetching real balances from exchange");
+        self.fetch_balances(&mut info_client, &mut ctx).await;
+
+        if self.sim_config.balances.is_empty() {
+            info!("[SIMULATION] No simulation balance patches configured");
+        } else {
+            info!("[SIMULATION] Applying configured simulation balances");
+            self.apply_simulation_balances(&mut ctx);
         }
 
         self.ctx = Some(ctx);
@@ -205,46 +199,14 @@ impl SimulationEngine {
         common::fetch_balances(info_client, user_address, ctx, "[SIMULATION] ").await;
     }
 
-    fn inject_unlimited_balances(&self, ctx: &mut StrategyContext) {
-        let amount = self.sim_config.unlimited_amount;
-
-        // Parse base/quote from symbol
-        let symbol = self.config.symbol();
-        let (base_asset, quote_asset) = parse_symbol_assets(symbol);
-
-        // Inject spot balances
-        ctx.update_spot_balance(quote_asset.clone(), amount, amount);
-        ctx.update_spot_balance(base_asset.clone(), amount, amount);
-
-        // Also update perp margin
-        ctx.update_perp_balance("USDC".to_string(), amount, amount);
-
-        info!(
-            "[SIMULATION] Injected unlimited balances: {}={}, {}={}, USDC={}",
-            base_asset, amount, quote_asset, amount, amount
-        );
-    }
-
-    fn apply_balance_overrides(&self, ctx: &mut StrategyContext) {
-        for (asset, balance) in &self.sim_config.balance_overrides {
+    fn apply_simulation_balances(&self, ctx: &mut StrategyContext) {
+        for (asset, balance) in &self.sim_config.balances {
             ctx.update_spot_balance(asset.clone(), *balance, *balance);
-            info!("[SIMULATION] Override balance: {}={}", asset, balance);
+            info!("[SIMULATION] Simulation balance: {}={}", asset, balance);
 
             if asset.to_uppercase() == "USDC" {
                 ctx.update_perp_balance("USDC".to_string(), *balance, *balance);
             }
         }
-    }
-}
-
-/// Parse symbol into (base_asset, quote_asset).
-fn parse_symbol_assets(symbol: &str) -> (String, String) {
-    if let Some(idx) = symbol.find('/') {
-        let base = symbol[..idx].to_string();
-        let quote = symbol[idx + 1..].to_string();
-        (base, quote)
-    } else {
-        // Perp symbol - use symbol as base, USDC as quote
-        (symbol.to_string(), "USDC".to_string())
     }
 }

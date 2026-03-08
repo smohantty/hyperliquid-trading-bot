@@ -103,6 +103,10 @@ name = "hype-spot-grid"
 account = "spot_account"
 # websocket_port = 9001 # Optional, defaults to 9000
 
+[simulation]
+USDC = 5000.0
+HYPE = 100.0
+
 [strategy]
 type = "spot_grid"
 symbol = "HYPE/USDC"
@@ -113,6 +117,8 @@ total_investment = 1000.0
 grid_type = "arithmetic"
 # trigger_price = 15.0 # Optional start trigger
 ```
+
+The `[simulation]` block is optional and only affects `--dry-run`. Dry-run always uses live market data and real account balances. If the block contains asset values, those balances are applied on top of the fetched account state.
 
 See [Spot Grid Docs](docs/strategies/spot_grid.md) for full parameter details.
 

@@ -9,7 +9,7 @@
 #   ./dry_run.sh configs/hype_spot_geometric_20_24_40.toml   # Positional config
 #   ./dry_run.sh --config configs/hype_spot_geometric_20_24_40.toml  # Named config
 #
-# Simulation configuration is read from simulation_config.json in the current directory.
+# Simulation settings come from the optional [simulation] block in the strategy config.
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR"

@@ -43,6 +43,7 @@ pub fn create_config() -> Result<()> {
         name,
         account,
         websocket_port,
+        simulation: None,
         strategy,
     };
     config.validate()?;

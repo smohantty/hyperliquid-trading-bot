@@ -1,3 +1,4 @@
+use crate::config::simulation::SimulationConfig;
 use crate::config::strategy::StrategyConfig;
 use serde::{Deserialize, Serialize};
 
@@ -7,6 +8,8 @@ pub struct BotConfig {
     pub account: String,
     #[serde(default)]
     pub websocket_port: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simulation: Option<SimulationConfig>,
     pub strategy: StrategyConfig,
 }
 
@@ -18,11 +21,18 @@ impl BotConfig {
         if self.account.trim().is_empty() {
             return Err(anyhow::anyhow!("Account profile must not be empty."));
         }
+        if let Some(simulation) = &self.simulation {
+            simulation.validate()?;
+        }
         self.strategy.validate()
     }
 
     pub fn websocket_port(&self) -> u16 {
         self.websocket_port.unwrap_or(9000)
+    }
+
+    pub fn simulation_config(&self) -> SimulationConfig {
+        self.simulation.clone().unwrap_or_default()
     }
 }
 
@@ -36,6 +46,7 @@ mod tests {
             name: "".to_string(),
             account: "account1".to_string(),
             websocket_port: None,
+            simulation: None,
             strategy: StrategyConfig::SpotGrid(crate::config::strategy::SpotGridConfig {
                 symbol: "BTC/USDC".to_string(),
                 grid_range_high: 2000.0,
@@ -58,6 +69,7 @@ mod tests {
             name: "btc-perp-grid".to_string(),
             account: "account1".to_string(),
             websocket_port: Some(9001),
+            simulation: None,
             strategy: StrategyConfig::PerpGrid(crate::config::strategy::PerpGridConfig {
                 symbol: "BTC".to_string(),
                 leverage: 10,
@@ -78,5 +90,31 @@ mod tests {
         assert!(toml.contains("account = \"account1\""));
         assert!(toml.contains("websocket_port = 9001"));
         assert!(toml.contains("[strategy]"));
+    }
+
+    #[test]
+    fn test_toml_deserialization_supports_simulation_block() {
+        let toml = r#"
+name = "hype-spot-grid"
+account = "spot_account"
+
+[simulation]
+USDC = 5000.0
+HYPE = 100.0
+
+[strategy]
+type = "spot_grid"
+symbol = "HYPE/USDC"
+grid_range_high = 24.0
+grid_range_low = 20.0
+grid_type = "geometric"
+grid_count = 40
+total_investment = 985.0
+"#;
+
+        let config: BotConfig = toml::from_str(toml).unwrap();
+        let sim = config.simulation_config();
+        assert_eq!(sim.balances.get("USDC"), Some(&5000.0));
+        assert_eq!(sim.balances.get("HYPE"), Some(&100.0));
     }
 }

@@ -71,6 +71,8 @@ See using [**Deployment Guide**](DEPLOYMENT.md) for full details.
 ./deployment/start.sh
 ```
 
+The deployment start script runs a dry-run preflight first, prints the simulation output in the terminal, and asks for confirmation before launching live trading.
+
 #### Examples
 
 **1. Run a Spot Grid Strategy:**

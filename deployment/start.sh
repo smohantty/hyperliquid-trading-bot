@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 SESSION_NAME="hyperliquid-bot"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -7,11 +7,28 @@ PROJECT_ROOT="$SCRIPT_DIR/.."
 
 # Default config path (relative to project root)
 CONFIG_PATH="configs/eth_perp_grid.toml"
+ACCOUNTS_FILE=""
+SKIP_BUILD=0
 
 # Parse arguments
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        --config) CONFIG_PATH="$2"; shift ;;
+        --config)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --config requires a file path."
+                exit 1
+            fi
+            CONFIG_PATH="$2"
+            shift
+            ;;
+        --accounts-file)
+            if [[ -z "${2:-}" ]]; then
+                echo "Error: --accounts-file requires a file path."
+                exit 1
+            fi
+            ACCOUNTS_FILE="$2"
+            shift
+            ;;
         --skip-build) SKIP_BUILD=1 ;;
         *) echo "Unknown parameter passed: $1"; exit 1 ;;
     esac
@@ -34,30 +51,42 @@ if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
 fi
 
 # Build release binary unless skipped
-if [ -z "$SKIP_BUILD" ]; then
+if [[ "$SKIP_BUILD" -eq 0 ]]; then
     echo "Building release binary..."
     cargo build --release
-    if [ $? -ne 0 ]; then
-        echo "Build failed. Exiting."
-        exit 1
-    fi
 fi
 
 # Path to binary
 BINARY="./target/release/hyperliquid-trading-bot"
 
-if [ ! -f "$BINARY" ]; then
+if [[ ! -f "$BINARY" ]]; then
     echo "Binary not found at $BINARY. Creating it now..."
     cargo build --release
 fi
 
-echo "Starting new tmux session '$SESSION_NAME' with config: $CONFIG_PATH"
-# Create a new detached session
-tmux new-session -d -s "$SESSION_NAME"
+RUN_ARGS=(--config "$CONFIG_PATH")
+if [[ -n "$ACCOUNTS_FILE" ]]; then
+    RUN_ARGS+=(--accounts-file "$ACCOUNTS_FILE")
+fi
 
-# Run the bot in the session
-# We use 'exec' so the pane closes if the bot crashes, or we can keep it open with a shell loop
-tmux send-keys -t "$SESSION_NAME" "$BINARY --config $CONFIG_PATH" C-m
+echo "Running Dry Run Simulation..."
+if ! "$BINARY" --dry-run "${RUN_ARGS[@]}"; then
+    echo "Dry run failed. Aborting live deployment."
+    exit 1
+fi
+
+echo ""
+read -p "Do you want to proceed with live deployment? (y/N) " -n 1 -r
+echo ""
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Deployment aborted."
+    exit 0
+fi
+
+printf -v TMUX_CMD 'exec %q ' "$BINARY" "${RUN_ARGS[@]}"
+
+echo "Starting new tmux session '$SESSION_NAME' with config: $CONFIG_PATH"
+tmux new-session -d -s "$SESSION_NAME" -c "$PROJECT_ROOT" "$TMUX_CMD"
 
 echo "Bot started in background."
 echo "View logs/process with: tmux attach -t $SESSION_NAME"

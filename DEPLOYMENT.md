@@ -9,7 +9,7 @@ This guide describes how to deploy the Hyperliquid Trading Bot using `tmux`. Thi
 ## Quick Start
 
 ### 1. Start the Bot
-Run the start script. By default, it builds the project and uses `configs/eth_perp_grid.toml`.
+Run the start script. By default, it builds the project, runs a foreground dry-run preflight with live market/account data, prompts for confirmation, and then starts the live bot in `tmux` using `configs/eth_perp_grid.toml`.
 
 ```bash
 ./deployment/start.sh
@@ -20,10 +20,16 @@ Run the start script. By default, it builds the project and uses `configs/eth_pe
   ```bash
   ./deployment/start.sh --config configs/my_custom_config.toml
   ```
+- Override the accounts registry path:
+  ```bash
+  ./deployment/start.sh --config configs/my_custom_config.toml --accounts-file ~/.config/hyperliquid/accounts.toml
+  ```
 - Skip the build step (faster restart):
   ```bash
   ./deployment/start.sh --skip-build
   ```
+
+If the dry-run fails, the live deployment is aborted automatically.
 
 ### 2. View the Bot
 To see what the bot is doing (logs, status):
@@ -48,4 +54,5 @@ Gracefully stop the bot and close the session:
   ```bash
   cargo run --release -- --config configs/eth_perp_grid.toml
   ```
+- **Dry-run failed**: Fix the reported configuration, balance, or exchange setup issue first. The deployment script will not continue to live mode after a failed dry-run.
 - **"Address already in use"**: Ensure no other instance is running. The `stop.sh` script attempts to kill the session, but check manually with `ps aux | grep hyperliquid` if issues persist.

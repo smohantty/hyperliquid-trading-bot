@@ -3,7 +3,6 @@ pub mod config;
 pub mod constants;
 pub mod engine;
 pub mod error;
-pub mod logging;
 pub mod model;
 pub mod strategy;
 pub mod ui;

@@ -11,7 +11,6 @@ use crate::constants::{
 };
 use crate::engine::common;
 use crate::engine::context::{MarketInfo, StrategyContext};
-use crate::logging::order_audit::OrderAuditLogger;
 use crate::model::{Cloid, OrderFill, OrderSide};
 use crate::strategy::Strategy;
 use anyhow::{anyhow, Result};
@@ -54,7 +53,6 @@ pub struct Engine {
     config: StrategyConfig,
     exchange_config: crate::config::exchange::ExchangeConfig,
     broadcaster: StatusBroadcaster,
-    audit_logger: Option<OrderAuditLogger>,
 }
 
 impl Engine {
@@ -62,13 +60,11 @@ impl Engine {
         config: StrategyConfig,
         exchange_config: crate::config::exchange::ExchangeConfig,
         broadcaster: StatusBroadcaster,
-        audit_logger: Option<OrderAuditLogger>,
     ) -> Self {
         Self {
             config,
             exchange_config,
             broadcaster,
-            audit_logger,
         }
     }
 
@@ -308,6 +304,159 @@ impl Engine {
             .await;
     }
 
+    fn log_order_request(
+        &self,
+        symbol: &str,
+        side: OrderSide,
+        price: f64,
+        size: f64,
+        reduce_only: bool,
+        cloid: Option<Cloid>,
+    ) {
+        info!(
+            "[ORDER_AUDIT] event=req symbol={} side={} price={} size={} reduce_only={} cloid={}",
+            symbol,
+            side,
+            price,
+            size,
+            reduce_only,
+            cloid
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_string())
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn log_order_fill(
+        &self,
+        symbol: &str,
+        side: OrderSide,
+        price: f64,
+        size: f64,
+        reduce_only: bool,
+        cloid: Option<Cloid>,
+        fee: f64,
+        oid: u64,
+        is_taker: bool,
+        raw_dir: Option<&str>,
+    ) {
+        info!(
+            "[ORDER_AUDIT] event=fill symbol={} side={} price={} size={} reduce_only={} cloid={} fee={} oid={} is_taker={} raw_dir={}",
+            symbol,
+            side,
+            price,
+            size,
+            reduce_only,
+            cloid
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            fee,
+            oid,
+            is_taker,
+            raw_dir.unwrap_or("none")
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn log_order_open(
+        &self,
+        symbol: &str,
+        side: OrderSide,
+        price: f64,
+        size: f64,
+        reduce_only: bool,
+        cloid: Option<Cloid>,
+        oid: u64,
+    ) {
+        info!(
+            "[ORDER_AUDIT] event=open symbol={} side={} price={} size={} reduce_only={} cloid={} oid={}",
+            symbol,
+            side,
+            price,
+            size,
+            reduce_only,
+            cloid
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            oid
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn log_order_reject(
+        &self,
+        symbol: &str,
+        side: OrderSide,
+        price: f64,
+        size: f64,
+        reduce_only: bool,
+        cloid: Option<Cloid>,
+        reason: &str,
+    ) {
+        error!(
+            "[ORDER_AUDIT] event=reject symbol={} side={} price={} size={} reduce_only={} cloid={} reason={}",
+            symbol,
+            side,
+            price,
+            size,
+            reduce_only,
+            cloid
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_string()),
+            reason
+        );
+    }
+
+    fn log_cancel_request(&self, cloid: Cloid, coin: &str) {
+        info!(
+            "[ORDER_AUDIT] event=cancel_request symbol={} asset={} cloid={}",
+            self.config.symbol(),
+            coin,
+            cloid
+        );
+    }
+
+    fn log_cancel_result(
+        &self,
+        cloid: Option<Cloid>,
+        coin: &str,
+        result: &str,
+        details: Option<&str>,
+    ) {
+        match details {
+            Some(details) => info!(
+                "[ORDER_AUDIT] event=cancel_result symbol={} asset={} cloid={} result={} details={}",
+                self.config.symbol(),
+                coin,
+                cloid
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                result,
+                details
+            ),
+            None => info!(
+                "[ORDER_AUDIT] event=cancel_result symbol={} asset={} cloid={} result={}",
+                self.config.symbol(),
+                coin,
+                cloid
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                result
+            ),
+        }
+    }
+
+    fn log_reconcile_event(&self, event: &str, cloid: Cloid, oid: u64, details: &str) {
+        info!(
+            "[ORDER_AUDIT] event={} symbol={} cloid={} oid={} {}",
+            event,
+            self.config.symbol(),
+            cloid,
+            oid,
+            details
+        );
+    }
+
     fn log_balances(&self, ctx: &StrategyContext) {
         info!("========================================");
         info!("           BALANCE SNAPSHOT             ");
@@ -444,6 +593,7 @@ impl Engine {
 
         let mut cancel_reqs = Vec::with_capacity(cloids.len());
         for cloid in &cloids {
+            self.log_cancel_request(*cloid, coin);
             // Broadcast Order Update (Cancel Sent)
             self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
                 oid: 0,
@@ -472,12 +622,20 @@ impl Engine {
                         let cloid = cloids.get(i);
                         match status {
                             hyperliquid_rust_sdk::ExchangeDataStatus::Success => {
+                                self.log_cancel_result(cloid.copied(), coin, "success", None);
                                 info!("Cancel successful for {:?}", cloid);
                             }
                             hyperliquid_rust_sdk::ExchangeDataStatus::Error(e) => {
+                                self.log_cancel_result(cloid.copied(), coin, "error", Some(e));
                                 error!("Failed to cancel order {:?}: {}", cloid, e);
                             }
                             _ => {
+                                self.log_cancel_result(
+                                    cloid.copied(),
+                                    coin,
+                                    "unknown",
+                                    Some(&format!("{:?}", status)),
+                                );
                                 info!("Cancel status for {:?}: {:?}", cloid, status);
                             }
                         }
@@ -586,17 +744,7 @@ impl Engine {
                 cloid: cloid.map(|c| c.as_uuid()),
             };
 
-            // Audit Log: REQ
-            if let Some(logger) = &self.audit_logger {
-                logger.log_req(
-                    target_symbol,
-                    &side.to_string(),
-                    limit_px,
-                    sz,
-                    reduce_only,
-                    cloid.map(|c| c.to_string()),
-                );
-            }
+            self.log_order_request(target_symbol, side, limit_px, sz, reduce_only, cloid);
 
             info!("[ORDER_SENT] Exchange ({})", req_summary);
 
@@ -628,6 +776,15 @@ impl Engine {
                                             oid: Some(r.oid),
                                         },
                                     );
+                                    self.log_order_open(
+                                        target_symbol,
+                                        side,
+                                        limit_px,
+                                        target_sz,
+                                        reduce_only,
+                                        Some(c),
+                                        r.oid,
+                                    );
 
                                     // Broadcast Placing/Resting confirmed
                                     self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
@@ -645,6 +802,18 @@ impl Engine {
                             hyperliquid_rust_sdk::ExchangeDataStatus::Filled(f) => {
                                 let amount: f64 = f.total_sz.parse().unwrap_or(0.0);
                                 let px: f64 = f.avg_px.parse().unwrap_or(0.0);
+                                self.log_order_fill(
+                                    target_symbol,
+                                    side,
+                                    px,
+                                    amount,
+                                    reduce_only,
+                                    cloid,
+                                    0.0,
+                                    f.oid,
+                                    true,
+                                    None,
+                                );
                                 info!("[ORDER_FILLED_MARKET] {} {} @ {}", side, amount, px);
 
                                 if let Some(c) = cloid {
@@ -681,6 +850,15 @@ impl Engine {
                                 }
                             }
                             hyperliquid_rust_sdk::ExchangeDataStatus::Error(e) => {
+                                self.log_order_reject(
+                                    target_symbol,
+                                    side,
+                                    limit_px,
+                                    target_sz,
+                                    reduce_only,
+                                    cloid,
+                                    e,
+                                );
                                 error!("Order Error for {:?}: {}", cloid, e);
                                 if let Some(c) = cloid {
                                     self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
@@ -712,7 +890,16 @@ impl Engine {
             Ok(hyperliquid_rust_sdk::ExchangeResponseStatus::Err(e)) => {
                 error!("Bulk order level error: {}", e);
                 // Fail all
-                for (cloid, _, _, _, _) in order_contexts {
+                for (cloid, side, target_sz, reduce_only, limit_px) in order_contexts {
+                    self.log_order_reject(
+                        target_symbol,
+                        side,
+                        limit_px,
+                        target_sz,
+                        reduce_only,
+                        cloid,
+                        &e,
+                    );
                     if let Some(c) = cloid {
                         if let Err(strategy_err) = strategy.on_order_failed(c, &mut runtime.ctx) {
                             error!("Strategy on_order_failed error: {}", strategy_err);
@@ -723,7 +910,17 @@ impl Engine {
             Err(e) => {
                 error!("Failed to place bulk orders: {:?}", e);
                 // Fail all
-                for (cloid, _, _, _, _) in order_contexts {
+                let reason = format!("{:?}", e);
+                for (cloid, side, target_sz, reduce_only, limit_px) in order_contexts {
+                    self.log_order_reject(
+                        target_symbol,
+                        side,
+                        limit_px,
+                        target_sz,
+                        reduce_only,
+                        cloid,
+                        &reason,
+                    );
                     if let Some(c) = cloid {
                         if let Err(strategy_err) = strategy.on_order_failed(c, &mut runtime.ctx) {
                             error!("Strategy on_order_failed error: {}", strategy_err);
@@ -766,30 +963,29 @@ impl Engine {
                 };
 
                 let fee: f64 = fill.fee.parse().unwrap_or(0.0);
+                let record_reduce_only = cloid
+                    .and_then(|c| runtime.pending_orders.get(&c))
+                    .map(|p| p.reduce_only)
+                    .unwrap_or(false);
 
-                // Audit Log: FILL
-                if let Some(logger) = &self.audit_logger {
-                    let record_reduce_only = cloid
-                        .and_then(|c| runtime.pending_orders.get(&c))
-                        .map(|p| p.reduce_only)
-                        .unwrap_or(false);
+                let display_symbol = runtime
+                    .ctx
+                    .market_info(coin)
+                    .map(|m| m.symbol.as_str())
+                    .unwrap_or(coin);
 
-                    let display_symbol = runtime
-                        .ctx
-                        .market_info(coin)
-                        .map(|m| m.symbol.as_str())
-                        .unwrap_or(coin);
-
-                    logger.log_fill(
-                        display_symbol,
-                        &side.to_string(),
-                        px,
-                        amount,
-                        record_reduce_only,
-                        cloid.map(|c| c.to_string()),
-                        fee,
-                    );
-                }
+                self.log_order_fill(
+                    display_symbol,
+                    side,
+                    px,
+                    amount,
+                    record_reduce_only,
+                    cloid,
+                    fee,
+                    fill.oid,
+                    false,
+                    Some(fill.dir.as_str()),
+                );
 
                 // Broadcast Fill Event
                 self.broadcaster.send(WSEvent::OrderUpdate(OrderEvent {
@@ -946,6 +1142,12 @@ impl Engine {
                         continue;
                     }
 
+                    self.log_reconcile_event(
+                        "reconcile_missing",
+                        cloid,
+                        oid,
+                        "status=missing_from_open_orders",
+                    );
                     info!("Reconciliation: Order {} (OID {}) missing from exchange. Querying status...", cloid, oid);
 
                     // Query Status via REST
@@ -962,6 +1164,15 @@ impl Engine {
                                         OrderSide::Sell
                                     };
                                     let reduce_only = order_state.order.reduce_only;
+                                    self.log_reconcile_event(
+                                        "reconcile_filled",
+                                        cloid,
+                                        oid,
+                                        &format!(
+                                            "status=filled side={} price={} size={} reduce_only={}",
+                                            side, px, amount, reduce_only
+                                        ),
+                                    );
 
                                     info!("[RECONCILE_FILLED] {} {} @ {}", side, amount, px);
 
@@ -990,17 +1201,35 @@ impl Engine {
                                     || status == "rejected"
                                     || status == "margin"
                                 {
+                                    self.log_reconcile_event(
+                                        "reconcile_terminal",
+                                        cloid,
+                                        oid,
+                                        &format!("status={}", status),
+                                    );
                                     info!("[RECONCILE_FAILED] Order {} was {}", cloid, status);
                                     runtime.pending_orders.remove(&cloid);
                                     runtime.completed_cloids.insert(cloid);
                                     let _ = strategy.on_order_failed(cloid, &mut runtime.ctx);
                                 } else {
+                                    self.log_reconcile_event(
+                                        "reconcile_waiting",
+                                        cloid,
+                                        oid,
+                                        &format!("status={}", status),
+                                    );
                                     info!(
                                         "Reconciliation: Order {} status is {}. Waiting.",
                                         cloid, status
                                     );
                                 }
                             } else {
+                                self.log_reconcile_event(
+                                    "reconcile_not_found",
+                                    cloid,
+                                    oid,
+                                    "status=order_not_found",
+                                );
                                 warn!(
                                     "Reconciliation: Order {} not found by query. Assuming failed.",
                                     cloid
@@ -1010,6 +1239,12 @@ impl Engine {
                             }
                         }
                         Err(e) => {
+                            self.log_reconcile_event(
+                                "reconcile_query_error",
+                                cloid,
+                                oid,
+                                &format!("err={}", e),
+                            );
                             error!(
                                 "Reconciliation: Failed to query status for {}: {}",
                                 cloid, e

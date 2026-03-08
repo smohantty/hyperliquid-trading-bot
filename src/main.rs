@@ -10,6 +10,7 @@ use hyperliquid_trading_bot::engine::Engine;
 use hyperliquid_trading_bot::strategy::init_strategy;
 use hyperliquid_trading_bot::ui::console::ConsoleRenderer;
 use log::{error, info}; // Keep this import
+use std::backtrace::Backtrace;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Hyperliquid Trading Bot", long_about = None)]
@@ -67,17 +68,24 @@ async fn main() -> Result<()> {
         .with(file_layer)
         .init();
 
-    // ---------------------------------------------------------
-    // 2. Setup Audit Logger
-    // ---------------------------------------------------------
-    let audit_logger =
-        match hyperliquid_trading_bot::logging::order_audit::OrderAuditLogger::new("logs") {
-            Ok(l) => Some(l),
-            Err(e) => {
-                error!("Failed to initialize Order Audit Logger: {}", e);
-                None
-            }
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info
+            .location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "unknown".to_string());
+        let payload = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            *s
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.as_str()
+        } else {
+            "non-string panic payload"
         };
+        let backtrace = Backtrace::force_capture();
+        error!(
+            "Unhandled panic at {}: {}\nbacktrace:\n{}",
+            location, payload, backtrace
+        );
+    }));
 
     let args = Args::parse();
 
@@ -159,12 +167,7 @@ async fn main() -> Result<()> {
     };
 
     // Initialize Engine
-    let engine = Engine::new(
-        bot_config.strategy,
-        exchange_config,
-        broadcaster.clone(),
-        audit_logger,
-    );
+    let engine = Engine::new(bot_config.strategy, exchange_config, broadcaster.clone());
 
     // Run Engine
     if let Err(e) = engine.run(strategy).await {

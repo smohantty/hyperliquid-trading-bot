@@ -5,8 +5,7 @@ SESSION_NAME="hyperliquid-bot"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$SCRIPT_DIR/.."
 
-# Default config path (relative to project root)
-CONFIG_PATH="configs/eth_perp_grid.toml"
+CONFIG_PATH=""
 ACCOUNTS_FILE=""
 SKIP_BUILD=0
 
@@ -30,10 +29,25 @@ while [[ "$#" -gt 0 ]]; do
             shift
             ;;
         --skip-build) SKIP_BUILD=1 ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+        *)
+            if [[ -z "$CONFIG_PATH" ]]; then
+                CONFIG_PATH="$1"
+            else
+                echo "Unknown parameter passed: $1"
+                exit 1
+            fi
+            ;;
     esac
     shift
 done
+
+if [[ -z "$CONFIG_PATH" ]]; then
+    echo "Error: You must provide a strategy config path."
+    echo "Usage:"
+    echo "  ./deployment/start.sh configs/my_strategy.toml [--skip-build] [--accounts-file PATH]"
+    echo "  ./deployment/start.sh --config configs/my_strategy.toml [--skip-build] [--accounts-file PATH]"
+    exit 1
+fi
 
 # Check if tmux is installed
 if ! command -v tmux &> /dev/null; then

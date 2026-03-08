@@ -68,7 +68,7 @@ See using [**Deployment Guide**](DEPLOYMENT.md) for full details.
 
 ### Quick Start
 ```bash
-./deployment/start.sh
+./deployment/start.sh configs/<your_strategy>.toml
 ```
 
 The deployment start script runs a dry-run preflight first, prints the simulation output in the terminal, and asks for confirmation before launching live trading.

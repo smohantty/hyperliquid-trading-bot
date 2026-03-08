@@ -20,10 +20,10 @@ echo "=========================================="
 
 # If no args provided, use default config
 if [ $# -eq 0 ]; then
-    echo "Strategy: configs/hype_spot_geometric_20_24_40.toml (default)"
+    echo "Strategy: configs/hype_spot.toml (default)"
     echo ""
-    exec cargo run -- --dry-run --config configs/hype_spot_geometric_20_24_40.toml
+    exec cargo run --release -- --dry-run --config configs/hype_spot.toml
 else
     echo ""
-    exec cargo run -- --dry-run --config "$@"
+    exec cargo run --release -- --dry-run --config "$@"
 fi

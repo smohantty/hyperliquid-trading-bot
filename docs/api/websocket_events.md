@@ -111,8 +111,10 @@ Sent immediately upon connection. Contains the full strategy configuration.
     //   "symbol": "HYPE/USDC",
     //   "grid_range_high": 110.0,
     //   "grid_range_low": 90.0,
-    //   "grid_type": "arithmetic", // or "geometric"
+    //   "grid_type": "arithmetic",
     //   "grid_count": 50,
+    //   // or:
+    //   // "spread_bips": 50.0,
     //   "total_investment": 1000.0,
     //   "trigger_price": 105.0     // Optional
     // }
@@ -127,6 +129,8 @@ Sent immediately upon connection. Contains the full strategy configuration.
     //   "grid_range_low": 80.0,
     //   "grid_type": "arithmetic",
     //   "grid_count": 50,
+    //   // or:
+    //   // "spread_bips": 50.0,
     //   "total_investment": 1000.0, // Notional Value
     //   "grid_bias": "long",        // "long", "short", "neutral"
     //   "trigger_price": null

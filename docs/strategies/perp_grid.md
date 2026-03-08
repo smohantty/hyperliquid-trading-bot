@@ -12,8 +12,15 @@ A grid strategy designed for Perpetual Futures, supporting Leverage and Long/Sho
 | `grid_range_high` | f64 | Highest price of range. |
 | `grid_range_low` | f64 | Lowest price of range. |
 | `grid_count` | u32 | Number of levels. |
+| `spread_bips` | f64 | Geometric spacing in basis points. Use this instead of `grid_count`. |
+| `grid_type` | Enum | `Arithmetic` or `Geometric`. Defaults to `Geometric` when omitted. |
 | `total_investment` | f64 | Margin (Collateral) allocated. |
 | `trigger_price` | Option<f64> | (Optional) Activation price. |
+
+## Grid Spacing Modes
+
+- `grid_count`: fixed number of levels with arithmetic or geometric interpolation based on `grid_type`
+- `spread_bips`: geometric spacing only; `grid_type` must remain `geometric`
 
 ## Logic & Features
 

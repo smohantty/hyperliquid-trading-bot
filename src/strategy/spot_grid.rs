@@ -90,7 +90,7 @@ impl SpotGridStrategy {
             let spacing = spread_bips / 100.0;
             (prices.len() as u32, (spacing, spacing))
         } else {
-            let count = config.grid_count.unwrap_or(2);
+            let count = config.grid_count.expect("validated grid_count");
             let spacing = common::calculate_grid_spacing_pct(
                 &config.grid_type,
                 config.grid_range_low,

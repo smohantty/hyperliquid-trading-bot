@@ -112,13 +112,15 @@ type = "spot_grid"
 symbol = "HYPE/USDC"
 grid_range_high = 20.0
 grid_range_low = 10.0
-grid_count = 50
-total_investment = 1000.0
 grid_type = "arithmetic"
+grid_count = 50
+# spread_bips = 50.0 # Use this instead of grid_count
+total_investment = 1000.0
 # trigger_price = 15.0 # Optional start trigger
 ```
 
 The `[simulation]` block is optional and only affects `--dry-run`. Dry-run always uses live market data and real account balances. If the block contains asset values, those balances are applied on top of the fetched account state.
+For grid spacing, use either `grid_count` or `spread_bips`. `grid_type` remains part of the strategy config and defaults to `geometric` when omitted. When `spread_bips` is used, spacing is geometric by definition, so `grid_type` must remain `geometric`.
 
 See [Spot Grid Docs](docs/strategies/spot_grid.md) for full parameter details.
 

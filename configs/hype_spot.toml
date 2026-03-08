@@ -4,9 +4,8 @@ account = "spot_bot"
 [strategy]
 type = "spot_grid"
 symbol = "HYPE/USDC"
-grid_range_low = 22.0
+grid_range_low = 22
 grid_range_high = 32
-grid_type = "geometric"
-grid_count = 40
+spread_bips = 50
 total_investment = 100000
 

@@ -112,22 +112,7 @@ fn create_spot_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         })
         .interact_text()?;
 
-    let grid_types = vec!["Arithmetic", "Geometric"];
-    let grid_type_sel = Select::with_theme(theme)
-        .with_prompt("Grid Type")
-        .default(0)
-        .items(&grid_types)
-        .interact()?;
-
-    let grid_type = if grid_type_sel == 0 {
-        GridType::Arithmetic
-    } else {
-        GridType::Geometric
-    };
-
-    let grid_count: u32 = Input::with_theme(theme)
-        .with_prompt("Grid Count")
-        .interact_text()?;
+    let (grid_type, grid_count, spread_bips) = prompt_grid_spacing(theme)?;
 
     let total_investment: f64 = Input::with_theme(theme)
         .with_prompt("Total Investment (USDC)")
@@ -153,8 +138,8 @@ fn create_spot_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         grid_range_high,
         grid_range_low,
         grid_type,
-        grid_count: Some(grid_count),
-        spread_bips: None,
+        grid_count,
+        spread_bips,
         total_investment,
         trigger_price,
     }))
@@ -196,22 +181,7 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         })
         .interact_text()?;
 
-    let grid_types = vec!["Arithmetic", "Geometric"];
-    let grid_type_sel = Select::with_theme(theme)
-        .with_prompt("Grid Type")
-        .default(0)
-        .items(&grid_types)
-        .interact()?;
-
-    let grid_type = if grid_type_sel == 0 {
-        GridType::Arithmetic
-    } else {
-        GridType::Geometric
-    };
-
-    let grid_count: u32 = Input::with_theme(theme)
-        .with_prompt("Grid Count")
-        .interact_text()?;
+    let (grid_type, grid_count, spread_bips) = prompt_grid_spacing(theme)?;
 
     let total_investment: f64 = Input::with_theme(theme)
         .with_prompt("Total Investment (USDC)")
@@ -253,11 +223,54 @@ fn create_perp_grid(theme: &ColorfulTheme) -> Result<StrategyConfig> {
         grid_range_high,
         grid_type,
         grid_count,
-        spread_bips: None,
+        spread_bips,
         total_investment,
         grid_bias,
         trigger_price,
     }))
+}
+
+fn prompt_grid_spacing(theme: &ColorfulTheme) -> Result<(GridType, Option<u32>, Option<f64>)> {
+    let spacing_modes = vec!["Grid Count", "Spread (bips)"];
+    let spacing_sel = Select::with_theme(theme)
+        .with_prompt("Grid Spacing Mode")
+        .default(0)
+        .items(&spacing_modes)
+        .interact()?;
+
+    if spacing_sel == 0 {
+        let grid_types = vec!["Arithmetic", "Geometric"];
+        let grid_type_sel = Select::with_theme(theme)
+            .with_prompt("Grid Type")
+            .default(0)
+            .items(&grid_types)
+            .interact()?;
+
+        let grid_type = if grid_type_sel == 0 {
+            GridType::Arithmetic
+        } else {
+            GridType::Geometric
+        };
+
+        let grid_count: u32 = Input::with_theme(theme)
+            .with_prompt("Grid Count")
+            .interact_text()?;
+
+        Ok((grid_type, Some(grid_count), None))
+    } else {
+        let spread_bips: f64 = Input::with_theme(theme)
+            .with_prompt("Spread (bips)")
+            .validate_with(|input: &f64| -> Result<(), &str> {
+                if *input > 0.0 {
+                    Ok(())
+                } else {
+                    Err("Spread must be greater than 0")
+                }
+            })
+            .interact_text()?;
+
+        Ok((GridType::Geometric, None, Some(spread_bips)))
+    }
 }
 
 fn generate_default_filename(strategy: &StrategyConfig) -> String {
@@ -267,13 +280,21 @@ fn generate_default_filename(strategy: &StrategyConfig) -> String {
             grid_range_high,
             grid_range_low,
             grid_type,
+            spread_bips,
             ..
         }) => {
             // Extract asset name (e.g., "ETH" from "ETH/USDC")
             let asset = symbol.split('/').next().unwrap_or(symbol);
             format!(
-                "{}_Spot_{:?}_{}_{}.toml",
-                asset, grid_type, grid_range_low, grid_range_high
+                "{}_Spot_{}_{}_{}.toml",
+                asset,
+                if spread_bips.is_some() {
+                    "Spread".to_string()
+                } else {
+                    format!("{:?}", grid_type)
+                },
+                grid_range_low,
+                grid_range_high
             )
         }
         StrategyConfig::PerpGrid(PerpGridConfig {

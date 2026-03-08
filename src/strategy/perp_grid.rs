@@ -110,7 +110,7 @@ impl PerpGridStrategy {
                 self.config.grid_type,
                 self.config.grid_range_low,
                 self.config.grid_range_high,
-                self.config.grid_count,
+                self.config.grid_count.expect("validated grid_count"),
             )
         };
 
@@ -844,12 +844,17 @@ impl Strategy for PerpGridStrategy {
         };
 
         // Calculate grid spacing percentage
-        let grid_spacing_pct = common::calculate_grid_spacing_pct(
-            &self.config.grid_type,
-            self.config.grid_range_low,
-            self.config.grid_range_high,
-            self.config.grid_count,
-        );
+        let grid_spacing_pct = if let Some(spread_bips) = self.config.spread_bips {
+            let spacing = spread_bips / 100.0;
+            (spacing, spacing)
+        } else {
+            common::calculate_grid_spacing_pct(
+                &self.config.grid_type,
+                self.config.grid_range_low,
+                self.config.grid_range_high,
+                self.config.grid_count.expect("validated grid_count"),
+            )
+        };
 
         // Calculate uptime
         let uptime = common::format_uptime(self.start_time.elapsed());
@@ -944,7 +949,7 @@ mod tests {
             grid_range_high: grid_range_high,
             grid_range_low: grid_range_low,
             grid_type: GridType::Arithmetic,
-            grid_count: 3,
+            grid_count: Some(3),
             spread_bips: None,
             total_investment: 1000.0,
             grid_bias,
@@ -1110,7 +1115,7 @@ mod tests {
             grid_range_high: 120.0,
             grid_range_low: 80.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 3, // 80, 100, 120 -> zones: [80-100], [100-120]
+            grid_count: Some(3), // 80, 100, 120 -> zones: [80-100], [100-120]
             total_investment: 100.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
@@ -1211,7 +1216,7 @@ mod tests {
             grid_range_high: 120.0,
             grid_range_low: 80.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 3, // 80, 100, 120 -> zones: [80-100], [100-120]
+            grid_count: Some(3), // 80, 100, 120 -> zones: [80-100], [100-120]
             total_investment: 100.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
@@ -1628,7 +1633,7 @@ mod tests {
             grid_range_high: 110.0,
             grid_range_low: 90.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 5, // 4 zones: [90-95], [95-100], [100-105], [105-110]
+            grid_count: Some(5), // 4 zones: [90-95], [95-100], [100-105], [105-110]
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
@@ -1703,7 +1708,7 @@ mod tests {
             grid_range_high: 110.0,
             grid_range_low: 90.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 5, // 4 zones: [90-95], [95-100], [100-105], [105-110]
+            grid_count: Some(5), // 4 zones: [90-95], [95-100], [100-105], [105-110]
             total_investment: 1000.0,
             grid_bias: GridBias::Short,
             trigger_price: None,

@@ -62,11 +62,13 @@ impl ConsoleRenderer {
             StrategyConfig::SpotGrid(c) => {
                 println!("Symbol:      {}", c.symbol);
                 println!("Type:        spot_grid");
-                println!("Grid Type:   {:?}", c.grid_type);
                 println!("Total Inv:   {:.3}", c.total_investment);
 
                 if let Some(spread) = c.spread_bips {
+                    println!("Grid Mode:   spread_bips (geometric)");
                     println!("Spread:      {} bips", spread);
+                } else {
+                    println!("Grid Type:   {:?}", c.grid_type);
                 }
 
                 if let Some(count) = c.grid_count {
@@ -87,17 +89,22 @@ impl ConsoleRenderer {
             StrategyConfig::PerpGrid(c) => {
                 println!("Symbol:      {}", c.symbol);
                 println!("Type:        perp_grid");
-                println!("Grid Type:   {:?}", c.grid_type);
                 println!("Grid Bias:   {:?}", c.grid_bias);
                 println!("Total Inv:   {:.3}", c.total_investment);
                 println!("Leverage:    {}x", c.leverage);
 
                 if let Some(spread) = c.spread_bips {
+                    println!("Grid Mode:   spread_bips (geometric)");
                     println!("Spread:      {} bips", spread);
+                } else {
+                    println!("Grid Type:   {:?}", c.grid_type);
                 }
 
-                // grid_count is u32 (not Option) for PerpGridConfig
-                println!("Grid Count:  {}", c.grid_count);
+                if let Some(count) = c.grid_count {
+                    println!("Grid Count:  {}", count);
+                } else if let Some(len) = grid_len {
+                    println!("Grid Count:  {}", len);
+                }
 
                 println!(
                     "Range:       {:.6} - {:.6}",

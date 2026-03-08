@@ -16,11 +16,13 @@ pub struct SpotGridConfig {
     pub symbol: String,
     pub grid_range_high: f64,
     pub grid_range_low: f64,
+    /// Grid type. Defaults to `geometric` when omitted.
+    #[serde(default)]
     pub grid_type: GridType,
-    /// Number of grid levels. Either grid_count OR spread_bips must be provided.
+    /// Number of grid levels.
     #[serde(default)]
     pub grid_count: Option<u32>,
-    /// Spread in basis points between levels. Either grid_count OR spread_bips must be provided.
+    /// Spread in basis points between levels. Implies geometric spacing.
     #[serde(default)]
     pub spread_bips: Option<f64>,
     pub total_investment: f64,
@@ -36,8 +38,13 @@ pub struct PerpGridConfig {
     pub is_isolated: bool,
     pub grid_range_high: f64,
     pub grid_range_low: f64,
+    /// Grid type. Defaults to `geometric` when omitted.
+    #[serde(default)]
     pub grid_type: GridType,
-    pub grid_count: u32,
+    /// Number of grid levels.
+    #[serde(default)]
+    pub grid_count: Option<u32>,
+    /// Spread in basis points between levels. Implies geometric spacing.
     #[serde(default)]
     pub spread_bips: Option<f64>,
     pub total_investment: f64,
@@ -80,25 +87,13 @@ impl StrategyConfig {
     }
 }
 
-impl SpotGridConfig {
-    pub fn validate(&self) -> anyhow::Result<()> {
-        // Must have either grid_count OR spread_bips, not both
-        match (self.grid_count, self.spread_bips) {
-            (None, None) => {
-                return Err(anyhow::anyhow!(
-                    "Either grid_count or spread_bips must be specified."
-                ));
-            }
-            (Some(_), Some(_)) => {
-                return Err(anyhow::anyhow!(
-                    "Only one of grid_count or spread_bips can be specified, not both."
-                ));
-            }
-            _ => {}
-        }
-
-        // Validate grid_count if present
-        if let Some(count) = self.grid_count {
+fn validate_grid_spacing_fields(
+    grid_type: GridType,
+    grid_count: Option<u32>,
+    spread_bips: Option<f64>,
+) -> anyhow::Result<()> {
+    match (grid_count, spread_bips) {
+        (Some(count), None) => {
             if count <= 2 {
                 return Err(anyhow::anyhow!(
                     "Grid count {} must be greater than 2.",
@@ -106,13 +101,34 @@ impl SpotGridConfig {
                 ));
             }
         }
-
-        // Validate spread_bips if present
-        if let Some(bips) = self.spread_bips {
+        (None, Some(bips)) => {
             if bips <= 0.0 {
                 return Err(anyhow::anyhow!("spread_bips {} must be positive.", bips));
             }
+            if grid_type != GridType::Geometric {
+                return Err(anyhow::anyhow!(
+                    "grid_type must be geometric when spread_bips is used."
+                ));
+            }
         }
+        (Some(_), Some(_)) => {
+            return Err(anyhow::anyhow!(
+                "Only one of grid_count or spread_bips can be specified, not both."
+            ));
+        }
+        (None, None) => {
+            return Err(anyhow::anyhow!(
+                "Either grid_count or spread_bips must be specified."
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+impl SpotGridConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        validate_grid_spacing_fields(self.grid_type, self.grid_count, self.spread_bips)?;
 
         if self.grid_range_high <= self.grid_range_low {
             return Err(anyhow::anyhow!(
@@ -156,13 +172,8 @@ impl SpotGridConfig {
 
 impl PerpGridConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
-        // Common checks
-        if self.grid_count <= 2 {
-            return Err(anyhow::anyhow!(
-                "Grid count {} must be greater than 2.",
-                self.grid_count
-            ));
-        }
+        validate_grid_spacing_fields(self.grid_type, self.grid_count, self.spread_bips)?;
+
         if self.grid_range_high <= self.grid_range_low {
             return Err(anyhow::anyhow!(
                 "Upper price {} must be greater than lower price {}.",
@@ -204,8 +215,9 @@ pub fn print_strategy_help() {
     println!("     - symbol (String): The trading pair symbol (e.g., 'ETH/USDC').");
     println!("     - grid_range_high (f64): The upper bound of the grid range.");
     println!("     - grid_range_low (f64): The lower bound of the grid range.");
-    println!("     - grid_type (String): 'arithmetic' or 'geometric'.");
-    println!("     - grid_count (u32): Number of grid levels.");
+    println!("     - grid_type (String): 'geometric' (default) or 'arithmetic'.");
+    println!("     - grid_count (u32): fixed-count grid.");
+    println!("     - spread_bips (f64): geometric spacing in basis points.");
     println!("     - total_investment (f64): Total base asset value to invest.");
     println!("     - trigger_price (Option<f64>): Price to trigger strategy start (optional).");
     println!();
@@ -218,8 +230,9 @@ pub fn print_strategy_help() {
     println!("     - is_isolated (bool): Isolated margin mode (default: true).");
     println!("     - grid_range_high (f64): The upper bound of the grid range.");
     println!("     - grid_range_low (f64): The lower bound of the grid range.");
-    println!("     - grid_type (String): 'arithmetic' or 'geometric'.");
-    println!("     - grid_count (u32): Number of grid levels.");
+    println!("     - grid_type (String): 'geometric' (default) or 'arithmetic'.");
+    println!("     - grid_count (u32): fixed-count grid.");
+    println!("     - spread_bips (f64): geometric spacing in basis points.");
     println!(
         "     - total_investment (f64): Total cost basis in USDC.
      - grid_bias (String): 'long' or 'short'.
@@ -329,7 +342,7 @@ mod tests {
             grid_range_high: 2000.0,
             grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 5,
+            grid_count: Some(5),
             spread_bips: None,
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
@@ -345,7 +358,7 @@ mod tests {
             grid_range_high: 2000.0,
             grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 5,
+            grid_count: Some(5),
             spread_bips: None,
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
@@ -373,7 +386,7 @@ mod tests {
             symbol: "ETH/USDC".to_string(),
             grid_range_high: 2000.0,
             grid_range_low: 1000.0,
-            grid_type: GridType::Geometric,
+            grid_type: GridType::default(),
             grid_count: None,
             spread_bips: Some(100.0), // 1%
             total_investment: 1000.0,
@@ -388,12 +401,29 @@ mod tests {
             grid_range_high: 2000.0,
             grid_range_low: 1000.0,
             grid_type: GridType::Arithmetic,
-            grid_count: 10,
+            grid_count: Some(10),
             spread_bips: None,
             total_investment: 1000.0,
             grid_bias: GridBias::Long,
             trigger_price: None,
         });
         assert!(perp.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validation_rejects_arithmetic_with_spread_bips() {
+        let spot_bips = StrategyConfig::SpotGrid(SpotGridConfig {
+            symbol: "ETH/USDC".to_string(),
+            grid_range_high: 2000.0,
+            grid_range_low: 1000.0,
+            grid_type: GridType::Arithmetic,
+            grid_count: None,
+            spread_bips: Some(100.0),
+            total_investment: 1000.0,
+            trigger_price: None,
+        });
+
+        let err = spot_bips.validate().unwrap_err().to_string();
+        assert_eq!(err, "grid_type must be geometric when spread_bips is used.");
     }
 }

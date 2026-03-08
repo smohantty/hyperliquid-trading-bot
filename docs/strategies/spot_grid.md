@@ -10,9 +10,15 @@ A classic mean-reversion strategy that buys low and sells high within a defined 
 | `grid_range_high` | f64 | The highest price of the grid range. Above this, the bot holds all Quote. |
 | `grid_range_low` | f64 | The lowest price of the grid range. Below this, the bot holds all Base. |
 | `grid_count` | u32 | Number of price levels. Creates `grid_count - 1` trading zones. |
+| `spread_bips` | f64 | Geometric spacing in basis points. Use this instead of `grid_count`. |
 | `total_investment` | f64 | Total Quote amount allocated to this strategy. |
-| `grid_type` | Enum | `Arithmetic` (equal price difference) or `Geometric` (equal ratio). |
+| `grid_type` | Enum | `Arithmetic` (equal price difference) or `Geometric` (equal ratio). Defaults to `Geometric` when omitted. |
 | `trigger_price` | Option<f64> | (Optional) Price to start the bot. If set, bot waits until price crosses this level. |
+
+## Grid Spacing Modes
+
+- `grid_count`: fixed number of levels with arithmetic or geometric interpolation based on `grid_type`
+- `spread_bips`: geometric spacing only; `grid_type` must remain `geometric`
 
 ## Logic & State Machine
 
